@@ -17,6 +17,7 @@ class Settings:
     login_window_s: int = 60
     max_state_bytes: int = 2_000_000
     pre_migration_backups_kept: int = 10
+    downloads_dir: Path = BASE_DIR / "downloads"  # APK Android (bind mount di mobile/dist, sola lettura)
 
     @property
     def backup_dir(self) -> Path:
@@ -35,4 +36,5 @@ def load_settings() -> Settings:
         session_secret=secret,
         cookie_secure=os.environ.get("COOKIE_SECURE", "false").lower() == "true",
         db_path=Path(os.environ.get("DB_PATH", "/data/fitweek.sqlite")),
+        downloads_dir=Path(os.environ.get("DOWNLOADS_DIR", str(BASE_DIR / "downloads"))),
     )

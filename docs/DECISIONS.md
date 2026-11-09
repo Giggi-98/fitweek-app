@@ -38,7 +38,7 @@ Ogni valore ha `source` (`label`, `manual`, `estimate`, `database:<nome>`). Le s
 ## D-012 — Repository git dedicato · Accettata (implementata 2026-11-09)
 Il repo attuale ha radice in `/opt` e include altri progetti. Proposta: `git init` in `/opt/fitweek-app`, `.gitignore` (`.env`, `__pycache__/`, backup, `*.sqlite*`), commit iniziale dello stato attuale prima di qualsiasi modifica al codice.
 
-## D-013 — App mobile con Capacitor per promemoria affidabili · Proposta (in attesa di scelta piattaforma)
+## D-013 — App mobile con Capacitor per promemoria affidabili · Accettata (Android, M6, 2026-11-09)
 Contesto (richiesta utente 2026-11-09): l'app deve ricordare attivamente spuntino, pasti, allenamento e pesata, con popup di inserimento rapido. Una webapp/PWA servita in HTTP su LAN non può mostrare notifiche affidabili (service worker e Push richiedono HTTPS; su iOS solo PWA installata ≥16.4; le notifiche web non sono garantite a orario).
 Decisione proposta: shell **Capacitor** attorno alla SPA esistente (stesso codice, nessun framework nuovo) con `@capacitor/local-notifications`: i promemoria sono programmati **sul telefono** a partire dalla routine (funzionano anche senza rete e senza server raggiungibile); il tocco sulla notifica apre direttamente il popup corretto (es. "Cosa hai mangiato?"). Il backend resta l'unica fonte dei dati.
 Conseguenze: (1) la SPA va servita dal bundle dell'app e parla con il server via API → servono CORS limitato all'origine dell'app e un'autenticazione adatta (cookie SameSite=None+Secure o token), quindi **HTTPS sul server** (reverse proxy con certificato) — prerequisito comune anche a D-008; (2) fuori casa il server è raggiungibile solo via VPN; inserimenti offline in coda locale (già previsto per gli allenamenti, D-005); (3) Android: build con Android Studio/Gradle, installazione APK diretta, nessun costo; iOS: richiede Mac + Xcode e account Apple Developer (o re-firma ogni 7 giorni).
@@ -49,3 +49,6 @@ I promemoria vivono nella tabella `reminders` (non nel client): la webapp li mos
 
 ## D-015 — Stime nutrizionali generiche iniziali · Accettata (M4, 2026-11-09)
 Per dare subito "calorie teoriche" i pasti abituali iniziali hanno valori medi indicativi marcati `estimate` con nota. L'interfaccia mostra sempre la fonte e la copertura; l'utente li corregge con le etichette (`label`). Nessuna integrazione con banche dati esterne senza decisione esplicita.
+
+## D-016 — APK che carica la webapp dal server (server.url) · Accettata (M6, 2026-11-09)
+Invece di impacchettare il frontend nell'APK (che richiederebbe CORS, cookie cross-site con HTTPS e un aggiornamento dell'APK a ogni modifica), l'app Capacitor carica `server.url` in HTTP LAN con `cleartext`. Vantaggi: zero build web, aggiornamenti immediati, stessi cookie della webapp. Svantaggi: senza server raggiungibile si vede solo la pagina offline (le notifiche, programmate localmente, funzionano comunque); l'URL è fissato in compilazione (`scripts/build-apk.sh URL`). Le notifiche sono "una tantum" per 14 giorni (non ripetizioni settimanali) per non suonare per eventi già registrati.

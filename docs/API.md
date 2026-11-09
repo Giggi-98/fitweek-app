@@ -73,3 +73,10 @@ Tutte richiedono login; le scritture verificano `Origin`. Errori di validazione:
 | GET | `/api/v1/weekly-summary?week_start=` | giorni + totali teorici (vedi `app/daily.py`) |
 
 Slot pasto: `lunch, snack, pre_workout, dinner, other`. Backup: `fitweek-backup-v3` aggiunge `meal_templates`, `meal_logs`, `reminders`; il ripristino di v1/v2 non tocca queste tabelle.
+
+## App Android (M6)
+
+| Metodo | Path | Note |
+|---|---|---|
+| GET | `/api/v1/app/android` | `{available, version, version_code, size, sha256, built_at, server_url, app_id}` |
+| GET | `/api/v1/app/android/download` | APK (`application/vnd.android.package-archive`), 404 se non compilato |

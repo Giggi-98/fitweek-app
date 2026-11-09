@@ -227,6 +227,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                   (r.id, r.weekday, r.time, r.kind, r.slot, r.title, r.action, int(r.enabled), now, now))
         return {"ok": True, "version": version + 1, "sessions": len(sessions_in)}
 
+    # ---- app Android ----------------------------------------------------------------------
+    def apk_meta() -> dict | None:
+        apk, meta = settings.downloads_dir / "fitweek.apk", settings.downloads_dir / "fitweek-apk.json"
+        if not apk.is_file() or not meta.is_file():
+            return None
+        try:
+            return json.loads(meta.read_text())
+        except (OSError, ValueError):
+            return None
+
+    @app.get("/api/v1/app/android", dependencies=[Depends(require_session)])
+    def android_info():
+        meta = apk_meta()
+        return {"available": meta is not None, **(meta or {})}
+
+    @app.get("/api/v1/app/android/download", dependencies=[Depends(require_session)])
+    def android_download():
+        meta = apk_meta()
+        if not meta:
+            raise HTTPException(status_code=404, detail="APK non ancora compilato")
+        return FileResponse(
+            settings.downloads_dir / "fitweek.apk",
+            media_type="application/vnd.android.package-archive",
+            filename=f"fitweek-{meta.get('version', 'app')}.apk",
+        )
+
     app.include_router(build_router(settings, require_session))
     app.include_router(daily.build_router(settings, require_session))
 

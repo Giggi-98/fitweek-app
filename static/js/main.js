@@ -2,7 +2,8 @@
 import { request } from "./api.js";
 import { app, loadAll, refreshWorkouts } from "./store.js";
 import { initModal, toast } from "./ui.js";
-import { startReminders } from "./reminders.js";
+import { openReminder, startReminders } from "./reminders.js";
+import { initNative } from "./native.js";
 import { $, $$ } from "./util.js";
 import * as dashboard from "./views/dashboard.js";
 import * as meals from "./views/meals.js";
@@ -77,6 +78,14 @@ async function boot() {
     initRestTimer();
     initModal();
     startReminders();
+    initNative({
+      openReminderById: (id) => {
+        const item = app.agenda.find((i) => i.id === id);
+        if (!item) return;
+        if (item.action === "start_workout") location.hash = "#training";
+        else openReminder(item);
+      },
+    });
   } else {
     flush();
   }

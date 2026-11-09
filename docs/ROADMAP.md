@@ -11,7 +11,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 | M3 | Dashboard "Oggi" e progressi | ⬜ |
 | M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
 | M5 | Spesa, dispensa, budget | ⬜ |
-| M6 | App mobile (Capacitor) con promemoria e offline — anticipabile dopo M2 (D-013) | ⬜ |
+| M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 (accesso fuori casa: serve VPN) |
 | M7 | Rifinitura: accessibilità, performance, schede multiple | ⬜ |
 | M8 | Assistente AI opzionale e integrazioni | ⬜ |
 
@@ -107,9 +107,24 @@ Sostituire le stime generiche con quelle dei prodotti reali (etichette Esselunga
 ## M5 — Spesa, dispensa, budget
 Liste per settimana con storico; quantità numeriche + unità; prezzo stimato vs reale; spesa effettiva vs budget; dispensa con luogo e scadenze; generazione lista = fabbisogno piano − inventario; esportazione testo; nessuna integrazione Esselunga automatica (D-010).
 
-## M6 — App mobile Capacitor: notifiche native dei promemoria, offline
-Richiesta utente 2026-11-09 (D-013). Shell Capacitor sulla SPA esistente; notifiche locali programmate dalla routine (spuntino, pasti, palestra, pesata, spesa); tocco → popup di inserimento rapido; coda offline. Prerequisiti: HTTPS sul server (reverse proxy), auth adatta a un'app nativa, scelta piattaforma (Android/iOS). Le parti dati (pasti consumati, calorie teoriche, pesate pianificate) arrivano da M3–M4, quindi M6 può partire in parallelo a M4 una volta pronta l'infrastruttura HTTPS.
-Accettazione: promemoria che arrivano all'orario anche con app chiusa e senza rete; dal promemoria all'inserimento salvato in ≤ 3 tocchi.
+## M6 — App Android con notifiche native ✅
+
+Richiesta 2026-11-09: Samsung S25 Ultra, APK scaricabile dalla pagina web.
+
+Fatto:
+- Progetto Capacitor 6 (`mobile/`), build e firma in Docker (`scripts/build-apk.sh`), chiave in `/opt/fitweek-secrets`.
+- L'app carica la webapp dal server (sempre aggiornata senza reinstallare); pagina offline inclusa se il server non è raggiungibile.
+- Notifiche locali per tutti i promemoria abilitati, prossimi 14 giorni, senza quelle di oggi già registrate; riallineamento all'avvio, al ritorno in primo piano, dopo ogni registrazione e modifica dei promemoria.
+- Tocco sulla notifica → popup giusto; tasto indietro Android (chiude popup, torna indietro, riduce a icona).
+- Impostazioni: download APK (solo dopo login) con istruzioni Samsung; dentro l'app stato permessi, orari esatti, numero notifiche, notifica di prova.
+
+Criteri di accettazione:
+- [x] APK firmato scaricabile dalla webapp (e2e).
+- [x] Notifiche programmate correttamente dai promemoria del server (test JS + e2e con bridge simulato).
+- [ ] Prova su S25 Ultra reale: installazione, notifiche ad app chiusa, battery optimization Samsung.
+- [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
+
+Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
 
 ## M7 — Rifinitura
 Accessibilità completa, performance, schede multiple / nuovo programma dopo le 8 settimane, sonno (registrazione leggera, opzionale).

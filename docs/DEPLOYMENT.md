@@ -50,3 +50,11 @@ Automatizzata in `scripts/deploy.sh` (test → backup `pre-deploy-<commit>` → 
 ## Accesso remoto
 
 Esposizione solo LAN. Per uso fuori casa: VPN (WireGuard/Tailscale) oppure reverse proxy HTTPS con autenticazione aggiuntiva e `COOKIE_SECURE=true`. Mai HTTP diretto su Internet. Nota: le PWA e l'API Clipboard richiedono contesto sicuro (HTTPS o localhost): su `http://192.168.222.200:8088` l'installazione PWA completa non sarà disponibile (vedi `DECISIONS.md` D-008).
+
+## App Android (M6)
+
+- Build: `scripts/build-apk.sh [URL]` (predefinito `http://192.168.222.200:8088`). Gira nel container `fitweek-android-builder:1` (Node 20, JDK 17, SDK 34); cache Gradle/npm in `~/.cache/fitweek-android`.
+- Output: `mobile/dist/fitweek.apk` + `fitweek-apk.json`, montati in sola lettura su `/app/downloads` (docker-compose): una nuova build è subito scaricabile, senza riavvio.
+- **Chiave di firma**: `/opt/fitweek-secrets/fitweek-release.jks` + `android-keystore.env` (600, root). Non è nei backup del DB: copiarla in un luogo sicuro. Se va persa, l'APK nuovo non si installa sopra quello vecchio (bisogna disinstallare, perdendo solo le preferenze locali dell'app; i dati sono sul server).
+- Versione APK = `APP_VERSION` (`app/__init__.py`), versionCode = MAJOR·10000 + MINOR·100 + PATCH.
+- Cambio indirizzo (es. VPN): ricompilare con il nuovo URL e reinstallare l'APK sopra il precedente.

@@ -1,0 +1,12 @@
+{
+  "name": "fitweek-android",
+  "private": true,
+  "description": "Shell Capacitor di FitWeek: carica la webapp dal server e programma le notifiche locali dei promemoria.",
+  "dependencies": {
+    "@capacitor/android": "6.2.3",
+    "@capacitor/app": "6.0.3",
+    "@capacitor/cli": "6.2.3",
+    "@capacitor/core": "6.2.3",
+    "@capacitor/local-notifications": "6.1.3"
+  }
+}

@@ -13,3 +13,9 @@ __pycache__/
 *.pyc
 .pytest_cache/
 .venv/
+
+# App Android: dipendenze e build (la chiave di firma sta in /opt/fitweek-secrets, mai qui)
+mobile/node_modules/
+mobile/dist/
+*.jks
+*.keystore

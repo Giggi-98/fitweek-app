@@ -29,7 +29,8 @@ I dati corporei cambiano nel tempo: **mai sovrascrivere lo storico**, solo aggiu
   - Pasti e giornata (M4): `meal_logs` (diario), `meal_templates` (pasti abituali con valori marcati `estimate|label|manual`), `reminders` (un promemoria per ogni evento della routine, modificabili) + `reminder_acks` (fatto/non oggi/posticipa). `/api/v1/agenda` segna da solo come fatti i promemoria quando il pasto/pesata/seduta viene registrato; `/api/v1/weekly-summary` dà calorie e proteine **teoriche** con la copertura dei dati.
   - Altri domini (profilo, scheda `routines`, pasti, spesa, dispensa, pesate): ancora nel blob JSON `app_state` (`/api/state`, controllo 409), validato da `app/schemas.py`. Il campo `workouts` del blob è congelato (copiato in tabella dalla migrazione 4, non più scritto).
 - Frontend: ES modules nativi senza build né CDN (`static/js/`), CSS a token con tema chiaro/scuro (`static/css/`). Coda offline idempotente per le scritture di allenamento e pasti, timer recupero basato su orario di fine. `static/js/reminders.js`: controlla l'agenda ogni minuto **con l'app aperta** e apre il popup giusto (`<dialog>`); nessuna notifica a schermo spento finché non c'è l'app nativa (D-013).
-- Test: pytest (`tests/`, 50) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 36 controlli, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
+- App Android (M6): shell Capacitor 6 in `mobile/` che carica la webapp da `server.url` (HTTP LAN, cleartext) e programma **notifiche locali** dei promemoria (prossimi 14 giorni, riallineate a ogni apertura/modifica) tramite `static/js/native.js` + `static/js/schedule.js` (funzione pura). Pagina offline inclusa nell'APK. Build in Docker con `scripts/build-apk.sh` → `mobile/dist/` (bind mount in sola lettura su `/app/downloads`), download dopo login da Impostazioni. Chiave di firma in `/opt/fitweek-secrets/` (mai nel repo; perderla = non poter aggiornare l'app installata).
+- Test: pytest (`tests/`, 52) + test JS puri (`tests/js/*.test.mjs`, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 48 controlli, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
 
 ## Struttura
 
@@ -49,7 +50,9 @@ static/js/views/     dashboard (agenda + settimana), training (logger), meals (d
 static/js/reminders.js  motore promemoria in app + popup di inserimento rapido (pasto, pesata, altri)
 static/js/workout/   queue.js (coda offline), timer.js (recupero + preferenze)
 tests/               pytest; tests/e2e/ Playwright
-scripts/             backup.sh, restore.sh, check.sh, e2e.sh (deploy-m1.sh: storico)
+scripts/             backup.sh, restore.sh, check.sh, e2e.sh, deploy.sh, build-apk.sh (deploy-m1.sh: storico)
+mobile/              progetto Capacitor: package.json (versioni esatte), www/offline.html, build/ (Dockerfile + build-inside.sh)
+static/js/native.js  integrazione Android (no-op nel browser); static/js/schedule.js calcolo notifiche
 resources/           scheda-originale.pdf
 docs/                documentazione
 ```
@@ -64,6 +67,9 @@ scripts/check.sh
 
 # Test end-to-end nel browser (container usa-e-getta su 127.0.0.1:18088)
 scripts/e2e.sh
+
+# APK Android (dopo ogni cambio di versione in app/__init__.py o di mobile/)
+scripts/build-apk.sh [URL_SERVER]
 
 # Backup coerente del DB live → /opt/backups/fitweek/
 scripts/backup.sh <etichetta>
@@ -106,4 +112,4 @@ Repository dedicato in `/opt/fitweek-app` (branch `main`). `.env`, DB e backup s
 
 - Audit iniziale: `docs/AUDIT-2026-11-09.md`.
 - Milestone e avanzamento: `docs/ROADMAP.md`.
-- Problemi noti aperti: promemoria solo con app aperta (notifiche vere con l'app Capacitor, D-013: serve scelta Android/iOS e HTTPS); pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche da correggere con le etichette reali; stili inline residui (CSP `style-src 'unsafe-inline'`); RIR/RPE senza UI; link video `b4` da verificare.
+- Problemi noti aperti: server raggiungibile solo in LAN (in palestra serve VPN, es. Tailscale; poi ricompilare l'APK con l'URL VPN); app non provata su un telefono reale; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche; stili inline residui (CSP `style-src 'unsafe-inline'`); RIR/RPE senza UI; link video `b4` da verificare.

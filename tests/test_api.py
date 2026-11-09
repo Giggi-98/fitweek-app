@@ -123,3 +123,31 @@ def test_backup_format(auth_client):
     r = auth_client.get("/api/backup")
     assert r.status_code == 200 and r.json()["format"] == "fitweek-backup-v3"
     assert "attachment" in r.headers["Content-Disposition"]
+
+
+def _apk_client(tmp_path, with_apk):
+    from .conftest import make_settings
+    d = tmp_path / "dl"
+    d.mkdir()
+    if with_apk:
+        (d / "fitweek.apk").write_bytes(b"PK\x03\x04fake")
+        (d / "fitweek-apk.json").write_text('{"version": "1.4.0", "size": 8}')
+    c = TestClient(create_app(make_settings(tmp_path, downloads_dir=d)))
+    return c
+
+
+def test_apk_download_requires_login_and_serves_file(tmp_path):
+    c = _apk_client(tmp_path, True)
+    assert c.get("/api/v1/app/android/download").status_code == 401
+    c.post("/api/login", json={"password": PASSWORD})
+    assert c.get("/api/v1/app/android").json() == {"available": True, "version": "1.4.0", "size": 8}
+    r = c.get("/api/v1/app/android/download")
+    assert r.status_code == 200 and r.headers["content-type"] == "application/vnd.android.package-archive"
+    assert 'fitweek-1.4.0.apk' in r.headers["content-disposition"] and r.content.startswith(b"PK")
+
+
+def test_apk_missing(tmp_path):
+    c = _apk_client(tmp_path, False)
+    c.post("/api/login", json={"password": PASSWORD})
+    assert c.get("/api/v1/app/android").json() == {"available": False}
+    assert c.get("/api/v1/app/android/download").status_code == 404

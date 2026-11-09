@@ -12,6 +12,8 @@ services:
       - "192.168.222.200:8088:8080"
     volumes:
       - fitweek_data:/data
+      # APK Android compilato da scripts/build-apk.sh (sola lettura, servito dopo il login)
+      - ./mobile/dist:/app/downloads:ro
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=4)"]
       interval: 30s

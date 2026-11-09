@@ -19,8 +19,8 @@ export function toast(message, { action, onAction, timeout = 4000 } = {}) {
 }
 
 // I parametri title/desc sono testo dell'app (costanti); i dati utente vanno passati già escapati.
-export const panel = (title, body, action = "", cls = "") =>
-  `<section class="panel ${cls}"><div class="panel-head"><h3>${title}</h3>${action}</div>${body}</section>`;
+export const panel = (title, body, action = "", cls = "", id = "") =>
+  `<section class="panel ${cls}"${id ? ` id="${id}"` : ""}><div class="panel-head"><h3>${title}</h3>${action}</div>${body}</section>`;
 export const sectionTitle = (title, desc, right = "") =>
   `<div class="intro"><div><h2>${title}</h2>${desc ? `<p>${desc}</p>` : ""}</div>${right}</div>`;
 export const stat = (label, value, sub, { calc = false } = {}) =>

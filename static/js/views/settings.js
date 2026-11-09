@@ -5,6 +5,7 @@ import { app, loadAll, persistState } from "../store.js";
 import { panel, sectionTitle, toast } from "../ui.js";
 import { esc, num, storage, uid } from "../util.js";
 import { prefs, setPrefs } from "../workout/timer.js";
+import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
 
 export const THEME_KEY = "fitweek.theme.v1";
 
@@ -25,8 +26,10 @@ async function loadReminders() {
 
 function remindersPanel() {
   if (!rem.items) {
-    loadReminders().then(() => app.render()).catch((e) => toast("Promemoria non disponibili: " + e.message));
-    return panel("Promemoria", '<p class="subtle">Caricamento…</p>');
+    loadReminders()
+      .then(() => refreshPanel("reminders-panel", remindersPanel()))
+      .catch((e) => toast("Promemoria non disponibili: " + e.message));
+    return panel("Promemoria", '<p class="subtle">Caricamento…</p>', "", "", "reminders-panel");
   }
   const list = rem.items.filter((r) => r.weekday === rem.day);
   return panel(
@@ -51,6 +54,57 @@ function remindersPanel() {
         <div class="field"><label for="rn-title">Titolo</label><input id="rn-title" name="title" required maxlength="120" placeholder="es. Prepara la borsa della palestra"></div>
       </div><button class="btn primary" type="submit">Aggiungi</button></form>
     </details>`,
+    "", "", "reminders-panel",
+  );
+}
+
+const android = { info: null };
+/** Aggiorna solo il pannello `id` (dati arrivati in ritardo) senza ridisegnare la pagina. */
+function refreshPanel(id, html) {
+  const el = document.getElementById(id);
+  if (el) el.outerHTML = html;
+}
+window.addEventListener("fitweek:native-synced", () => refreshPanel("android-panel", androidPanel()));
+const mb = (n) => `${(n / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 1 })} MB`;
+const PERM = { granted: "consentite ✓", denied: "bloccate ✗", prompt: "da consentire", "prompt-with-rationale": "da consentire", unknown: "…" };
+
+function androidPanel() {
+  if (isNative()) {
+    const st = nativeStatus;
+    return panel(
+      "App Android",
+      `<div class="summary-list">
+        <div class="summary-row"><i>🔔</i><div><strong>Notifiche: ${esc(PERM[st.permission] || st.permission)}</strong><small>${st.permission === "denied" ? "Abilitale da Impostazioni del telefono → App → FitWeek → Notifiche." : "Arrivano anche ad app chiusa."}</small></div></div>
+        <div class="summary-row"><i>⏰</i><div><strong>Orari esatti: ${st.exact === "granted" ? "consentiti ✓" : st.exact === "n/d" ? "non necessari" : "non consentiti"}</strong><small>Senza, Android può ritardare un promemoria di qualche minuto.</small></div></div>
+        <div class="summary-row"><i>📅</i><div><strong>${st.scheduled} notifiche programmate</strong><small>Prossimi 14 giorni${st.lastSync ? ` · aggiornate alle ${st.lastSync.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}. Si riallineano a ogni apertura.</small></div></div>
+      </div>
+      ${st.error ? `<div class="inline-note warn">Errore: ${esc(st.error)}</div>` : ""}
+      <div class="button-row"><button class="btn" data-native="test">Notifica di prova</button><button class="btn" data-native="sync">Riprogramma</button>${st.exact !== "granted" && st.exact !== "n/d" ? '<button class="btn" data-native="exact">Consenti orari esatti</button>' : ""}</div>
+      <p class="subtle">Samsung: Impostazioni → App → FitWeek → Batteria → <strong>Senza restrizioni</strong>, altrimenti le notifiche possono arrivare in ritardo.</p>`,
+      "", "", "android-panel",
+    );
+  }
+  if (!android.info) {
+    request("/api/v1/app/android")
+      .then((i) => ((android.info = i), refreshPanel("android-panel", androidPanel())))
+      .catch(() => {});
+    return panel("App Android", '<p class="subtle">Caricamento…</p>', "", "", "android-panel");
+  }
+  const i = android.info;
+  if (!i.available) return panel("App Android", '<p class="subtle">L\'APK non è ancora stato compilato sul server (scripts/build-apk.sh).</p>', "", "", "android-panel");
+  return panel(
+    "App Android",
+    `<p class="subtle">L'app mostra FitWeek a schermo intero e invia le <strong>notifiche dei promemoria anche ad app chiusa</strong>. Versione ${esc(i.version)} · ${mb(i.size)}.</p>
+    <a class="btn primary full" href="/api/v1/app/android/download" download>↓ Scarica APK</a>
+    <ol class="steps">
+      <li>Scarica e apri il file. Il browser avvisa che è un'app esterna al Play Store: conferma <em>Scarica comunque</em>.</li>
+      <li>Alla richiesta, consenti al browser di <em>installare app sconosciute</em>, poi <em>Installa</em>.</li>
+      <li>Apri FitWeek, accedi e consenti le notifiche.</li>
+      <li>Impostazioni → App → FitWeek → Batteria → <em>Senza restrizioni</em>; se richiesto consenti <em>Sveglie e promemoria</em>.</li>
+    </ol>
+    <p class="subtle">L'app si collega a ${esc(i.server_url || "")}: funziona sulla Wi-Fi di casa o con la VPN. Le notifiche arrivano ovunque.</p>
+    <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(i.sha256 || "")}</p></details>`,
+    "", "", "android-panel",
   );
 }
 
@@ -60,6 +114,7 @@ async function saveReminder(id, base, changes) {
   try {
     await request(`/api/v1/reminders/${encodeURIComponent(id)}`, { method: "PUT", body });
     await loadReminders();
+    window.dispatchEvent(new Event("fitweek:reminders-changed"));
     toast("Promemoria salvato");
   } catch (e) {
     toast("Non salvato: " + e.message + (e.field ? ` (${e.field})` : ""));
@@ -76,8 +131,8 @@ export function render() {
   const theme = storage.get(THEME_KEY, "auto");
   const opt = (v, cur, label) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${label}</option>`;
   return (
-    sectionTitle("Impostazioni", "Profilo, programma, preferenze e dati.") +
-    `<div class="twocol"><div class="stack">${remindersPanel()}${panel(
+    sectionTitle("Il tuo sistema", "App, promemoria, programma, preferenze e dati.") +
+    `<div class="twocol"><div class="stack">${androidPanel()}${remindersPanel()}${panel(
       "Programma",
       `<form id="program-form" class="stack"><div class="field"><label for="prog-week">Settimana attuale</label><select id="prog-week" name="week">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => opt(i + 1, app.today.program_week, `Settimana ${i + 1}`)).join("")}</select></div><p class="subtle">La settimana avanza da sola ogni lunedì (inizio programma: ${esc(p.startDate)}). Cambiarla qui sposta la data di inizio.</p><button class="btn" type="submit">Aggiorna settimana</button></form>
       <div class="spacer12"></div><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda originale (PDF) ↗</a>`,
@@ -98,17 +153,25 @@ export function render() {
       `<p class="subtle">Esci da questo dispositivo, oppure da tutti (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
     )}${panel(
       "Privacy",
-      `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker, nessun servizio esterno.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">FitWeek 1.3 · uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
+      `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker, nessun servizio esterno.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">FitWeek 1.4 · uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
     )}</div></div>`
   );
 }
 
 export async function onClick(t) {
+  if (t.dataset.native === "test") return testNotification(), false;
+  if (t.dataset.native === "sync") {
+    await syncNotifications({ ask: true });
+    toast(nativeStatus.error ? "Errore: " + nativeStatus.error : `${nativeStatus.scheduled} notifiche programmate`);
+    return true;
+  }
+  if (t.dataset.native === "exact") return openExactAlarmSettings(), false;
   if (t.dataset.remDay) return (rem.day = num(t.dataset.remDay)), true;
   if (t.dataset.remDel) {
     if (!confirm("Eliminare questo promemoria?")) return false;
     await request(`/api/v1/reminders/${encodeURIComponent(t.dataset.remDel)}`, { method: "DELETE" }).catch((e) => toast(e.message));
     await loadReminders();
+    window.dispatchEvent(new Event("fitweek:reminders-changed"));
     return true;
   }
   if (t.dataset.themeSet) {
