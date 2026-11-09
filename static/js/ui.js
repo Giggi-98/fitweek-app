@@ -27,3 +27,31 @@ export const stat = (label, value, sub, { calc = false } = {}) =>
   `<div class="metric"><div class="metric-label">${label}${calc ? ' <span class="badge-calc" title="Valore calcolato">calcolato</span>' : ""}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`;
 export const empty = (title, text) => `<div class="data-empty"><strong>${title}</strong>${text}</div>`;
 export const pill = (text, kind = "") => `<span class="pill ${kind}">${esc(text)}</span>`;
+
+// ---- finestra modale (una alla volta) ------------------------------------------------------
+let modalHandler = null;
+/** Apre la modale con `html`; `handler(target)` riceve i click e restituisce true per chiudere. */
+export function openModal(html, handler) {
+  const dlg = $("#modal");
+  $("#modal-body").innerHTML = html;
+  modalHandler = handler;
+  if (!dlg.open) dlg.showModal();
+  dlg.querySelector("[autofocus]")?.focus();
+}
+export function closeModal() {
+  const dlg = $("#modal");
+  modalHandler = null;
+  if (dlg.open) dlg.close();
+}
+export const modalOpen = () => $("#modal").open;
+export function initModal() {
+  const dlg = $("#modal");
+  dlg.addEventListener("click", async (e) => {
+    if (e.target === dlg) return closeModal(); // tocco sullo sfondo
+    const t = e.target.closest("button");
+    if (!t || !modalHandler) return;
+    e.preventDefault();
+    if (await modalHandler(t)) closeModal();
+  });
+  dlg.addEventListener("cancel", () => (modalHandler = null));
+}

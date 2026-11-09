@@ -10,7 +10,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
 (async () => {
   const browser = await chromium.launch();
   // Lunedì 9/11 alle 19:45: giorno A
-  const ctx = await browser.newContext({ ...devices['iPhone 13'], timezoneId: 'Europe/Rome' });
+  const ctx = await browser.newContext({ ...devices['iPhone 13'], timezoneId: 'Europe/Rome', locale: 'it-IT' });
   const page = await ctx.newPage();
   global.__page = page;
   const errors = [];
@@ -23,6 +23,13 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await page.reload();
   await page.fill('#pw', PW);
   await page.click('#login-form button');
+  await page.waitForSelector('#shell:not(.hidden)');
+  // Isola il test dall'ora reale: niente popup dei promemoria durante l'allenamento simulato.
+  await page.evaluate(async () => {
+    const { items } = await fetch('/api/v1/reminders').then((r) => r.json());
+    for (const r of items) await fetch(`/api/v1/reminders/${r.id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ weekday: r.weekday, time: r.time, kind: r.kind, slot: r.slot, title: r.title, action: r.action, enabled: false }) });
+  });
+  await page.reload();
   await page.waitForSelector('#shell:not(.hidden)');
   check('login + dashboard', await page.locator('.today-cta').isVisible());
   await shot(page, '1-dashboard-dark');

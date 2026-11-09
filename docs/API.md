@@ -57,3 +57,19 @@ Tutte richiedono login; le scritture verificano `Origin`. Errori di validazione:
 | POST | `/api/v1/restore` | backup `fitweek-backup-v1` o `v2`; sostituisce stato e sedute dopo un backup SQLite `pre-restore-*` |
 
 `GET /api/backup` ora produce `fitweek-backup-v2`: `{format, version, data, workout_sessions[]}`.
+
+## API v1 giornata (M4, 2026-11-09)
+
+| Metodo | Path | Note |
+|---|---|---|
+| GET | `/api/v1/meal-templates` | pasti abituali attivi |
+| PUT/DELETE | `/api/v1/meal-templates/{id}` | upsert `{slot, name, kcal?, protein_g?, nutrition_source?, nutrition_note, position}`; senza fonte ma con kcal → `estimate` |
+| GET | `/api/v1/meal-logs?from=&to=` | diario |
+| PUT/DELETE | `/api/v1/meal-logs/{id}` | upsert `{date, slot, status eaten\|skipped, description, template_id?, kcal?, protein_g?, nutrition_source?, note}`; con `template_id` e senza kcal eredita i valori del pasto abituale |
+| GET | `/api/v1/reminders` | tutti |
+| PUT/DELETE | `/api/v1/reminders/{id}` | `{weekday 0-6, time HH:MM, kind, slot?, title, action, enabled}`; `log_meal` richiede `slot` |
+| PUT | `/api/v1/reminders/{id}/ack` | `{date, status done\|dismissed\|snoozed, snooze_minutes?}` |
+| GET | `/api/v1/agenda?date=` | promemoria del giorno con `state` (done/skipped/snoozed/pending), `due`, `due_at`, `detail` |
+| GET | `/api/v1/weekly-summary?week_start=` | giorni + totali teorici (vedi `app/daily.py`) |
+
+Slot pasto: `lunch, snack, pre_workout, dinner, other`. Backup: `fitweek-backup-v3` aggiunge `meal_templates`, `meal_logs`, `reminders`; il ripristino di v1/v2 non tocca queste tabelle.

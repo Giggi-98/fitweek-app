@@ -1,7 +1,8 @@
 // Avvio, routing (hash) e delega degli eventi verso la vista attiva.
 import { request } from "./api.js";
 import { app, loadAll, refreshWorkouts } from "./store.js";
-import { toast } from "./ui.js";
+import { initModal, toast } from "./ui.js";
+import { startReminders } from "./reminders.js";
 import { $, $$ } from "./util.js";
 import * as dashboard from "./views/dashboard.js";
 import * as meals from "./views/meals.js";
@@ -74,6 +75,8 @@ async function boot() {
     started = true;
     startQueue();
     initRestTimer();
+    initModal();
+    startReminders();
   } else {
     flush();
   }
@@ -84,6 +87,7 @@ async function boot() {
 window.addEventListener("hashchange", route);
 
 document.addEventListener("click", async (e) => {
+  if (e.target.closest("#modal")) return; // gestiti dalla modale stessa
   const nav = e.target.closest("[data-view]");
   if (nav) {
     e.preventDefault();
@@ -105,8 +109,9 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-document.addEventListener("change", (e) => {
-  if (app.state && current().onChange?.(e.target)) render();
+document.addEventListener("change", async (e) => {
+  if (e.target.closest("#modal") || !app.state) return;
+  if (await current().onChange?.(e.target)) render();
 });
 document.addEventListener("input", (e) => {
   if (app.state) current().onInput?.(e.target);
@@ -115,6 +120,7 @@ document.addEventListener("input", (e) => {
 document.addEventListener("submit", async (e) => {
   const form = e.target;
   e.preventDefault();
+  if (form.closest("#modal")) return;
   const data = Object.fromEntries(new FormData(form));
   if (form.id === "login-form") {
     try {

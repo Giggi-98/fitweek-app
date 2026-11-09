@@ -1,50 +1,12 @@
-// Panoramica: cosa fare adesso e come sta andando la settimana.
-import { DAYS, DAYSHORT, GYM, PROGRAM_WEEKS, ROUTINES, todayName } from "../constants.js";
+// Oggi: cosa fare adesso (agenda dei promemoria) e come sta andando la settimana.
+import { DAYSHORT, PROGRAM_WEEKS, ROUTINES, todayName } from "../constants.js";
+import { guessSlot, openMealLog, openReminder } from "../reminders.js";
 import { app } from "../store.js";
-import { empty, panel, stat } from "../ui.js";
+import { panel, stat } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, money, num } from "../util.js";
 import { todayStatus } from "./training.js";
 
-/** Timeline del giorno ricavata dalla routine (CLAUDE.md). Orari indicativi. */
-function timeline(day, meal) {
-  const work = DAYS.indexOf(day) < 5;
-  const gym = Boolean(GYM[day]);
-  const items = [];
-  if (work) items.push({ at: "13:00", min: 13 * 60, title: "Pranzo al lavoro", text: meal.lunch });
-  else items.push({ at: "Pranzo", min: 13 * 60, title: "Pranzo", text: meal.lunch });
-  if (gym) {
-    items.push({ at: "18:30", min: 18 * 60 + 30, title: "Spuntino pre-palestra", text: meal.pre });
-    items.push({ at: "19:30", min: 19 * 60 + 30, title: `Palestra · Giorno ${GYM[day]}`, text: "19:30–22:00", gym: true });
-    items.push({ at: "22:30", min: 22 * 60 + 30, title: "Cena", text: meal.dinner });
-  } else {
-    if (meal.pre) items.push({ at: "Spuntino", min: 17 * 60, title: "Spuntino", text: meal.pre });
-    items.push({ at: "Cena", min: 20 * 60, title: "Cena", text: meal.dinner });
-  }
-  const now = new Date().getHours() * 60 + new Date().getMinutes();
-  const next = items.findIndex((i) => i.min + 30 >= now);
-  return items.map((i, k) => ({ ...i, state: next === -1 || k < next ? "past" : k === next ? "next" : "" }));
-}
-
-function weekDates() {
-  const d = new Date();
-  const monday = new Date(d);
-  monday.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return DAYS.map((_, i) => {
-    const x = new Date(monday);
-    x.setDate(monday.getDate() + i);
-    return isoDate(x);
-  });
-}
-
-function weightStats() {
-  const w = [...app.state.weights].sort((a, b) => a.date.localeCompare(b.date));
-  const last = w[w.length - 1];
-  const since = new Date();
-  since.setDate(since.getDate() - 6);
-  const recent = w.filter((x) => x.date >= isoDate(since));
-  const avg = recent.length ? recent.reduce((s, x) => s + num(x.weight), 0) / recent.length : null;
-  return { last, avg, count: recent.length };
-}
+const STATE_ICON = { done: "✓", skipped: "–", snoozed: "⏱", pending: "" };
 
 function trainingCard() {
   const st = todayStatus();
@@ -52,60 +14,89 @@ function trainingCard() {
   if (st.kind === "active")
     return `<div class="today-cta active"><div><span class="tiny-label">Allenamento in corso</span><strong>Giorno ${esc(r)} · W${esc(st.week)}</strong><small>${st.done}/${st.planned} serie</small></div><a class="btn primary" href="#training">Riprendi →</a></div>`;
   if (st.kind === "done")
-    return `<div class="today-cta done"><div><span class="tiny-label">Allenamento di oggi</span><strong>Giorno ${esc(r)} completato ✓</strong><small>Ricordati la cena con il secondo del lavoro.</small></div></div>`;
+    return `<div class="today-cta done"><div><span class="tiny-label">Allenamento di oggi</span><strong>Giorno ${esc(r)} completato ✓</strong><small>Ottimo lavoro.</small></div></div>`;
   if (st.kind === "planned")
     return `<div class="today-cta"><div><span class="tiny-label">Oggi palestra · 19:30</span><strong>Giorno ${esc(r)} · W${esc(st.week)}</strong><small>${esc(ROUTINES[r]?.focus || "")}</small></div><a class="btn primary" href="#training">▶ Inizia</a></div>`;
-  return `<div class="today-cta rest"><div><span class="tiny-label">Oggi</span><strong>Giorno di riposo</strong><small>Prossimo: ${nextGymLabel()}</small></div></div>`;
+  return "";
 }
 
-function nextGymLabel() {
-  const idx = (new Date().getDay() + 6) % 7;
-  for (let k = 1; k <= 7; k++) {
-    const d = DAYS[(idx + k) % 7];
-    if (GYM[d]) return `${d.toLowerCase()} · Giorno ${GYM[d]}`;
-  }
-  return "—";
+function agenda() {
+  if (!app.agenda.length) return '<p class="subtle">Nessun promemoria per oggi. Puoi aggiungerli da Altro → Promemoria.</p>';
+  const nextIdx = app.agenda.findIndex((i) => i.state === "pending" || i.state === "snoozed");
+  return `<ol class="agenda">${app.agenda
+    .map((i, k) => {
+      const overdue = i.due && i.state === "pending";
+      const cls = [i.state, k === nextIdx ? "next" : "", overdue ? "overdue" : ""].join(" ");
+      const time = i.state === "snoozed" ? new Date(i.due_at).toTimeString().slice(0, 5) : i.time;
+      return `<li class="${cls}"><button type="button" class="agenda-item" data-agenda="${esc(i.id)}" ${i.state === "done" || i.state === "skipped" ? 'aria-disabled="true"' : ""}>
+        <span class="ag-time">${esc(time)}</span>
+        <span class="ag-text"><strong>${esc(i.title)}</strong>${i.detail ? `<small>${esc(i.detail)}</small>` : overdue ? "<small>Da registrare</small>" : i.state === "snoozed" ? "<small>Posticipato</small>" : ""}</span>
+        <span class="ag-state" aria-label="${esc(i.state)}">${STATE_ICON[i.state]}</span>
+      </button></li>`;
+    })
+    .join("")}</ol>`;
+}
+
+function weeklyPanel() {
+  const w = app.weekly;
+  if (!w) return "";
+  const t = w.totals;
+  const maxKcal = Math.max(1, ...w.days.map((d) => d.kcal_estimate || 0));
+  const today = isoDate();
+  const bars = w.days
+    .map((d, i) => {
+      const h = d.kcal_estimate ? Math.max(6, Math.round((d.kcal_estimate / maxKcal) * 100)) : 0;
+      const gym = d.workouts.length ? "gym" : "";
+      return `<div class="wk-day ${d.date === today ? "today" : ""} ${gym}" title="${esc(fmtDate(d.date))}: ${d.kcal_estimate ? "~" + d.kcal_estimate + " kcal (stima)" : "nessun valore"}">
+        <div class="wk-bar"><div style="height:${h}%"></div></div>
+        <strong>${DAYSHORT[i]}</strong><small>${d.kcal_estimate ? fmtNum(d.kcal_estimate, 0) : "—"}</small><small>${d.meals_eaten}/${d.meals_expected}${d.workouts.length ? " · ◆" : ""}</small>
+      </div>`;
+    })
+    .join("");
+  return panel(
+    "La settimana",
+    `<div class="wk-days" aria-label="Calorie teoriche e pasti registrati per giorno">${bars}</div>
+    <div class="metrics">
+      ${stat("Calorie medie", t.kcal_estimate_avg ? `~${fmtNum(t.kcal_estimate_avg, 0)}<small> kcal</small>` : "—", t.days_with_values ? `su ${t.days_with_values} giorni registrati${t.meals_without_values ? ` · ${t.meals_without_values} pasti senza valori` : ""}` : "registra i pasti per vederle", { calc: true })}
+      ${stat("Proteine medie", t.protein_estimate_avg_g ? `~${fmtNum(t.protein_estimate_avg_g, 0)}<small> g</small>` : "—", "stima dai pasti registrati", { calc: true })}
+      ${stat("Pasti registrati", `${t.meals_eaten}<small>/${t.meals_expected}</small>`, "rispetto ai promemoria")}
+      ${stat("Allenamenti", `${t.workouts_done}<small>/${t.workouts_planned}</small>`, `${t.sets_done}/${t.sets_planned} serie · W${esc(w.program_week)}`)}
+    </div>
+    <p class="subtle">Calorie e proteine sono <strong>stime teoriche</strong> dai pasti registrati, non misure né obiettivi. Peso medio della settimana: ${t.weight_avg ? `${fmtNum(t.weight_avg)} kg (${t.weigh_ins} pesate)` : "nessuna pesata"}.</p>`,
+    `<a class="btn small" href="#meals">Diario →</a>`,
+  );
 }
 
 export function render() {
   const day = todayName();
-  const meal = app.state.meals[day] || {};
-  const dates = weekDates();
-  const doneByDate = new Map(app.sessions.filter((s) => s.status === "done").map((s) => [s.date, s]));
-  const doneThisWeek = app.sessions.filter((s) => s.status === "done" && dates.includes(s.date)).length;
-  const ws = weightStats();
+  const last = [...app.state.weights].sort((a, b) => a.date.localeCompare(b.date)).pop();
   const g = app.state.groceries;
-  const total = g.reduce((s, x) => s + num(x.price), 0);
-  const bought = g.filter((x) => x.checked).length;
-  const recent = app.sessions.filter((s) => s.status === "done").slice(0, 4);
-
+  const pending = app.agenda.filter((i) => i.due && i.state === "pending").length;
   return `
-  <div class="intro"><div><h2>${esc(day)} ${esc(fmtDate(app.today.date).replace(/^\S+\s/, ""))}</h2><p>Settimana ${esc(app.today.program_week)} di ${PROGRAM_WEEKS} del programma</p></div></div>
+  <div class="intro"><div><h2>${esc(day)} ${esc(fmtDate(app.today.date).replace(/^\S+\s/, ""))}</h2><p>Settimana ${esc(app.today.program_week)} di ${PROGRAM_WEEKS} del programma${pending ? ` · <strong>${pending} da registrare</strong>` : ""}</p></div></div>
   ${trainingCard()}
-  <div class="metrics">
-    ${stat("Peso", ws.last ? `${fmtNum(ws.last.weight)}<small> kg</small>` : "—", ws.last ? `ultima: ${esc(fmtDate(ws.last.date))}` : `<a href="#progress">Registra la prima pesata</a>`)}
-    ${stat("Media 7 giorni", ws.avg ? `${fmtNum(ws.avg)}<small> kg</small>` : "—", ws.count ? `${ws.count} pesate` : "servono pesate", { calc: true })}
-    ${stat("Allenamenti", `${doneThisWeek}<small>/3</small>`, "questa settimana")}
-    ${stat("Spesa", money(total), `${bought}/${g.length} presi · budget ${money(app.state.profile.budget)}`)}
-  </div>
   <div class="twocol">
-    ${panel(
-      "La tua giornata",
-      `<ol class="timeline">${timeline(day, meal)
-        .map((i) => `<li class="${i.state} ${i.gym ? "gym" : ""}"><span class="tl-at">${esc(i.at)}</span><div><strong>${esc(i.title)}</strong><small>${esc(i.text || "Da pianificare")}</small></div></li>`)
-        .join("")}</ol>`,
-      `<a class="btn small" href="#meals">Pasti →</a>`,
-    )}
-    ${panel(
-      "Questa settimana",
-      `<div class="daygrid">${DAYS.map((d, i) => {
-        const done = doneByDate.get(dates[i]);
-        const isToday = dates[i] === app.today.date;
-        return `<div class="daybox ${GYM[d] ? "gym" : ""} ${done ? "done" : ""} ${isToday ? "today" : ""}"><strong>${DAYSHORT[i]}</strong><span>${done ? "✓ " + esc(done.routine) : GYM[d] ? GYM[d] : "·"}</span></div>`;
-      }).join("")}</div>
-      <div class="spacer12"></div>
-      ${recent.length ? recent.map((s) => `<div class="entry"><div><div class="entry-title">Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${esc(fmtDate(s.date))} · ${s.sets.filter((x) => x.completed).length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}</div></div></div>`).join("") : empty("Nessun allenamento registrato", "Il primo sarà nella schermata Palestra.")}`,
-      `<a class="btn small" href="#progress">Storico →</a>`,
-    )}
+    ${panel("Agenda di oggi", agenda(), `<button class="btn small" data-quick-meal>+ Pasto</button>`)}
+    ${weeklyPanel()}
+  </div>
+  <div class="metrics">
+    ${stat("Peso", last ? `${fmtNum(last.weight)}<small> kg</small>` : "—", last ? `ultima: ${esc(fmtDate(last.date))}` : "nessuna pesata")}
+    ${stat("Spesa", money(g.reduce((s, x) => s + num(x.price), 0)), `${g.filter((x) => x.checked).length}/${g.length} presi · stima`)}
   </div>`;
+}
+
+export async function onClick(t) {
+  if (t.dataset.agenda) {
+    const item = app.agenda.find((i) => i.id === t.dataset.agenda);
+    if (item && item.state !== "done" && item.state !== "skipped") {
+      if (item.action === "start_workout") location.hash = "#training";
+      else openReminder(item);
+    }
+    return false;
+  }
+  if (t.matches("[data-quick-meal]")) {
+    openMealLog({ slot: guessSlot() });
+    return false;
+  }
+  return false;
 }

@@ -9,7 +9,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 | M1 | Stabilizzazione, protezione dati, sicurezza | ✅ in produzione dal 2026-11-09 (resta: verifica manuale da telefono) |
 | M2 | Fondamenta frontend, design system, allenamento mobile | ✅ 2026-11-09 (parziali: RIR/RPE UI, note per esercizio, grafici → M3) |
 | M3 | Dashboard "Oggi" e progressi | ⬜ |
-| M4 | Alimentazione: calendario e pasti consumati | ⬜ |
+| M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
 | M5 | Spesa, dispensa, budget | ⬜ |
 | M6 | App mobile (Capacitor) con promemoria e offline — anticipabile dopo M2 (D-013) | ⬜ |
 | M7 | Rifinitura: accessibilità, performance, schede multiple | ⬜ |
@@ -80,14 +80,34 @@ Parziale/rimandato: RIR/RPE (colonna presente, UI no), note per singolo esercizi
 Obiettivo: la dashboard risponde a "cosa faccio adesso". Timeline del giorno basata sulla routine (lavoro, pre-gym, palestra, cena); CTA allenamento; trend peso con media mobile 7 gg (marcata "calcolata"); misure aggiuntive; grafici carichi per esercizio; confronto settimane; frequenza allenamenti.
 Accettazione: dati calcolati distinti visivamente dai registrati; grafici con alternativa tabellare.
 
-## M4 — Alimentazione
-Calendario per data; pasti pianificati vs consumati (un tocco: "mangiato come previsto"); secondo del lavoro come pasto disponibile lun–ven; pasti abituali e ricette veloci; ingredienti/porzioni; valori nutrizionali con fonte (D-011).
-Accettazione: nessun valore nutrizionale mostrato senza fonte; weekend con proposte basate su ciò che è in dispensa.
+## M4 — Alimentazione, promemoria in app, riepilogo settimanale ✅
+
+Richiesta utente 2026-11-09: "le giornate sono tutte organizzate, quindi dovrà esserci un promemoria per ogni evento rilevante".
+
+Fatto:
+- 34 promemoria predefiniti dalla routine (pranzo, spuntino/pre-palestra, palestra, cena, sonno, pesata mar/ven 08:00, spesa domenica 18:00), modificabili per giorno in Impostazioni (orario, titolo, attivo, elimina, nuovi personalizzati).
+- Con l'app aperta: popup all'orario (solo il più recente scaduto nelle ultime 3 h, nessuna raffica), sospesi durante l'allenamento; "Più tardi" (15′), "Non oggi".
+- Popup pasto: "Come previsto" dal piano (eredita la stima se coincide con un pasto abituale), pasti abituali con un tocco, testo libero con kcal facoltative, "Saltato".
+- Popup pesata; popup palestra/spesa che portano alla schermata giusta.
+- Agenda di oggi in dashboard con stato (fatto, saltato, posticipato, da registrare); completamento automatico quando il dato viene registrato.
+- Diario pasti per settimana con totale teorico per giorno; pasti abituali modificabili con fonte dei valori (stima/etichetta/inserito).
+- Riepilogo settimanale: calorie e proteine medie teoriche con copertura, pasti registrati/previsti, allenamenti e serie, peso medio.
+- Backup v3 (pasti, abituali, promemoria).
+
+Criteri di accettazione:
+- [x] Ogni evento della routine ha un promemoria modificabile (test API).
+- [x] Dal popup all'inserimento salvato in 1 tocco per i pasti abituali/previsti (e2e).
+- [x] Nessun valore nutrizionale senza fonte; somme marcate come stime e con pasti senza valori dichiarati (test + e2e).
+- [x] Posticipo e "non oggi" funzionanti (test + e2e).
+- [ ] Notifiche a schermo spento: non possibili in una webapp HTTP → M6 (Capacitor).
+
+## M4b — Stime nutrizionali personali (proposta)
+Sostituire le stime generiche con quelle dei prodotti reali (etichette Esselunga, secondi del lavoro se hanno etichetta). Nessun database esterno senza decisione esplicita.
 
 ## M5 — Spesa, dispensa, budget
 Liste per settimana con storico; quantità numeriche + unità; prezzo stimato vs reale; spesa effettiva vs budget; dispensa con luogo e scadenze; generazione lista = fabbisogno piano − inventario; esportazione testo; nessuna integrazione Esselunga automatica (D-010).
 
-## M6 — App mobile Capacitor, promemoria, offline
+## M6 — App mobile Capacitor: notifiche native dei promemoria, offline
 Richiesta utente 2026-11-09 (D-013). Shell Capacitor sulla SPA esistente; notifiche locali programmate dalla routine (spuntino, pasti, palestra, pesata, spesa); tocco → popup di inserimento rapido; coda offline. Prerequisiti: HTTPS sul server (reverse proxy), auth adatta a un'app nativa, scelta piattaforma (Android/iOS). Le parti dati (pasti consumati, calorie teoriche, pesate pianificate) arrivano da M3–M4, quindi M6 può partire in parallelo a M4 una volta pronta l'infrastruttura HTTPS.
 Accettazione: promemoria che arrivano all'orario anche con app chiusa e senza rete; dal promemoria all'inserimento salvato in ≤ 3 tocchi.
 

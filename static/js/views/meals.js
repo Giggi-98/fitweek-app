@@ -1,40 +1,159 @@
-// Piano pasti settimanale (testo libero, dominio ancora nel blob v1; calendario per data in M4).
-import { DAYS, GYM, MEAL_DEFAULTS } from "../constants.js";
-import { app, persistState } from "../store.js";
-import { panel, sectionTitle } from "../ui.js";
-import { esc } from "../util.js";
+// Pasti: diario (cosa hai mangiato), piano ricorrente, pasti abituali con valori stimati.
+import { request } from "../api.js";
+import { DAYS, GYM, MEAL_DEFAULTS, SLOTS, SOURCE_LABEL } from "../constants.js";
+import { guessSlot, openMealLog } from "../reminders.js";
+import { app, persistState, refreshDaily } from "../store.js";
+import { empty, panel, sectionTitle, toast } from "../ui.js";
+import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
+import { enqueue, flush } from "../workout/queue.js";
 
-const SLOTS = [
+const ui = { tab: "diary", weekOffset: 0, logs: null, loadedFor: null };
+// Un pasto registrato da un promemoria invalida il diario in cache.
+window.addEventListener("fitweek:changed", () => (ui.loadedFor = null));
+const PLAN_SLOTS = [
   ["lunch", "Pranzo · 13:00"],
   ["pre", "Spuntino / pre-palestra"],
   ["dinner", "Cena"],
 ];
 
+function weekDays(offset) {
+  const d = new Date();
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7) + offset * 7);
+  return Array.from({ length: 7 }, (_, i) => {
+    const x = new Date(d);
+    x.setDate(d.getDate() + i);
+    return isoDate(x);
+  });
+}
+
+async function loadLogs() {
+  const days = weekDays(ui.weekOffset);
+  const key = days[0];
+  const out = await request(`/api/v1/meal-logs?from=${days[0]}&to=${days[6]}`);
+  ui.logs = out.items;
+  ui.loadedFor = key;
+}
+
+const tabs = () =>
+  `<div class="chips" role="tablist">${[["diary", "Diario"], ["plan", "Piano"], ["templates", "Abituali"]]
+    .map(([k, l]) => `<button class="chip ${ui.tab === k ? "active" : ""}" role="tab" aria-selected="${ui.tab === k}" data-tab="${k}">${l}</button>`)
+    .join("")}</div>`;
+
+const kcalLabel = (m) =>
+  m.kcal != null ? `${m.nutrition_source === "estimate" ? "~" : ""}${fmtNum(m.kcal, 0)} kcal${m.protein_g != null ? ` · ${fmtNum(m.protein_g, 0)} g prot.` : ""} · ${SOURCE_LABEL[m.nutrition_source] || "stima"}` : "senza valori";
+
+function diary() {
+  const days = weekDays(ui.weekOffset);
+  if (ui.loadedFor !== days[0]) {
+    loadLogs().then(() => app.render()).catch((e) => toast("Diario non disponibile: " + e.message));
+    return '<p class="subtle">Caricamento…</p>';
+  }
+  const today = isoDate();
+  return `<div class="week-nav"><button class="btn small" data-week-shift="-1" aria-label="Settimana precedente">←</button><strong>${esc(fmtDate(days[0]))} – ${esc(fmtDate(days[6]))}</strong><button class="btn small" data-week-shift="1" ${ui.weekOffset >= 0 ? "disabled" : ""} aria-label="Settimana successiva">→</button></div>
+  <p class="subtle">Le calorie sono <strong>stime teoriche</strong> (pasti abituali o valori inseriti da te), non misure né obiettivi.</p>
+  ${days
+    .filter((d) => d <= today)
+    .reverse()
+    .map((d) => {
+      const logs = ui.logs.filter((m) => m.date === d);
+      const eaten = logs.filter((m) => m.status === "eaten");
+      const kcal = eaten.filter((m) => m.kcal != null).reduce((s, m) => s + m.kcal, 0);
+      const missing = eaten.filter((m) => m.kcal == null).length;
+      return panel(
+        `${esc(fmtDate(d))}${d === today ? " · oggi" : ""}`,
+        `${logs.length ? logs.map((m) => `<div class="entry ${m.status}"><div><div class="entry-title">${esc(SLOTS[m.slot] || m.slot)}: ${m.status === "skipped" ? "saltato" : esc(m.description || "—")}</div><div class="entry-sub">${m.status === "skipped" ? "" : esc(kcalLabel(m))}</div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">×</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
+        <div class="day-foot"><span>${eaten.length ? `Totale teorico: <strong>~${fmtNum(kcal, 0)} kcal</strong>${missing ? ` (+${missing} senza valori)` : ""}` : ""}</span><button class="btn small" data-add-log="${esc(d)}">+ Pasto</button></div>`,
+      );
+    })
+    .join("")}`;
+}
+
+function plan() {
+  return `<div class="inline-note">Piano ricorrente: è il "come previsto" proposto nei promemoria. Lun–ven pranzo al lavoro e secondo per cena.</div>
+  <div class="grid3">${DAYS.map((day) => {
+    const m = app.state.meals[day] || {};
+    return `<section class="meal-card"><h3>${esc(day)} ${GYM[day] ? `<span class="pill accent">Palestra ${GYM[day]}</span>` : ""}</h3>${PLAN_SLOTS.map(
+      ([k, label]) =>
+        `<div class="field"><label for="meal-${esc(day)}-${k}">${label}</label><textarea id="meal-${esc(day)}-${k}" rows="2" maxlength="1000" data-meal-day="${esc(day)}" data-meal-key="${k}">${esc(m[k] || "")}</textarea></div>`,
+    ).join("")}</section>`;
+  }).join("")}</div>
+  <button class="btn small" data-reset-meals>Ripristina il piano iniziale</button>`;
+}
+
+function templates() {
+  const bySlot = Object.keys(SLOTS).map((slot) => [slot, app.templates.filter((t) => t.slot === slot)]);
+  return `<p class="subtle">I pasti abituali compaiono come scelte rapide nei promemoria. I valori iniziali sono <strong>stime generiche</strong>: se hai l'etichetta, correggili e scegli la fonte "etichetta".</p>
+  ${bySlot
+    .map(([slot, items]) =>
+      panel(
+        esc(SLOTS[slot]),
+        items.length
+          ? items.map((t) => `<form class="tpl-row" data-tpl-form="${esc(t.id)}"><input name="name" value="${esc(t.name)}" maxlength="120" aria-label="Nome"><input name="kcal" inputmode="numeric" value="${esc(t.kcal ?? "")}" placeholder="kcal" aria-label="Calorie"><input name="protein_g" inputmode="numeric" value="${esc(t.protein_g ?? "")}" placeholder="prot. g" aria-label="Proteine"><select name="nutrition_source" aria-label="Fonte">${Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}" ${t.nutrition_source === k ? "selected" : ""}>${l}</option>`).join("")}</select><input type="hidden" name="slot" value="${esc(t.slot)}"><input type="hidden" name="position" value="${esc(t.position)}"><button class="btn small" type="submit">Salva</button><button type="button" class="icon-btn" data-del-tpl="${esc(t.id)}" aria-label="Elimina">×</button>${t.nutrition_note ? `<small class="tpl-note">${esc(t.nutrition_note)}</small>` : ""}</form>`).join("")
+          : empty("Nessun pasto abituale", ""),
+      ),
+    )
+    .join("")}
+  ${panel(
+    "Nuovo pasto abituale",
+    `<form id="tpl-new" class="stack"><div class="form-grid"><div class="field"><label for="tn-name">Nome</label><input id="tn-name" name="name" required maxlength="120" placeholder="es. Mandorle (30 g)"></div><div class="field"><label for="tn-slot">Momento</label><select id="tn-slot" name="slot">${Object.entries(SLOTS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div><div class="field"><label for="tn-kcal">Calorie (facoltativo)</label><input id="tn-kcal" name="kcal" inputmode="numeric"></div><div class="field"><label for="tn-prot">Proteine g (facoltativo)</label><input id="tn-prot" name="protein_g" inputmode="numeric"></div><div class="field"><label for="tn-src">Fonte dei valori</label><select id="tn-src" name="nutrition_source">${Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">+ Aggiungi</button></form>`,
+  )}`;
+}
+
 export function render() {
-  return (
-    sectionTitle("Mangiare bene, senza complicazioni.", "Piano ricorrente della settimana. Modifica un campo e viene salvato.") +
-    `<div class="inline-note">Lun–ven: pranzo al lavoro (primo + contorno) e secondo sottovuoto per la cena. Nei giorni di palestra spuntino leggero verso le 18:30 e cena alle 22:15–22:30.</div>
-    <div class="grid3">${DAYS.map((day) => {
-      const m = app.state.meals[day] || {};
-      return `<section class="meal-card"><h3>${esc(day)} ${GYM[day] ? `<span class="pill accent">Palestra ${GYM[day]}</span>` : '<span class="pill">Riposo</span>'}</h3>${SLOTS.map(
-        ([k, label]) =>
-          `<div class="field"><label for="meal-${esc(day)}-${k}">${label}</label><textarea id="meal-${esc(day)}-${k}" rows="2" maxlength="1000" data-meal-day="${esc(day)}" data-meal-key="${k}">${esc(m[k] || "")}</textarea></div>`,
-      ).join("")}</section>`;
-    }).join("")}</div>
-    ${panel(
-      "Linee guida",
-      `<div class="summary-list"><div class="summary-row"><i>1</i><div><strong>Non forzare la colazione</strong><small>Conta la giornata nel suo insieme, non l'orario dei pasti.</small></div></div><div class="summary-row"><i>2</i><div><strong>Proteine distribuite</strong><small>Primo e contorno ne contengono poche: yogurt, legumi, uova o tonno aiutano.</small></div></div><div class="summary-row"><i>3</i><div><strong>Weekend semplice</strong><small>Priorità alle cene con alimenti già in casa. Esempi, non dosi prescritte.</small></div></div></div>
-      <div class="spacer12"></div><button class="btn small" data-reset-meals>Ripristina i suggerimenti iniziali</button>`,
-    )}`
-  );
+  const body = ui.tab === "plan" ? plan() : ui.tab === "templates" ? templates() : diary();
+  return sectionTitle("Cosa hai mangiato", "Un tocco per registrare; le calorie teoriche le calcola l'app.", `<button class="btn primary small" data-add-log="${isoDate()}">+ Pasto</button>`) + tabs() + body;
+}
+
+const optNum = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", ".")));
+
+async function saveTemplate(id, data) {
+  const body = {
+    slot: data.slot, name: data.name.trim(), kcal: optNum(data.kcal), protein_g: optNum(data.protein_g),
+    nutrition_source: data.nutrition_source, position: num(data.position, app.templates.length),
+  };
+  if (!body.name) return toast("Inserisci un nome"), false;
+  try {
+    await request(`/api/v1/meal-templates/${encodeURIComponent(id)}`, { method: "PUT", body });
+    await refreshDaily();
+    toast("Pasto abituale salvato");
+  } catch (e) {
+    toast("Non salvato: " + e.message);
+  }
+  return true;
 }
 
 export async function onClick(t) {
-  if (!t.matches("[data-reset-meals]")) return false;
-  if (!confirm("Sostituire tutti i pasti pianificati con i suggerimenti iniziali?")) return false;
-  for (const [d, [lunch, pre, dinner]] of Object.entries(MEAL_DEFAULTS)) app.state.meals[d] = { lunch, pre, dinner };
-  persistState();
-  return true;
+  if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
+  if (t.dataset.weekShift) {
+    ui.weekOffset = Math.min(0, ui.weekOffset + num(t.dataset.weekShift));
+    return true;
+  }
+  if (t.dataset.addLog) {
+    openMealLog({ date: t.dataset.addLog, slot: t.dataset.addLog === isoDate() ? guessSlot() : "dinner" });
+    ui.loadedFor = null; // ricarica il diario alla chiusura
+    return false;
+  }
+  if (t.dataset.delLog) {
+    if (!confirm("Eliminare questo pasto dal diario?")) return false;
+    enqueue("DELETE", `/api/v1/meal-logs/${encodeURIComponent(t.dataset.delLog)}`);
+    await flush();
+    ui.loadedFor = null;
+    refreshDaily().then(() => app.render()).catch(() => {});
+    return true;
+  }
+  if (t.dataset.delTpl) {
+    if (!confirm("Eliminare questo pasto abituale?")) return false;
+    await request(`/api/v1/meal-templates/${encodeURIComponent(t.dataset.delTpl)}`, { method: "DELETE" }).catch((e) => toast(e.message));
+    await refreshDaily();
+    return true;
+  }
+  if (t.matches("[data-reset-meals]")) {
+    if (!confirm("Sostituire il piano con i suggerimenti iniziali?")) return false;
+    for (const [d, [lunch, pre, dinner]] of Object.entries(MEAL_DEFAULTS)) app.state.meals[d] = { lunch, pre, dinner };
+    persistState();
+    return true;
+  }
+  return false;
 }
 
 export function onChange(t) {
@@ -42,5 +161,11 @@ export function onChange(t) {
   app.state.meals[t.dataset.mealDay] ??= { lunch: "", pre: "", dinner: "" };
   app.state.meals[t.dataset.mealDay][t.dataset.mealKey] = t.value;
   persistState();
+  return false;
+}
+
+export async function onSubmit(form, data) {
+  if (form.dataset.tplForm) return saveTemplate(form.dataset.tplForm, data);
+  if (form.id === "tpl-new") return saveTemplate(`t-${uid().slice(0, 12)}`, data);
   return false;
 }

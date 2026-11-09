@@ -96,3 +96,16 @@ set_logs(session_id → workout_sessions ON DELETE CASCADE, exercise_id, set_ind
 ```
 
 Differenze rispetto al modello obiettivo: la scheda (`programs/program_days/...`) è ancora `routines` nel blob; `exercise_id` fa riferimento agli id della scheda (`a1`…`c5`). Il campo `workouts` del blob è congelato dopo la migrazione 4.
+
+## Stato dopo M4 (schema 5, 2026-11-09)
+
+```sql
+meal_templates(id PK, slot, name, kcal, protein_g, nutrition_source, nutrition_note, position, created_at, updated_at, deleted_at)
+meal_logs(id PK, date, slot, status CHECK IN ('eaten','skipped'), description, template_id, kcal, protein_g,
+          nutrition_source, note, logged_at, updated_at, deleted_at)          -- indice su date
+reminders(id PK, weekday 0-6, time 'HH:MM', kind, slot, title, action, enabled, created_at, updated_at)
+reminder_acks(reminder_id, date, status CHECK IN ('done','dismissed','snoozed'), snooze_until, at,
+              PRIMARY KEY(reminder_id, date))
+```
+
+I valori nutrizionali del diario sono copiati dal pasto abituale al momento della registrazione: correggere un pasto abituale non riscrive lo storico.

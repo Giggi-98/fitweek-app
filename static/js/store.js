@@ -8,6 +8,9 @@ export const app = {
   version: 0,
   today: null, // /api/v1/today
   sessions: [], // sedute recenti (API v1), più recenti prima
+  agenda: [], // promemoria di oggi con stato (/api/v1/agenda)
+  weekly: null, // /api/v1/weekly-summary
+  templates: [], // pasti abituali
   view: "dashboard",
   render: () => {}, // impostata da main.js
   onUnauthorized: () => {}, // impostata da main.js
@@ -39,6 +42,19 @@ export async function loadAll() {
   app.version = s.version;
   app.today = today;
   app.sessions = sessions.items;
+  await refreshDaily();
+}
+
+/** Agenda di oggi, riepilogo settimanale e pasti abituali. */
+export async function refreshDaily() {
+  const [agenda, weekly, templates] = await Promise.all([
+    request("/api/v1/agenda"),
+    request("/api/v1/weekly-summary"),
+    request("/api/v1/meal-templates"),
+  ]);
+  app.agenda = agenda.items;
+  app.weekly = weekly;
+  app.templates = templates.items;
 }
 
 export async function refreshWorkouts() {

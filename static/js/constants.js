@@ -21,3 +21,14 @@ export const MEAL_DEFAULTS = {
   Domenica: ["Riso + legumi + verdure", "Yogurt (facoltativo)", "Frittata + pane + verdure"],
 };
 export const todayName = () => DAYS[(new Date().getDay() + 6) % 7];
+
+export const SLOTS = {
+  lunch: "Pranzo",
+  pre_workout: "Spuntino pre-palestra",
+  snack: "Spuntino",
+  dinner: "Cena",
+  other: "Fuori pasto",
+};
+// Collegamento tra i pasti del piano ricorrente (blob) e i tipi di pasto del diario.
+export const PLAN_KEY = { lunch: "lunch", pre_workout: "pre", snack: "pre", dinner: "dinner" };
+export const SOURCE_LABEL = { estimate: "stima", label: "etichetta", manual: "inserito" };

@@ -16,9 +16,15 @@ if [[ ! -d "$TOOLS/node_modules/playwright" ]]; then
   (cd "$TOOLS" && npx playwright install chromium >/dev/null)
 fi
 docker build -q -t fitweek:test . >/dev/null
-docker run -d --rm --name "$NAME" -p "127.0.0.1:$PORT:8080" -e APP_PASSWORD="$E2E_PASSWORD" \
-  -e SESSION_SECRET="$(openssl rand -hex 32)" -e DB_PATH=/tmp/e2e.sqlite fitweek:test >/dev/null
 trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
-for _ in $(seq 1 30); do curl -sf "$E2E_URL/api/health" >/dev/null && break; sleep 0.5; done
-NODE_PATH="$TOOLS/node_modules" node tests/e2e/workout.e2e.js
+failed=0
+for test in tests/e2e/*.e2e.js; do
+  echo "== $test"
+  docker rm -f "$NAME" >/dev/null 2>&1 || true   # container nuovo per ogni file: test indipendenti
+  docker run -d --rm --name "$NAME" -p "127.0.0.1:$PORT:8080" -e APP_PASSWORD="$E2E_PASSWORD" \
+    -e SESSION_SECRET="$(openssl rand -hex 32)" -e DB_PATH=/tmp/e2e.sqlite fitweek:test >/dev/null
+  for _ in $(seq 1 30); do curl -sf "$E2E_URL/api/health" >/dev/null && break; sleep 0.5; done
+  NODE_PATH="$TOOLS/node_modules" node "$test" || failed=1
+done
 echo "Screenshot: $E2E_SHOTS"
+exit $failed
