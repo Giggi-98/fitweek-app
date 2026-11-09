@@ -1,0 +1,15 @@
+# Segreti e configurazione locale
+.env
+.env.*
+!.env.example
+
+# Dati e backup (mai nel repository)
+*.sqlite
+*.sqlite-*
+backups/
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
