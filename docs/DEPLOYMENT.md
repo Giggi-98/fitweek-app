@@ -1,18 +1,19 @@
 # Deployment, backup e ripristino
 
-## Configurazione effettiva (verificata 2026-11-09)
+## Configurazione effettiva (aggiornata dopo il deploy M1 del 2026-11-09)
 
 | Voce | Valore |
 |---|---|
 | Host | PC Linux, LAN `192.168.222.200` |
 | Directory | `/opt/fitweek-app` |
-| Container | `fitweek` (immagine `fitweek-app-fitweek`, build locale) |
+| Container | `fitweek` (immagine `fitweek:latest`, build locale; avvio `uvicorn app.main:create_app --factory`) |
 | Porta | `192.168.222.200:8088 → 8080` — **la 8080 dell'host è occupata da un altro servizio: non usarla** |
-| Volume | `fitweek-app_fitweek_data` → `/data` (DB `/data/fitweek.sqlite`, proprietario uid 10001) |
+| Volume | **esterno** `fitweek_data` → `/data` (DB `/data/fitweek.sqlite`, uid 10001; backup pre-migrazione in `/data/backups`). Il vecchio `fitweek-app_fitweek_data` (stato al 2026-11-09, versione 4) è conservato come copia: rimuoverlo solo con autorizzazione |
 | Healthcheck | `GET http://127.0.0.1:8080/api/health` ogni 30 s (definito in compose) |
 | Restart | `unless-stopped` |
 | Config | `.env` (non versionato): `APP_PASSWORD`, `SESSION_SECRET`, `COOKIE_SECURE`, `DB_PATH` |
-| TZ container | UTC (non impostata) |
+| TZ container | `Europe/Rome` |
+| Backup automatico | timer systemd `fitweek-backup.timer` ogni giorno alle 03:30 → `/opt/backups/fitweek/fitweek-auto-*.sqlite` (14 conservati) |
 
 Sullo stesso host girano altri servizi (vaultwarden, jellyfin, homeassistant, gigi-*, armony-*, qbittorrent…): **non toccarli**.
 
@@ -28,24 +29,21 @@ Sullo stesso host girano altri servizi (vaultwarden, jellyfin, homeassistant, gi
 
 ## Backup
 
-Stato attuale: solo export JSON manuale da Impostazioni. **Nessun backup automatico.**
-
-Pianificato (M1):
-- `scripts/backup.sh`: esegue nel container `python -c "sqlite3.connect(DB).backup(dest)"` (backup online coerente anche con WAL), salva in `/data/backups/fitweek-YYYYmmdd-HHMMSS.sqlite`, poi copia fuori dal volume (es. `/opt/backups/fitweek/`), verifica `integrity_check`, rotazione (7 giornalieri, 8 settimanali).
-- Pianificazione via cron/systemd timer dell'host — **richiede autorizzazione**.
-- Backup automatico pre-migrazione all'avvio del container.
-- Non copiare mai il file `.sqlite` a caldo con `cp` (rischio inconsistenza con WAL).
+- `scripts/backup.sh [etichetta]`: backup online con l'API di SQLite dentro al container, file autonomo (senza WAL), `integrity_check`, copia in `/opt/backups/fitweek/` (dir 700, file 600), rotazione (14 `auto`, 20 etichettati).
+- Automatico: `systemctl list-timers fitweek-backup.timer`; log con `journalctl -u fitweek-backup.service`.
+- Pre-migrazione: creato dall'app all'avvio se ci sono migrazioni da applicare (`/data/backups/pre-migration-*`, 10 conservati).
+- Non copiare mai il `.sqlite` a caldo con `cp`.
+- Da valutare: copia dei backup su un secondo disco/macchina (oggi stanno sullo stesso disco del server).
 
 ## Ripristino
 
-- JSON (attuale): Impostazioni → Ripristina; sostituisce l'intero stato.
-- SQLite (pianificato `scripts/restore.sh`): ferma il container, salva il DB corrente come `pre-restore-*.sqlite`, copia il backup, `integrity_check`, riavvia, verifica healthcheck.
-- Il ripristino va provato almeno una volta su container usa-e-getta.
+- `scripts/restore.sh <file.sqlite>` (chiede conferma scrivendo `SI`): backup `pre-restore` dello stato corrente, stop, copia come root + `chown 10001`, start. Provato il 2026-11-09 su container/volume usa-e-getta. All'avvio le migrazioni mancanti vengono riapplicate.
+- JSON: Impostazioni → Ripristina (validato dal server).
 
 ## Rischi noti
 
-- **Nome volume legato al project name** (`fitweek-app_`): rinominare la directory o usare `docker compose -p altro` monta un volume nuovo e vuoto. Proposta: volume con `name: fitweek_data` esplicito, migrato con copia via backup (oggi il DB contiene solo il seed → rischio minimo).
-- `docker compose down -v` o `docker volume prune` cancellano i dati: non usarli.
+- Volume esterno: `docker compose down -v` non lo cancella; `docker volume rm fitweek_data` / `docker volume prune -a` sì: non usarli.
+- I file di backup sono leggibili solo da root: gli script che li montano in un container devono girare come root e poi fare `chown 10001`.
 
 ## Accesso remoto
 

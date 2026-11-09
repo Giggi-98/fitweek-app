@@ -25,7 +25,8 @@ fi
 
 scripts/backup.sh pre-restore
 docker stop "$CONTAINER" >/dev/null
-docker run --rm --network none --user 10001:10001 \
+# Gira come root perché i backup sono leggibili solo da root (600); poi restituisce i file all'utente dell'app.
+docker run --rm --network none --user 0:0 \
   -v "$VOLUME":/data -v "$(realpath "$SRC")":/restore.sqlite:ro \
   --entrypoint python "$IMAGE" -c '
 import os, sqlite3
@@ -36,6 +37,8 @@ src = sqlite3.connect("file:/restore.sqlite?mode=ro", uri=True)
 dst = sqlite3.connect("/data/fitweek.sqlite")
 with dst: src.backup(dst)
 assert dst.execute("PRAGMA integrity_check").fetchone()[0] == "ok"
+dst.close()
+os.chown("/data/fitweek.sqlite", 10001, 10001)
 '
 docker start "$CONTAINER" >/dev/null
 echo "Ripristino completato. Verifica: docker inspect $CONTAINER --format '{{.State.Health.Status}}'"

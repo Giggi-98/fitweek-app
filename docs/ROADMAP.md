@@ -6,7 +6,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 
 | # | Milestone | Stato |
 |---|---|---|
-| M1 | Stabilizzazione, protezione dati, sicurezza | 🔄 codice e test completati; deploy ⏸ in attesa di permesso |
+| M1 | Stabilizzazione, protezione dati, sicurezza | ✅ in produzione dal 2026-11-09 (resta: verifica manuale da telefono) |
 | M2 | Fondamenta frontend, design system, allenamento mobile | ⬜ |
 | M3 | Dashboard "Oggi" e progressi | ⬜ |
 | M4 | Alimentazione: calendario e pasti consumati | ⬜ |
@@ -22,9 +22,9 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 **Obiettivo**: nessuna perdita di dati possibile per cause tecniche; codice versionato; errori gestiti; scheda coerente col PDF. Nessun cambiamento visibile importante oltre ai fix.
 
 Attività:
-1. ⏸ Repo git dedicato in `/opt/fitweek-app` + `.gitignore` + commit iniziale dello stato attuale (D-012).
-2. ⏸ `scripts/backup.sh` / `restore.sh` (backup API SQLite, verifica integrità, rotazione); prova di ripristino su container usa-e-getta; timer host (D-007 per i dettagli del volume).
-3. ⏸ Volume con nome esplicito, migrato via backup (D-007).
+1. ✅ Repo git dedicato in `/opt/fitweek-app` + `.gitignore` + commit iniziale dello stato attuale (D-012).
+2. ✅ `scripts/backup.sh` / `restore.sh` (backup API SQLite, verifica integrità, rotazione); prova di ripristino su container usa-e-getta; timer host (D-007 per i dettagli del volume).
+3. ✅ Volume con nome esplicito, migrato via backup (D-007).
 4. Backend: corpo malformato → 400; `compare_digest` su bytes; validazione Pydantic di `PUT /api/state` (tipi e limiti per ogni dominio); header di sicurezza (CSP `default-src 'self'`, `frame-ancestors 'none'`, `nosniff`, `Referrer-Policy: same-origin`); rate limit login (es. 5 tentativi/min + backoff); `session_epoch` per invalidare le sessioni al logout/"esci da tutti i dispositivi"; logging strutturato (JSON, senza dati personali); `TZ=Europe/Rome`.
 5. Migrazione dati idempotente: correzione `b6` e `c5` (TRAINING_PROGRAM.md), applicata solo se i valori correnti sono quelli errati del seed; backup prima. Correzione di `seed.py`.
 6. Frontend (fix mirati sul file esistente, previa formattazione leggibile): `esc()` su tutti i valori interpolati; URL video solo `https:`; Impostazioni + Logout raggiungibili da mobile; bozza allenamento (incluse data, durata, note) in localStorage con ripristino; gestione 409 recuperabile (ricarica server + riapplica bozza); articoli senza categoria visibili; conferma eliminazione pesata.
@@ -34,19 +34,20 @@ Attività:
 Dipendenze: autorizzazione per 1–3 e per il deploy finale.
 
 Criteri di accettazione:
-- [ ] `git log` mostra il commit iniziale; `.env` non è tracciato.
-- [ ] Un backup automatico esiste, supera `PRAGMA integrity_check` e un ripristino su container usa-e-getta restituisce gli stessi conteggi.
-- [ ] Nessun endpoint restituisce 500 per input malformato (test).
-- [ ] Uno stato con tipi errati (es. `weight` stringa HTML) è rifiutato con 422 (test).
-- [ ] Dopo 5 login errati in 1 minuto le richieste successive ricevono 429 (test).
-- [ ] Dopo il logout il vecchio cookie riceve 401 (test).
-- [ ] Le risposte includono gli header di sicurezza e la SPA funziona con la CSP (verifica manuale + test header).
-- [ ] Le serie previste di `b6` e `c5` coincidono col PDF nel DB live dopo la migrazione; gli altri esercizi invariati (test sulla migrazione).
-- [ ] Ricaricando la pagina a metà compilazione di un allenamento, i valori inseriti sono ancora presenti.
-- [ ] Da smartphone (< 750 px) si raggiungono Impostazioni e Logout.
-- [ ] Dopo un 409 l'utente può recuperare senza perdere la bozza.
-- [ ] `scripts/check.sh` passa; healthcheck `healthy` dopo il deploy.
+- [x] `git log` mostra il commit iniziale; `.env` non è tracciato.
+- [x] Un backup automatico esiste, supera `PRAGMA integrity_check` e un ripristino su container usa-e-getta restituisce gli stessi conteggi.
+- [x] Nessun endpoint restituisce 500 per input malformato (test).
+- [x] Uno stato con tipi errati (es. `weight` stringa HTML) è rifiutato con 422 (test).
+- [x] Dopo 5 login errati in 1 minuto le richieste successive ricevono 429 (test).
+- [x] Dopo il logout il vecchio cookie riceve 401 (test).
+- [x] Le risposte includono gli header di sicurezza e la SPA funziona con la CSP (verifica manuale + test header).
+- [x] Le serie previste di `b6` e `c5` coincidono col PDF nel DB live dopo la migrazione; gli altri esercizi invariati (test sulla migrazione).
+- [x] Ricaricando la pagina a metà compilazione di un allenamento, i valori inseriti sono ancora presenti.
+- [x] Da smartphone (< 750 px) si raggiungono Impostazioni e Logout.
+- [x] Dopo un 409 l'utente può recuperare senza perdere la bozza.
+- [x] `scripts/check.sh` passa; healthcheck `healthy` dopo il deploy.
 
+Esito (2026-11-09): 20 test pytest; 16 controlli e2e Playwright (viewport iPhone) su container usa-e-getta; migrazione provata su copia del DB reale; ripristino provato su container/volume usa-e-getta; deploy con volume `fitweek_data`, healthcheck `healthy`, b6/c5 corretti nel DB live. Da fare: prova manuale sul telefono reale.
 Test previsti: pytest API; test della migrazione su copia del DB live; verifica manuale da telefono (checklist in PR).
 Rischi: la CSP può rompere stili inline presenti in `app.js` (mitigazione: spostare gli inline style in classi, o `style-src 'self' 'unsafe-inline'` temporaneo dichiarato); migrazione volume (mitigazione: il vecchio volume non viene cancellato).
 

@@ -11,7 +11,7 @@ Contesto: `app.js` (30 KB) e `style.css` sono minificati e monolitici; nessun so
 ## D-003 — Migrazione progressiva dal blob JSON a tabelle · Proposta
 Contesto: lo stato unico causa riscritture totali, conflitti tra domini non correlati, limite 2 MB, nessuna validazione/query. Decisione proposta: strangler pattern, un dominio alla volta, iniziando da palestra (M2). `/api/state` resta per i domini non ancora migrati. Migrazioni additive con backup automatico pre-migrazione.
 
-## D-004 — Migrazioni con runner interno, senza ORM · Proposta
+## D-004 — Migrazioni con runner interno, senza ORM · Accettata (implementata 2026-11-09)
 SQL/py versionati in `app/migrations/`, tabella `schema_migrations`, eseguiti all'avvio in transazione dopo backup. Alembic/SQLAlchemy scartati: troppa infrastruttura per ~10 tabelle. Pydantic (già incluso in FastAPI) per la validazione.
 
 ## D-005 — Registrazione allenamento per serie, idempotente · Proposta
@@ -20,7 +20,7 @@ Ogni serie confermata è inviata subito con UUID client (`PUT /api/v1/set-logs/{
 ## D-006 — Settimana del programma calcolata · Proposta
 `week = floor((oggi − start_date)/7) + 1`, limitata 1..8, con override manuale e gestione sedute riprogrammate. Il calcolo è funzione pura testata. Fuso orario: `Europe/Rome` (configurato in container e app).
 
-## D-007 — Nome volume Docker esplicito · Proposta (richiede autorizzazione)
+## D-007 — Nome volume Docker esplicito · Accettata (implementata 2026-11-09)
 Oggi `fitweek-app_fitweek_data` dipende dal nome della directory. Proposta: `volumes: fitweek_data: {name: fitweek_data}` con migrazione via backup coerente → nuovo volume → verifica → il vecchio volume resta finché l'utente non autorizza la rimozione. Momento ideale: ora (DB = solo seed).
 
 ## D-008 — PWA con offline limitato · Proposta (M6)
@@ -35,7 +35,7 @@ Nessuna API pubblica nota; niente scraping né acquisti automatizzati. Prezzi in
 ## D-011 — Valori nutrizionali solo con fonte · Accettata
 Ogni valore ha `source` (`label`, `manual`, `estimate`, `database:<nome>`). Le stime sono visualizzate come tali. Nessun target calorico prescrittivo.
 
-## D-012 — Repository git dedicato · Proposta (richiede autorizzazione)
+## D-012 — Repository git dedicato · Accettata (implementata 2026-11-09)
 Il repo attuale ha radice in `/opt` e include altri progetti. Proposta: `git init` in `/opt/fitweek-app`, `.gitignore` (`.env`, `__pycache__/`, backup, `*.sqlite*`), commit iniziale dello stato attuale prima di qualsiasi modifica al codice.
 
 ## D-013 — App mobile con Capacitor per promemoria affidabili · Proposta (in attesa di scelta piattaforma)
