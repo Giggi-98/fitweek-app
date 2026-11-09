@@ -109,3 +109,12 @@ reminder_acks(reminder_id, date, status CHECK IN ('done','dismissed','snoozed'),
 ```
 
 I valori nutrizionali del diario sono copiati dal pasto abituale al momento della registrazione: correggere un pasto abituale non riscrive lo storico.
+
+## Stato dopo 1.6 (schema 6, 2026-11-09)
+
+```sql
+ALTER TABLE meal_logs ADD COLUMN items TEXT;  -- JSON [{name, category, qty, kcal, protein_g, nutrition_source, food_id, takeaway}]
+foods(id PK, category, name, kcal, protein_g, nutrition_source, note, use_count, last_used, created_at, updated_at, deleted_at)
+      -- indice unico su lower(name) per i piatti attivi
+```
+kcal/protein_g delle voci sono per porzione; il pasto memorizza i totali calcolati (qty × porzione, escluse le voci `takeaway`).

@@ -71,26 +71,68 @@ function romeMinuteAgo() {
   const ag = (await api('/api/v1/agenda')).items.find((i) => i.id === 'e2e-sleep');
   check('posticipo di 15 minuti', ag.state === 'snoozed' && !ag.due);
 
-  // 4. Inserimento libero dalla dashboard con calorie dichiarate
+  // 4. "+ Pasto" dalla dashboard apre l'editor: piatto nuovo con calorie dichiarate
   await page.click('[data-quick-meal]');
-  await page.waitForSelector('#modal[open]');
-  await page.click('#modal .free summary');
-  await page.fill('#m-desc', 'Piadina');
-  await page.fill('#m-kcal', '520');
-  await page.click('#modal [data-m=free]');
+  await page.waitForSelector('#modal[open] .tray');
+  await page.click('#modal [data-slot=other]'); // non occupa la cena, che serve più avanti nel test
+  await page.fill('#c-new-name', 'Piadina');
+  await page.fill('#c-new-kcal', '520');
+  await page.click('#modal [data-new]');
+  await page.waitForSelector('#modal .tray-row');
+  await page.click('#modal [data-save]');
   await page.waitForSelector('#modal', { state: 'hidden' });
   await page.waitForTimeout(600);
   const today = (await api('/api/v1/today')).date;
   const logs = (await api(`/api/v1/meal-logs?from=${today}&to=${today}`)).items;
   const piadina = logs.find((m) => m.description === 'Piadina');
-  check('pasto libero con kcal inserite (fonte: inserito)', piadina && piadina.kcal === 520 && piadina.nutrition_source === 'manual');
+  check('piatto nuovo con kcal inserite (fonte: inserito)', piadina && piadina.kcal === 520 && piadina.nutrition_source === 'manual');
+  check('il catalogo impara il piatto nuovo', (await api('/api/v1/foods')).items.some((f) => f.name === 'Piadina' && f.kcal === 520));
 
   // 5. Diario
   await page.click('.bottom-nav [data-view=meals]');
   await page.waitForSelector('.day-foot');
   const diary = await page.textContent('#content');
-  check('diario: pasti di oggi con stima', /Banana/.test(diary) && /stima/.test(diary) && /Piadina/.test(diary) && /625/.test(diary), '');
+  check('diario: pasti di oggi con stima', /Banana/.test(diary) && /stima/.test(diary) && /Piadina/.test(diary) && /625/.test(diary), diary.replace(/\s+/g, ' ').slice(0, 160));
   await page.screenshot({ path: `${SHOTS}/m4-3-diary.png`, fullPage: true });
+
+  // 5b. Vassoio della mensa: primo + salsa + contorno, secondo "porto a casa" → la cena lo propone
+  await page.click('#content [data-add-log]');
+  await page.waitForSelector('#modal[open] .tray');
+  await page.click('#modal [data-slot=lunch]');
+  for (const [cat, id] of [['primo', 'f-pasta'], ['salsa', 'f-amatriciana'], ['contorno', 'f-verdure-vapore'], ['secondo', 'f-pollo']]) {
+    await page.click(`#modal [data-cat=${cat}]`);
+    await page.click(`#modal [data-food=${id}]`);
+  }
+  const total = await page.textContent('#modal .tray-total strong');
+  check('vassoio: totale live senza il secondo portato a casa', /515/.test(total), total);
+  check('secondo segnato "porto a casa" in automatico', await page.locator('#modal .tray-row.home').count() === 1);
+  await page.screenshot({ path: `${SHOTS}/m4b-vassoio.png` });
+  await page.click('#modal [data-save]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.waitForTimeout(600);
+  await addReminder('e2e-dinner', { kind: 'meal', slot: 'dinner', action: 'log_meal', title: 'Cena' });
+  await page.reload();
+  await page.waitForSelector('#modal[open] [data-m=home-pane]', { timeout: 8000 });
+  check('cena: propone il secondo dal lavoro', /Petto di pollo/.test(await page.textContent('#modal [data-m=home]')));
+  await page.click('#modal [data-m=home-pane]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.waitForTimeout(700);
+  const dinner = (await api(`/api/v1/meal-logs?from=${today}&to=${today}`)).items.find((m) => m.slot === 'dinner' && m.items.length === 2);
+  check('cena = secondo + 2 pagnottine (200 + 540 kcal)', dinner && dinner.kcal === 740, String(dinner?.kcal));
+
+  // 5c. Modifica successiva dal diario: 1 pagnottina invece di 2 → ricalcolo
+  await page.click('.bottom-nav [data-view=meals]');
+  await page.waitForSelector('[data-edit-log]');
+  await page.click(`[data-edit-log="${dinner.id}"]`);
+  await page.waitForSelector('#modal[open] .tray-row');
+  await page.locator('#modal .tray-row').nth(1).locator('[data-qty="-1"]').click();
+  await page.locator('#modal .tray-row').nth(1).locator('[data-qty="-1"]').click();
+  check('modifica: totale ricalcolato dal vivo', /470/.test(await page.textContent('#modal .tray-total strong')));
+  await page.click('#modal [data-save]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.waitForTimeout(700);
+  const edited = (await api(`/api/v1/meal-logs?from=${today}&to=${today}`)).items.find((m) => m.id === dinner.id);
+  check('modifica salvata e ricalcolata dal server', edited.kcal === 470 && edited.items[1].qty === 1);
 
   // 6. Pasti abituali: correggi Banana con valori da etichetta
   await page.click('[data-tab=templates]');
@@ -122,6 +164,17 @@ function romeMinuteAgo() {
   const r2 = (await api('/api/v1/reminders')).items.find((x) => x.title === 'Prepara la borsa');
   check('promemoria personalizzato creato', r2 && r2.time === '07:45' && r2.weekday === weekday);
   await page.screenshot({ path: `${SHOTS}/m4-4-settings.png`, fullPage: true });
+
+  // 7b. Pesata modificabile in un secondo momento
+  await page.click('.bottom-nav [data-view=progress]');
+  await page.waitForSelector('[data-edit-weight]');
+  await page.click('[data-edit-weight]');
+  await page.waitForSelector('#modal[open] #ew-kg');
+  await page.fill('#ew-kg', '89,1');
+  await page.click('#modal [data-m=save]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.waitForTimeout(500);
+  check('pesata modificata', (await api('/api/state')).data.weights.some((w) => w.weight === 89.1));
 
   // 8. Backup v3
   const backup = await api('/api/backup');

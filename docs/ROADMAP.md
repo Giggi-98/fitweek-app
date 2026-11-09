@@ -101,7 +101,12 @@ Criteri di accettazione:
 - [x] Posticipo e "non oggi" funzionanti (test + e2e).
 - [ ] Notifiche a schermo spento: non possibili in una webapp HTTP → M6 (Capacitor).
 
-## M4b — Stime nutrizionali personali (proposta)
+## M4b — Pasto composto, catalogo, modifiche successive ✅ (1.6.0, 2026-11-09)
+Richiesta utente: registrare primo, salsa, secondo e contorno della mensa e scegliere poi il momento (pranzo, cena, spuntino); poter modificare dopo qualsiasi valore con ricalcolo; abitudine di 2 pagnottine (~200 g) dopo la palestra.
+Fatto: editor del vassoio con categorie del menu della mensa, quantità a passi di ½, "porto a casa" (secondo per cena, escluso dal pranzo e proposto dal popup della cena insieme al pane), totale live, scelta pasto e giorno; catalogo piatti che impara; modifica di pasti, pesate e sedute passate. Layout web a tutta larghezza.
+Da fare: inserimento del menu del giorno (foto o testo) per precompilare il catalogo della giornata — solo con decisione esplicita, nessun servizio esterno.
+
+## M4c — Stime nutrizionali personali (proposta)
 Sostituire le stime generiche con quelle dei prodotti reali (etichette Esselunga, secondi del lavoro se hanno etichetta). Nessun database esterno senza decisione esplicita.
 
 ## M5 — Spesa, dispensa, budget

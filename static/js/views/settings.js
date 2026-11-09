@@ -153,7 +153,7 @@ export function render() {
       `<p class="subtle">Esci da questo dispositivo, oppure da tutti (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
     )}${panel(
       `${icon("info")}Privacy`,
-      `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker, nessun servizio esterno.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">FitWeek 1.5 · uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
+      `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker, nessun servizio esterno.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">FitWeek 1.6 · uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
     )}</div></div>`
   );
 }

@@ -105,6 +105,21 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   const s = list.items[0];
   check('seduta salvata: done, cardio, note, durata', s.status === 'done' && s.cardio_min === 10 && s.notes === 'Buona seduta' && s.duration_min !== null);
 
+  // Seduta passata modificabile: kg della prima serie e note → volume ricalcolato
+  await page.click('.bottom-nav [data-view=progress]');
+  await page.waitForSelector('[data-edit-session]');
+  await page.click('[data-edit-session]');
+  await page.waitForSelector('#modal[open] .es-row');
+  await page.locator('#modal .es-row').first().locator('[name=kg]').fill('50');
+  const vol = await page.textContent('#es-vol');
+  check('modifica seduta: volume ricalcolato dal vivo', /1\.300/.test(vol), vol);
+  await page.fill('#es-notes', 'Corretto dopo');
+  await page.click('#modal [data-m=save]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.waitForTimeout(600);
+  const fixed = (await page.evaluate(() => fetch('/api/v1/workout-sessions').then((r) => r.json()))).items[0];
+  check('seduta passata aggiornata', fixed.notes === 'Corretto dopo' && fixed.sets.some((x) => x.kg === 50));
+
   // Nuova seduta A: precompilazione dall'ultima volta
   await page.click('.bottom-nav [data-view=training]');
   await page.click('[data-pick-week="2"]');
@@ -112,7 +127,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await page.waitForSelector('#ex-a1 .set-row');
   const pre = await page.locator('#ex-a1 .set-row').nth(0).locator('[data-field=kg]').inputValue();
   const last = await page.textContent('#ex-a1 .ex-last');
-  check('nuova seduta precompilata dall\'ultima', pre === '40' && /40×10/.test(last), `${pre} | ${last}`);
+  check('nuova seduta precompilata dall\'ultima (anche dopo la modifica)', pre === '50' && /50×10/.test(last), `${pre} | ${last}`);
   page.once('dialog', (d) => d.accept());
   await page.click('[data-cancel-session]');
   await page.waitForSelector('[data-start]');

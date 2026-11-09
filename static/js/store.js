@@ -11,6 +11,7 @@ export const app = {
   agenda: [], // promemoria di oggi con stato (/api/v1/agenda)
   weekly: null, // /api/v1/weekly-summary
   templates: [], // pasti abituali
+  foods: [], // catalogo piatti (mensa e casa)
   view: "dashboard",
   render: () => {}, // impostata da main.js
   onUnauthorized: () => {}, // impostata da main.js
@@ -49,14 +50,16 @@ export async function loadAll() {
 
 /** Agenda di oggi, riepilogo settimanale e pasti abituali. */
 export async function refreshDaily() {
-  const [agenda, weekly, templates] = await Promise.all([
+  const [agenda, weekly, templates, foods] = await Promise.all([
     request("/api/v1/agenda"),
     request("/api/v1/weekly-summary"),
     request("/api/v1/meal-templates"),
+    request("/api/v1/foods"),
   ]);
   app.agenda = agenda.items;
   app.weekly = weekly;
   app.templates = templates.items;
+  app.foods = foods.items;
 }
 
 export async function refreshWorkouts() {

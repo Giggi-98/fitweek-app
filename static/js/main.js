@@ -128,12 +128,20 @@ document.addEventListener("click", async (e) => {
     await request("/api/logout", { method: "POST" }).catch(() => {});
     return location.reload();
   }
-  const target = e.target.closest("button, [data-action]");
+  const target = e.target.closest("button, [data-action], [role=button]");
   if (!target || !app.state || !current().onClick) return;
   try {
     if (await current().onClick(target)) render();
   } catch (err) {
     toast("Errore: " + err.message);
+  }
+});
+
+// Elementi cliccabili non-button (es. voci del diario): Invio/Spazio come un click.
+document.addEventListener("keydown", (e) => {
+  if ((e.key === "Enter" || e.key === " ") && e.target.matches?.("[role=button]:not(button)")) {
+    e.preventDefault();
+    e.target.click();
   }
 });
 

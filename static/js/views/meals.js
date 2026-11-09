@@ -2,7 +2,8 @@
 import { request } from "../api.js";
 import { DAYS, GYM, MEAL_DEFAULTS, SLOTS, SOURCE_LABEL } from "../constants.js";
 import { icon } from "../icons.js";
-import { guessSlot, openMealLog } from "../reminders.js";
+import { openComposer } from "../composer.js";
+import { guessSlot } from "../reminders.js";
 import { app, persistState, refreshDaily } from "../store.js";
 import { empty, panel, sectionTitle, toast } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
@@ -53,7 +54,7 @@ function diary() {
   const today = isoDate();
   return `<div class="week-nav"><button class="icon-btn" data-week-shift="-1" aria-label="Settimana precedente">${icon("chevron-left")}</button><strong>${esc(fmtDate(days[0]))} – ${esc(fmtDate(days[6]))}</strong><button class="icon-btn" data-week-shift="1" ${ui.weekOffset >= 0 ? "disabled" : ""} aria-label="Settimana successiva">${icon("chevron-right")}</button></div>
   <p class="subtle">Le calorie sono <strong>stime teoriche</strong> (pasti abituali o valori inseriti da te), non misure né obiettivi.</p>
-  ${days
+  <div class="day-grid">${days
     .filter((d) => d <= today)
     .reverse()
     .map((d) => {
@@ -63,11 +64,11 @@ function diary() {
       const missing = eaten.filter((m) => m.kcal == null).length;
       return panel(
         `${esc(fmtDate(d))}${d === today ? " · oggi" : ""}`,
-        `${logs.length ? logs.map((m) => `<div class="entry ${m.status}"><div class="entry-main"><span class="slot-ic">${icon(SLOT_ICON[m.slot] || "utensils")}</span><div><div class="entry-title">${m.status === "skipped" ? "Saltato" : esc(m.description || "—")}</div><div class="entry-sub">${esc(SLOTS[m.slot] || m.slot)}${m.status === "skipped" ? "" : ` · ${esc(kcalLabel(m))}`}</div></div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
+        `${logs.length ? logs.map((m) => `<div class="entry ${m.status} clickable" data-edit-log="${esc(m.id)}" role="button" tabindex="0" aria-label="Modifica pasto"><div class="entry-main"><span class="slot-ic">${icon(SLOT_ICON[m.slot] || "utensils")}</span><div><div class="entry-title">${m.status === "skipped" ? "Saltato" : esc(m.description || "—")}</div><div class="entry-sub">${esc(SLOTS[m.slot] || m.slot)}${m.status === "skipped" ? "" : ` · ${esc(kcalLabel(m))}`}</div></div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
         <div class="day-foot"><span>${eaten.length ? `Totale teorico <span class="kcal">~${fmtNum(kcal, 0)} kcal</span>${missing ? ` · ${missing} senza valori` : ""}` : ""}</span><button class="btn small" data-add-log="${esc(d)}">${icon("plus", "sm")}Pasto</button></div>`,
       );
     })
-    .join("")}`;
+    .join("")}</div>`;
 }
 
 function plan() {
@@ -131,8 +132,13 @@ export async function onClick(t) {
     return true;
   }
   if (t.dataset.addLog) {
-    openMealLog({ date: t.dataset.addLog, slot: t.dataset.addLog === isoDate() ? guessSlot() : "dinner" });
-    ui.loadedFor = null; // ricarica il diario alla chiusura
+    openComposer({ date: t.dataset.addLog, slot: t.dataset.addLog === isoDate() ? guessSlot() : "dinner" });
+    return false;
+  }
+  const entry = t.closest?.("[data-edit-log]");
+  if (entry && !t.closest("[data-del-log]")) {
+    const log = ui.logs?.find((m) => m.id === entry.dataset.editLog);
+    if (log) openComposer({ log });
     return false;
   }
   if (t.dataset.delLog) {

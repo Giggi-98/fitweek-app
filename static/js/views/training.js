@@ -100,6 +100,7 @@ function renderStart() {
   const isToday = routine === t.routine;
   return `
   ${legacyDraftBanner()}
+  <div class="train-start"><div class="train-col">
   <section class="hero">
     <span class="eyebrow">${isToday ? "Oggi" : "Seduta selezionata"} · settimana ${t.program_week} del programma</span>
     <h2>Giorno ${esc(routine)}<span class="muted"> · W${week}</span></h2>
@@ -121,6 +122,8 @@ function renderStart() {
       .map((w) => `<button class="chip ${w === week ? "active" : ""} ${w === t.program_week ? "current" : ""}" data-pick-week="${w}">W${w}</button>`)
       .join("")}</div>
   </div>
+  <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>
+  </div><div class="train-col">
   <section class="panel">
     <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a></div>
     <div class="ex-preview">
@@ -133,7 +136,7 @@ function renderStart() {
       <div class="entry"><div class="entry-main"><span class="ex-idx">${icon("timer", "sm")}</span><div><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(week)} BPM, non un obiettivo personalizzato</div></div></div></div>
     </div>
   </section>
-  <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>`;
+  </div></div>`;
 }
 
 function setRow(session, ex, idx, prev, ed, planned) {
@@ -165,6 +168,7 @@ function renderActive(session) {
       <div class="wk-meta"><span>${icon("clock")}<span id="wk-elapsed">${session.started_at ? elapsed(session.started_at) : "—"}</span></span><span>${icon("dumbbell")}${done}/${planned} serie</span>${nextEx ? `<span>${icon("arrow-right")}${esc(nextEx.name)}</span>` : `<span>${icon("trophy")}Serie completate</span>`}</div>
     </div>
   </section>
+  <div class="ex-grid">
   ${exs
     .map((ex, i) => {
       const p = plannedSets(ex, session.week);
@@ -199,6 +203,7 @@ function renderActive(session) {
     <div class="ex-head"><span class="ex-num">${icon("timer", "sm")}</span><div class="ex-main"><h3 class="ex-name">${esc(info?.cardio || "Cardio")}</h3><div class="ex-meta">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(session.week)} BPM</div><div class="ex-last">Le BPM della scheda non sono un obiettivo personalizzato.</div></div>
     <button type="button" class="set-check" data-cardio aria-pressed="${session.cardio_min ? "true" : "false"}" aria-label="Cardio fatto">${icon("check")}</button></div>
   </section>
+  </div>
   <section class="panel">
     <div class="field"><label for="wk-notes">Note della seduta</label><textarea id="wk-notes" data-session-notes rows="3" placeholder="Tecnica, fatica, fastidi…">${esc(session.notes || "")}</textarea></div>
     <button type="button" class="btn primary xl full" data-finish>${icon("trophy")}Termina allenamento</button>

@@ -2,7 +2,8 @@
 import { DAYS, DAYSHORT, GYM, ROUTINES } from "../constants.js";
 import { icon } from "../icons.js";
 import { ring } from "../motion.js";
-import { guessSlot, openMealLog, openReminder } from "../reminders.js";
+import { openComposer } from "../composer.js";
+import { guessSlot, openReminder } from "../reminders.js";
 import { app } from "../store.js";
 import { esc, fmtDate, fmtNum, isoDate, num } from "../util.js";
 import { todayStatus } from "./training.js";
@@ -136,15 +137,14 @@ function week() {
 
 export function render() {
   const pending = app.agenda.filter((i) => i.due && i.state === "pending").length;
-  return `
-  ${hero()}
-  ${quickStats()}
-  <div class="twocol wide-left">
-    <section class="panel">
-      <div class="panel-head"><h3>${icon("calendar")}Agenda di oggi${pending ? ` <span class="pill accent">${pending} da fare</span>` : ""}</h3><button class="btn small" data-quick-meal>${icon("plus", "sm")}Pasto</button></div>
-      ${agenda()}
-    </section>
-    ${week()}
+  return `<div class="dash">
+  <div class="dash-hero">${hero()}</div>
+  ${quickStats().replace('class="quick-stats"', 'class="quick-stats dash-stats"')}
+  <section class="panel dash-agenda">
+    <div class="panel-head"><h3>${icon("calendar")}Agenda di oggi${pending ? ` <span class="pill accent">${pending} da fare</span>` : ""}</h3><button class="btn small" data-quick-meal>${icon("plus", "sm")}Pasto</button></div>
+    ${agenda()}
+  </section>
+  ${week().replace('<section class="panel">', '<section class="panel dash-week">')}
   </div>`;
 }
 
@@ -158,7 +158,7 @@ export async function onClick(t) {
     return false;
   }
   if (t.matches("[data-quick-meal]")) {
-    openMealLog({ slot: guessSlot() });
+    openComposer({ slot: guessSlot() });
     return false;
   }
   return false;

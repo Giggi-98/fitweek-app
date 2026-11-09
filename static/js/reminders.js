@@ -10,6 +10,7 @@ import { $, esc, fmtNum, isoDate, num, uid } from "./util.js";
 import { icon } from "./icons.js";
 import { haptic } from "./motion.js";
 import { enqueue, flush } from "./workout/queue.js";
+import { openComposer } from "./composer.js";
 
 const SNOOZE_MIN = 15;
 const shownThisSession = new Set(); // non riproporre lo stesso popup finché l'app resta aperta
@@ -65,7 +66,18 @@ export function guessSlot(now = new Date()) {
 }
 
 // ---- pasto -------------------------------------------------------------------------------
-export function openMealLog({ slot = "other", date = todayIso(), reminderId = null, title = null } = {}) {
+export async function openMealLog({ slot = "other", date = todayIso(), reminderId = null, title = null } = {}) {
+  // Cena: proponi il secondo portato a casa dalla mensa (e il pane dopo la palestra).
+  let home = [];
+  if (slot === "dinner") {
+    try {
+      home = (await request(`/api/v1/takeaway?date=${date}`)).items.map((i) => ({ ...i, takeaway: false }));
+    } catch {
+      /* offline */
+    }
+  }
+  const pane = app.foods.find((f) => f.id === "f-pane");
+  const gymDay = Boolean(app.today?.routine);
   const dayName = DAYS[(new Date(date + "T12:00:00").getDay() + 6) % 7];
   const planned = app.state.meals[dayName]?.[PLAN_KEY[slot]] || "";
   const templates = app.templates
@@ -77,7 +89,10 @@ export function openMealLog({ slot = "other", date = todayIso(), reminderId = nu
     `<div class="modal-ic">${icon({ lunch: "soup", pre_workout: "zap", snack: "apple", dinner: "utensils" }[slot] || "cookie")}</div>
     <h2 id="modal-title">${esc(title || SLOTS[slot] || "Pasto")}</h2>
     <p class="subtle">Cosa hai mangiato? Un tocco per registrare.</p>
-    ${planned ? `<button type="button" class="btn primary xl full" data-m="planned">${icon("check")}Come previsto: ${esc(planned)}</button>` : ""}
+    ${home.length ? `<button type="button" class="btn primary xl full" data-m="home">${icon("package")}Dal lavoro: ${esc(home.map((i) => i.name).join(", "))}</button>
+      ${pane ? `<button type="button" class="btn ${gymDay ? "primary" : ""} full" data-m="home-pane">${icon("plus", "sm")}…con 2 pagnottine (~200 g)</button>` : ""}` : ""}
+    <button type="button" class="btn ${home.length ? "" : "primary"} full" data-m="compose">${icon("utensils")}${slot === "lunch" ? "Componi il vassoio della mensa" : "Componi il piatto"}</button>
+    ${planned ? `<button type="button" class="btn full" data-m="planned">${icon("check")}Come previsto: ${esc(planned)}</button>` : ""}
     <div class="pick-list">${templates.map(chip).join("") || '<p class="subtle">Nessun pasto abituale per questo momento: aggiungili da Pasti → Abituali.</p>'}</div>
     <details class="free"><summary>${icon("pencil", "sm")}Altro / scrivi tu</summary>
       <div class="field"><label for="m-desc">Descrizione</label><input id="m-desc" maxlength="300" placeholder="es. piadina prosciutto e formaggio"></div>
@@ -89,6 +104,20 @@ export function openMealLog({ slot = "other", date = todayIso(), reminderId = nu
     async (t) => {
       const common = await handleCommon(t, reminderId);
       if (common !== null) return common;
+      if (t.dataset.m === "compose") {
+        openComposer({ slot, date, reminderId });
+        return false; // la modale resta aperta: ora contiene l'editor
+      }
+      if (t.dataset.m === "home" || t.dataset.m === "home-pane") {
+        const items = t.dataset.m === "home-pane" && pane
+          ? [...home, { name: pane.name, category: "pane", qty: 2, kcal: pane.kcal, protein_g: pane.protein_g, nutrition_source: pane.nutrition_source, food_id: pane.id, takeaway: false }]
+          : home;
+        enqueue("PUT", `/api/v1/meal-logs/${uid()}`, { date, slot, status: "eaten", items, description: "", note: "" });
+        haptic(12);
+        toast("Cena registrata");
+        afterChange();
+        return true;
+      }
       const base = { date, slot, status: "eaten", description: "", note: "" };
       let body = null;
       if (t.dataset.tpl) {

@@ -102,7 +102,7 @@ input.time24 { font-variant-numeric: tabular-nums; letter-spacing: 0.04em; font-
 /* ================================================================== shell */
 .shell { min-height: 100vh; }
 .sidebar { display: none; }
-.app-main { padding: 0 var(--space-4) calc(var(--nav-h) + var(--space-8) + env(safe-area-inset-bottom)); max-width: 1200px; margin: 0 auto; }
+.app-main { padding: 0 var(--space-4) calc(var(--nav-h) + var(--space-8) + env(safe-area-inset-bottom)); margin: 0 auto; min-width: 0; }
 body.has-rest .app-main { padding-bottom: calc(var(--nav-h) + 130px + env(safe-area-inset-bottom)); }
 .topbar {
   position: sticky; top: 0; z-index: 4;
@@ -484,6 +484,52 @@ td small { display: block; color: var(--color-text-muted); font-size: var(--text
 .steps { margin: 0; padding-left: var(--space-5); display: grid; gap: var(--space-2); color: var(--color-text-muted); }
 .mono { font-family: ui-monospace, monospace; word-break: break-all; font-size: var(--text-xs); }
 
+/* ================================================================== vassoio (pasto composto) */
+#modal-body[data-static="1"] .pick { animation: none; }
+.composer-top { display: grid; gap: var(--space-2); }
+.composer-top select { min-height: 42px; }
+.tray { display: grid; gap: var(--space-1); padding: var(--space-3); border-radius: var(--radius-md); background: var(--color-surface-2); border: 1px solid var(--color-border); }
+.tray-empty { padding: var(--space-2); }
+.tray-row { display: grid; grid-template-columns: 1fr auto auto auto; gap: var(--space-2); align-items: center; padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); animation: rise var(--dur-3) var(--ease-out) both; }
+#modal-body[data-static="1"] .tray-row { animation: none; }
+.tray-row.home .tray-name strong { color: var(--color-text-muted); }
+.tray-name { min-width: 0; display: grid; }
+.tray-name strong { font-weight: 650; overflow: hidden; text-overflow: ellipsis; }
+.tray-name small { color: var(--color-text-muted); font-size: var(--text-xs); }
+.qty { display: inline-grid; grid-template-columns: 30px auto 30px; align-items: center; border-radius: var(--radius-pill); background: var(--color-surface); border: 1px solid var(--color-border); }
+.qty button { border: 0; background: none; min-height: 34px; display: grid; place-items: center; color: var(--color-text-muted); }
+.qty span { min-width: 34px; text-align: center; font-weight: 750; font-variant-numeric: tabular-nums; }
+.icon-btn.on { background: var(--color-accent-soft); color: var(--color-accent); }
+.tray-total { display: grid; grid-template-columns: 1fr auto; align-items: baseline; gap: 2px var(--space-3); padding-top: var(--space-2); }
+.tray-total span { color: var(--color-text-muted); font-weight: 650; }
+.tray-total strong { font-size: var(--text-xl); font-weight: 850; letter-spacing: var(--tracking-tight); font-variant-numeric: tabular-nums; }
+.tray-total small { grid-column: 1 / -1; color: var(--color-text-muted); font-size: var(--text-xs); }
+.cat-tabs { margin-top: var(--space-1); }
+.new-food { display: grid; grid-template-columns: 1fr 80px auto; gap: var(--space-2); }
+.new-food .btn { padding: 0 var(--space-3); min-height: var(--tap); }
+.mini-total { display: flex; justify-content: space-between; align-items: baseline; padding: 0 var(--space-2); color: var(--color-text-muted); font-size: var(--text-sm); }
+.mini-total strong { color: var(--color-text); font-size: var(--text-md); font-variant-numeric: tabular-nums; }
+.composer-actions { position: sticky; bottom: calc(-1 * var(--space-6)); display: grid; gap: var(--space-1); padding: var(--space-3) 0 0; background: linear-gradient(transparent, var(--color-surface) 30%); }
+
+/* ================================================================== voci modificabili */
+.clickable { cursor: pointer; border-radius: var(--radius-sm); transition: background var(--dur-2); }
+.clickable:hover { background: var(--color-surface-2); }
+.entry.clickable { padding-inline: var(--space-2); margin-inline: calc(-1 * var(--space-2)); }
+.row-actions { display: flex; gap: 2px; }
+.es-list { display: grid; gap: var(--space-1); }
+.es-row { display: grid; grid-template-columns: 1fr 64px auto 52px 40px; gap: var(--space-2); align-items: center; transition: opacity var(--dur-2); }
+.es-row input { min-height: 40px; padding: 0 var(--space-2); text-align: center; font-weight: 700; font-variant-numeric: tabular-nums; }
+.es-row.removed { opacity: 0.35; }
+.es-row.removed .es-name { text-decoration: line-through; }
+.es-name { font-size: var(--text-sm); font-weight: 600; min-width: 0; }
+.es-name small { color: var(--color-text-faint); }
+.es-x { color: var(--color-text-faint); font-size: var(--text-xs); }
+
+/* ================================================================== griglie di pagina */
+.dash, .train-start { display: grid; gap: var(--space-4); }
+.day-grid { display: grid; gap: var(--space-4); }
+.ex-grid { display: grid; gap: var(--space-4); align-items: start; }
+
 /* ================================================================== ingresso a cascata (solo al cambio pagina) */
 #content[data-anim="enter"] > * { animation: rise var(--dur-4) var(--ease-out) both; }
 #content[data-anim="enter"] > *:nth-child(2) { animation-delay: 50ms; }
@@ -492,6 +538,10 @@ td small { display: block; color: var(--color-text-muted); font-size: var(--text
 #content[data-anim="enter"] > *:nth-child(5) { animation-delay: 200ms; }
 #content[data-anim="enter"] > *:nth-child(n+6) { animation-delay: 250ms; }
 #content[data-anim="enter"] .twocol > *:nth-child(2) { animation: rise var(--dur-4) var(--ease-out) both; animation-delay: 160ms; }
+#content[data-anim="enter"] :is(.dash, .ex-grid, .day-grid, .train-start) > * { animation: rise var(--dur-4) var(--ease-out) both; }
+#content[data-anim="enter"] :is(.dash, .ex-grid, .day-grid, .train-start) > *:nth-child(2) { animation-delay: 60ms; }
+#content[data-anim="enter"] :is(.dash, .ex-grid, .day-grid, .train-start) > *:nth-child(3) { animation-delay: 120ms; }
+#content[data-anim="enter"] :is(.dash, .ex-grid, .day-grid, .train-start) > *:nth-child(n+4) { animation-delay: 180ms; }
 
 /* ================================================================== keyframes */
 @keyframes rise { from { opacity: 0; transform: translateY(14px) scale(0.985); } to { opacity: 1; transform: none; } }
@@ -566,9 +616,33 @@ td small { display: block; color: var(--color-text-muted); font-size: var(--text
   .grid3 { grid-template-columns: repeat(3, 1fr); }
   .wk-header { top: 76px; }
   .sticky-cta { bottom: var(--space-5); }
-  #content:has(.ex-card) { max-width: 760px; }
+  /* web: tutta la larghezza, densità maggiore */
+  main { gap: var(--space-4); }
+  .panel, .hero, .ex-card, .meal-card { padding: var(--space-4) var(--space-5); }
+  .today-hero { padding: var(--space-5); }
+  .metric { padding: var(--space-3) var(--space-4); }
+  .day-grid { grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); align-items: start; }
   .panel:hover, .metric:hover { border-color: var(--color-border-strong); }
   .hero h2 { font-size: 64px; }
+}
+
+@media (min-width: 1200px) {
+  .dash { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-areas: "hero hero stats" "agenda week week"; align-items: start; }
+  .dash-hero { grid-area: hero; align-self: stretch; display: grid; }
+  .dash-stats { grid-area: stats; grid-template-columns: 1fr; align-self: stretch; }
+  .dash-agenda { grid-area: agenda; }
+  .dash-week { grid-area: week; }
+  .dash .today-hero { align-content: center; }
+  .dash-week .metrics { grid-template-columns: repeat(4, 1fr); }
+  .train-start { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  .train-start > .train-col { display: grid; gap: var(--space-4); }
+  .train-start .sticky-cta { position: static; }
+  .ex-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .wk-header { top: 76px; }
+  .grid3 { grid-template-columns: repeat(4, 1fr); }
+}
+@media (min-width: 1700px) {
+  .ex-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 }
 
 /* ================================================================== app Android */
