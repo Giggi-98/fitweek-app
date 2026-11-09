@@ -1,0 +1,40 @@
+# API
+
+Base: stessa origine della SPA. Formato JSON. Errori: `{"detail": "messaggio"}`. OpenAPI/Swagger disabilitati in produzione (`docs_url=None`).
+
+## Endpoint attuali (verificati 2026-11-09)
+
+| Metodo | Path | Auth | Origin check | Descrizione |
+|---|---|---|---|---|
+| GET | `/api/health` | no | — | `{"ok": true}`; usato dall'healthcheck Docker |
+| POST | `/api/login` | no | sì | body `{password}` → 200 + cookie `fitweek_session`; 401 se errata |
+| POST | `/api/logout` | no | sì | cancella il cookie (il token resta valido, vedi audit) |
+| GET | `/api/state` | sì | — | `{version, data}` |
+| PUT | `/api/state` | sì | sì | body `{version, data}`; 409 se versione obsoleta; 400 se mancano chiavi; 413 se > 2 MB → `{ok, version}` |
+| GET | `/api/backup` | sì | — | `{format: "fitweek-backup-v1", version, data}` come allegato |
+| GET | `/api/original-pdf` | sì | — | PDF della scheda |
+| GET | `/`, `/static/*` | no | — | SPA |
+
+Comportamenti difettosi noti: corpo non JSON o JSON non-oggetto → **500** (deve essere 400); `data` non validato nei tipi.
+
+## Convenzioni per i nuovi endpoint
+
+- Prefisso versionato: `/api/v1/...`. `/api/state` resta come compatibilità finché esistono domini nel blob.
+- Risorse al plurale, verbi HTTP standard: `GET /api/v1/sessions?from=&to=`, `POST /api/v1/sessions`, `PATCH /api/v1/sessions/{id}`.
+- **Idempotenza**: le creazioni accettano `id` UUID dal client; ripetere la stessa richiesta non duplica (`PUT /api/v1/set-logs/{id}` = upsert).
+- Validazione Pydantic: 422 con dettaglio campo per campo; mai 500 per input dell'utente.
+- Concorrenza: per risorse modificabili `updated_at` o `ETag` + `If-Match` → 412 su conflitto, limitato alla singola risorsa.
+- Date ISO-8601; numeri in unità SI nel nome campo (`weight_kg`, `price_eur`).
+- Scritture: auth + controllo `Origin`; cookie SameSite=Lax.
+- Paginazione per liste lunghe: `?limit=&cursor=`.
+
+## Endpoint pianificati (sintesi)
+
+| Milestone | Endpoint |
+|---|---|
+| M1 | `GET /api/v1/meta` (versione app/schema), backup server-side `POST /api/v1/backups` |
+| M2 | `GET /api/v1/today` (giorno, sessione prevista, settimana programma), `programs`, `sessions`, `set-logs`, `exercises/{id}/history` |
+| M3 | `body-measurements`, `stats/weekly` |
+| M4 | `meal-plan`, `meal-templates`, `foods` |
+| M5 | `shopping-lists`, `shopping-items`, `inventory` |
+| M8 | `assistant/suggestions` (solo proposte; applicazione esplicita) |
