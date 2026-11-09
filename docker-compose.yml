@@ -1,17 +1,27 @@
 services:
   fitweek:
     build: .
+    image: fitweek:latest
     container_name: fitweek
     restart: unless-stopped
     env_file: .env
+    environment:
+      TZ: Europe/Rome
     ports:
+      # 8080 dell'host è occupata da un altro servizio: FitWeek usa solo 8088 sulla LAN.
       - "192.168.222.200:8088:8080"
     volumes:
       - fitweek_data:/data
     healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health')"]
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8080/api/health', timeout=4)"]
       interval: 30s
       timeout: 5s
+      start_period: 15s
       retries: 3
+
 volumes:
+  # Volume esterno con nome fisso: non dipende dal nome della cartella e
+  # non viene cancellato da `docker compose down -v`. Creazione: docker volume create fitweek_data
   fitweek_data:
+    external: true
+    name: fitweek_data

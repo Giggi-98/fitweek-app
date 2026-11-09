@@ -1,5 +1,7 @@
 from datetime import date
 
+# Serie per settimana verificate sul PDF originale: vedi docs/TRAINING_PROGRAM.md.
+
 def exercise(id,name,rep,progress,video=''):
     return dict(id=id,name=name,reps=rep,sets=progress,video=video)
 
@@ -18,14 +20,14 @@ exercise('b2','Croci ai cavi','8–10',[2,2,3,3,3,3,4,4],'https://youtube.com/sh
 exercise('b3','Shoulder press machine','10–12',[2,2,2,3,3,3,3,3],'https://youtube.com/shorts/6v4nrRVySj0'),
 exercise('b4','Leg extension','8–10',[3,3,3,3,4,4,4,4],'https://youtube.com/shorts/uM86QE59Tg'),
 exercise('b5','Mezzo affondo con manubri','8–10',[2,2,3,3,3,3,4,4],'https://youtube.com/shorts/XDfEXW1PMAM'),
-exercise('b6','Curl manubri su panca','8–10',[3,3,3,4,4,4,4,4],'https://youtube.com/shorts/AY6ag7V4SyY'),
+exercise('b6','Curl manubri su panca','8–10',[3,3,3,3,4,4,4,4],'https://youtube.com/shorts/AY6ag7V4SyY'),
 exercise('b7','Bayesian curl ai cavi bassi','8–10',[2,2,3,3,3,3,4,4],'https://youtube.com/shorts/_Z8Afknw_Fc')],
 'C': [
 exercise('c1','Spinte manubri','8–10',[3,3,3,4,4,4,4,4],'https://youtube.com/shorts/ctRERPaSzjM'),
 exercise('c2','Pulley sbarra lunga','8–10',[3,3,3,3,4,4,4,4],'https://youtube.com/shorts/PrmbBJGmxJw'),
 exercise('c3','Leg press 45 gradi','8–10',[4,4,4,4,4,5,5,5],'https://youtube.com/shorts/EotSw18oR9w'),
 exercise('c4','Curl corda bassa','8–10',[3,3,3,3,3,3,4,4],'https://youtube.com/shorts/I8wPlwuTWjQ'),
-exercise('c5','Calf su rialzo con manubri','10–12',[5,5,5,5,5,6,6,6],'https://youtube.com/shorts/1H7dFHT3kIU')]
+exercise('c5','Calf su rialzo con manubri','10–12',[5,5,5,5,5,5,6,6],'https://youtube.com/shorts/1H7dFHT3kIU')]
 }
 
 def initial_state():

@@ -1,65 +1,42 @@
-# FitWeek — webapp self-hosted
+# FitWeek
 
-Una webapp personale, responsive e pronta per Docker, per gestire scheda palestra A/B/C, progressioni delle 8 settimane, diario carichi, alimentazione, lista Esselunga, dispensa, peso e girovita.
+Webapp self-hosted personale per scheda palestra A/B/C (8 settimane), diario dei carichi, alimentazione, lista della spesa, dispensa, peso e girovita. Singolo utente, dati sul proprio server.
+
+Documentazione tecnica: [`CLAUDE.md`](CLAUDE.md) e [`docs/`](docs/) (architettura, roadmap, deploy, modello dati, scheda verificata).
+
+## Requisiti
+
+Docker con plugin `docker compose`.
 
 ## Installazione
 
-Prerequisito: Docker con plugin `docker compose`.
-
 ```bash
-unzip fitweek-app.zip
-cd fitweek-app
-cp .env.example .env
-```
-
-**Prima di avviare**, modifica `.env` e sostituisci `APP_PASSWORD` (almeno 10 caratteri) e `SESSION_SECRET` (almeno 32 caratteri casuali, ad esempio con `openssl rand -hex 32`).
-
-```bash
+cp .env.example .env          # imposta APP_PASSWORD (≥ 10 caratteri) e SESSION_SECRET (≥ 32, es. openssl rand -hex 32)
+docker volume create fitweek_data
 docker compose up -d --build
 ```
 
-Apri `http://localhost:8088` se stai eseguendo Docker sul tuo PC. Se Docker gira su un server remoto, la porta è deliberatamente legata a `127.0.0.1`: puoi accedere con un tunnel SSH:
-
-```bash
-ssh -L 8088:127.0.0.1:8088 utente@IP_DEL_SERVER
-```
-
-Poi apri `http://localhost:8088` sul PC.
-
-Per accedere da telefono senza tunnel, configura un reverse proxy **HTTPS** (Caddy, Nginx Proxy Manager o simili) con restrizioni di accesso appropriate, imposta `COOKIE_SECURE=true` e pubblica la webapp solo dopo aver verificato proxy, DNS e autenticazione. Non esporre direttamente HTTP su Internet. In alternativa usa una VPN come WireGuard o Tailscale.
-
-## Contenuti già presenti
-
-- Scheda A/B/C trascritta dal PDF fornito, con serie previste per W1–W8 e link video dove presenti.
-- PDF originale protetto da login, sotto `resources/scheda-originale.pdf`.
-- Menu iniziale lunedì–domenica editabile.
-- Lista iniziale Esselunga con prezzi **puramente stimati**, da sostituire ai prezzi reali.
-- Profilo iniziale: 28 anni, 166 cm, 90 kg, budget 50 €.
-
-## Utilizzo
-
-1. In **Impostazioni** verifica il profilo e la settimana attuale.
-2. In **Allenamenti**, seleziona Giorno A/B/C e W1–W8, inserisci kg e ripetizioni per ogni serie, quindi salva.
-3. In **Alimentazione**, modifica direttamente ogni pranzo, spuntino e cena.
-4. In **Spesa & dispensa**, cambia prodotti e stime, segna quelli acquistati e aggiungi gli alimenti rimasti.
-5. In **Progressi**, registra peso/girovita e consulta il diario.
-6. In **Impostazioni**, esporta il backup JSON con regolarità.
+L'app è pubblicata su `http://192.168.222.200:8088` (solo LAN; la porta 8080 dell'host è usata da altri servizi). Per l'accesso da fuori casa usa una VPN (WireGuard/Tailscale) o un reverse proxy **HTTPS** con `COOKIE_SECURE=true`. Non esporre HTTP su Internet.
 
 ## Dati e backup
 
-Il database SQLite è nel volume Docker `fitweek_data`. La funzione **Scarica backup** esporta il contenuto in JSON; **Ripristina** sostituisce lo stato corrente. Conserva il backup in luogo sicuro.
+- DB SQLite nel volume Docker esterno `fitweek_data` (non viene cancellato da `docker compose down -v`).
+- Backup coerente: `scripts/backup.sh [etichetta]` → `/opt/backups/fitweek/` (verificato con `integrity_check`, rotazione automatica). Un timer giornaliero lo esegue automaticamente (vedi `docs/DEPLOYMENT.md`).
+- Ripristino: `scripts/restore.sh <file.sqlite>` (salva prima lo stato corrente).
+- All'avvio, se ci sono migrazioni da applicare, viene creato un backup `pre-migration-*` in `/data/backups`.
+- Dall'app: Impostazioni → Scarica backup (JSON) / Ripristina.
 
-Il progetto è pensato per **un singolo utente**, con password condivisa dell'istanza. Non implementa account multipli, login social, recupero password o permessi differenziati.
+## Sviluppo
 
-## Limitazioni MVP
+```bash
+scripts/check.sh    # sintassi + test automatici in container usa-e-getta
+```
 
-- Il PDF originale è già stato **trascritto nella scheda**; non è presente un parser generico che importi qualsiasi PDF automaticamente.
-- I prezzi Esselunga sono stime modificabili; nessun checkout o accesso al catalogo del supermercato.
-- Non calcola calorie o macro di piatti del lavoro privi di valori nutrizionali.
-- Nessuna sincronizzazione con wearable o promemoria automatici.
-- Salva con un controllo di versione. Se si modifica lo stesso dato su più dispositivi contemporaneamente, può essere necessario ricaricare.
-- La data di inizio, le quantità e le frequenze cardiache sono riferimenti da personalizzare; non prescrizioni mediche.
+Stack: Python 3.12, FastAPI, SQLite, frontend JavaScript senza build e senza CDN.
 
-## Stack
+## Limitazioni note
 
-Python 3.12, FastAPI, SQLite e frontend JavaScript senza CDN, database su volume Docker persistente. Nessuna dipendenza da un servizio cloud.
+- I prezzi della spesa sono stime manuali: nessuna integrazione Esselunga.
+- Nessun calcolo nutrizionale; le indicazioni sono orientative, non prescrizioni mediche.
+- Le frequenze cardiache della scheda sono riferimenti del PDF, non obiettivi personalizzati.
+- Roadmap completa in `docs/ROADMAP.md`.

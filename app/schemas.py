@@ -1,0 +1,112 @@
+"""Validazione dello stato applicativo (formato blob v1).
+
+I modelli rifiutano campi sconosciuti: se il frontend aggiunge un campo, va aggiunto qui
+(e in docs/DATA_MODEL.md). I limiti sono larghi per non rifiutare dati legittimi, ma
+impediscono tipi errati (es. HTML al posto di un numero) e payload anomali.
+"""
+from typing import Annotated, Any, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+
+Id = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
+Key = Annotated[str, StringConstraints(min_length=1, max_length=20)]
+IsoDate = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
+OptIsoDate = Annotated[str, StringConstraints(pattern=r"^(\d{4}-\d{2}-\d{2})?$")]
+HttpsUrl = Annotated[str, StringConstraints(pattern=r"^(https://[^\s\"'<>]{1,300})?$")]
+
+
+def Text(max_length: int) -> Any:  # noqa: N802 - alias di tipo
+    return Annotated[str, StringConstraints(max_length=max_length)]
+
+
+class Strict(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class Profile(Strict):
+    name: Text(100) = ""
+    age: float = Field(ge=0, le=120)
+    height: float = Field(ge=0, le=260)
+    startingWeight: float = Field(ge=0, le=500)
+    budget: float = Field(ge=0, le=100_000)
+    week: int = Field(ge=1, le=52)
+    startDate: IsoDate
+    gymDays: list[Text(20)] = Field(default_factory=list, max_length=7)
+    notes: Text(5000) = ""
+
+
+class Exercise(Strict):
+    id: Id
+    name: Text(120)
+    reps: Text(20)
+    sets: list[Annotated[int, Field(ge=0, le=20)]] = Field(min_length=1, max_length=52)
+    video: HttpsUrl = ""
+
+
+class WorkoutSet(Strict):
+    exerciseId: Id
+    set: int = Field(ge=1, le=50)
+    kg: float = Field(ge=0, le=1000)
+    reps: int = Field(ge=0, le=500)
+
+
+class Workout(Strict):
+    id: Id
+    routine: Key
+    week: int = Field(ge=1, le=52)
+    date: IsoDate
+    duration: Optional[float] = Field(default=None, ge=0, le=1440)
+    sets: list[WorkoutSet] = Field(max_length=500)
+    notes: Text(5000) = ""
+
+
+class WeightReading(Strict):
+    id: Id
+    date: IsoDate
+    weight: float = Field(gt=0, le=500)
+    waist: Optional[float] = Field(default=None, ge=0, le=300)
+    note: Text(500) = ""
+
+
+class MealDay(Strict):
+    lunch: Text(1000) = ""
+    pre: Text(1000) = ""
+    dinner: Text(1000) = ""
+
+
+class GroceryItem(Strict):
+    id: Id
+    name: Text(120)
+    qty: Text(60)
+    price: float = Field(ge=0, le=10_000)
+    checked: bool = False
+    category: Text(40) = "Altro"
+
+
+class InventoryItem(Strict):
+    id: Id
+    name: Text(120)
+    qty: Text(60)
+    expiry: OptIsoDate = ""
+
+
+class AppState(Strict):
+    profile: Profile
+    routines: dict[Key, list[Exercise]] = Field(max_length=20)
+    workouts: list[Workout] = Field(max_length=10_000)
+    weights: list[WeightReading] = Field(max_length=20_000)
+    meals: dict[Key, MealDay] = Field(max_length=7)
+    groceries: list[GroceryItem] = Field(max_length=500)
+    inventory: list[InventoryItem] = Field(max_length=1000)
+    habits: dict[str, Any] = Field(default_factory=dict)
+    notes: list[Any] = Field(default_factory=list)
+    appVersion: int = 1
+
+
+class StatePut(Strict):
+    version: int = Field(ge=1)
+    data: AppState
+
+
+class LoginBody(Strict):
+    password: Text(256)

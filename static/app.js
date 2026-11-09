@@ -21,14 +21,47 @@ const num = (v, defaultNum = 0) => {
 };
 const uid = () =>
   globalThis.crypto?.randomUUID?.() || "id" + Date.now() + Math.random().toString(36).slice(2);
+// Solo link https (i video arrivano dai dati: niente javascript: o altri schemi).
+const safeUrl = (u) => (/^https:\/\/[^\s"'<>]+$/.test(String(u || "")) ? String(u) : "");
 let state = null,
   version = 0,
   view = "dashboard",
   selectedRoutine = "A",
-  draft = {},
-  saving = Promise.resolve(),
-  dirty = false;
+  saveQueue = Promise.resolve();
 let selectedWeek = 1;
+
+// ---- Bozze allenamento ------------------------------------------------------------------
+// Salvate nel browser a ogni modifica, separate per giorno+settimana, cancellate solo dopo
+// un salvataggio riuscito sul server: ricariche, blocchi del telefono o 409 non perdono dati.
+const DRAFT_KEY = "fitweek.workoutDrafts.v1";
+const loadDrafts = () => {
+  try {
+    return JSON.parse(localStorage.getItem(DRAFT_KEY)) || {};
+  } catch {
+    return {};
+  }
+};
+let drafts = loadDrafts();
+const saveDrafts = () => {
+  try {
+    localStorage.setItem(DRAFT_KEY, JSON.stringify(drafts));
+  } catch {
+    toast("Impossibile salvare la bozza sul dispositivo");
+  }
+};
+const clampWeek = (w) => Math.min(8, Math.max(1, num(w, 1)));
+const draftId = () => `${selectedRoutine}-W${clampWeek(selectedWeek)}`;
+const currentDraft = () => drafts[draftId()] || {};
+const hasDraftValues = (d) => Object.keys(d).some((k) => k !== "_updated" && d[k] !== "");
+function setDraftValue(name, value) {
+  const id = draftId();
+  drafts[id] = { ...(drafts[id] || {}), [name]: value, _updated: Date.now() };
+  saveDrafts();
+}
+function clearDraft(id) {
+  delete drafts[id];
+  saveDrafts();
+}
 const titles = {
   dashboard: "Panoramica",
   training: "Allenamenti",
@@ -54,59 +87,79 @@ async function request(path, opts = {}) {
     const body = await res.json().catch(() => ({}));
     const e = new Error(body.detail || `HTTP ${res.status}`);
     e.status = res.status;
+    e.field = body.errors?.[0]?.field;
     throw e;
   }
   return res.json();
+}
+function showLogin() {
+  $("#login").classList.remove("hidden");
+  $("#shell").classList.add("hidden");
 }
 async function load() {
   try {
     const out = await request("/api/state");
     state = out.data;
     version = out.version;
-    selectedWeek = Number(state.profile.week) || 1;
+    selectedWeek = clampWeek(state.profile.week);
     $("#shell").classList.remove("hidden");
     $("#login").classList.add("hidden");
     render();
   } catch (e) {
-    if (e.status === 401) {
-      $("#login").classList.remove("hidden");
-      $("#shell").classList.add("hidden");
-    } else toast("Errore: " + e.message);
+    if (e.status === 401) showLogin();
+    else toast("Errore: " + e.message);
   }
+}
+async function reloadState() {
+  const out = await request("/api/state");
+  state = out.data;
+  version = out.version;
+  render();
 }
 function sync(status) {
   $("#sync").textContent =
-    status === "saving" ? "◌ Salvataggio…" : status === "error" ? "● Errore salvataggio" : "● Sincronizzato";
+    status === "saving" ? "◌ Salvataggio…" : status === "error" ? "● Non salvato" : "● Sincronizzato";
   $("#sync").style.color = status === "error" ? "#ff9e97" : "#9fc7a0";
 }
+async function handleSaveError(e) {
+  sync("error");
+  if (e.status === 401) {
+    toast("Sessione scaduta: accedi di nuovo. Le bozze di allenamento sono conservate.");
+    showLogin();
+    return;
+  }
+  if (e.status === 409 || e.status === 422) {
+    toast(
+      e.status === 409
+        ? "Dati cambiati su un altro dispositivo: ho ricaricato la versione aggiornata. Ripeti l'ultima modifica (le bozze di allenamento sono conservate)."
+        : "Modifica rifiutata, dati non validi" + (e.field ? ` (${e.field})` : "") + ". Ho ricaricato i dati salvati.",
+    );
+    try {
+      await reloadState();
+      sync("ok");
+    } catch {
+      /* resta in stato di errore: il prossimo salvataggio riproverà */
+    }
+    return;
+  }
+  toast("Salvataggio non riuscito (" + e.message + "). Riproverò alla prossima modifica.");
+}
+// Accoda i salvataggi; restituisce true/false così chi chiama sa se i dati sono sul server.
 function persist() {
-  if (!state) return;
-  dirty = true;
+  if (!state) return Promise.resolve(false);
   sync("saving");
-  const snapshot = JSON.parse(JSON.stringify(state));
-  saving = saving
-    .then(async () => {
-      let payload = snapshot;
-      if (dirty) {
-        payload = JSON.parse(JSON.stringify(state));
-        dirty = false;
-      }
-      const out = await request("/api/state", {
-        method: "PUT",
-        body: JSON.stringify({ version, data: payload }),
-      });
+  saveQueue = saveQueue.then(async () => {
+    try {
+      const out = await request("/api/state", { method: "PUT", body: JSON.stringify({ version, data: state }) });
       version = out.version;
       sync("ok");
-    })
-    .catch((e) => {
-      sync("error");
-      toast(
-        e.status === 409
-          ? "Modifica contemporanea: aggiorna la pagina per evitare conflitti."
-          : "Salvataggio non riuscito: " + e.message,
-      );
-    });
-  return saving;
+      return true;
+    } catch (e) {
+      await handleSaveError(e);
+      return false;
+    }
+  });
+  return saveQueue;
 }
 function changeView(next) {
   view = next;
@@ -143,7 +196,7 @@ function recentWorkouts() {
     ? arr
         .map(
           (x) =>
-            `<div class="entry"><div><div class="entry-title">Giorno ${esc(x.routine)} · Settimana ${x.week}</div><div class="entry-sub">${esc(x.date)} · ${x.sets.length} serie registrate${x.duration ? " · " + x.duration + " min" : ""}</div></div><span class="pill neutral">Completato ✓</span></div>`,
+            `<div class="entry"><div><div class="entry-title">Giorno ${esc(x.routine)} · Settimana ${esc(x.week)}</div><div class="entry-sub">${esc(x.date)} · ${x.sets.length} serie registrate${x.duration ? " · " + esc(x.duration) + " min" : ""}</div></div><span class="pill neutral">Completato ✓</span></div>`,
         )
         .join("")
     : `<div class="data-empty"><strong>Nessuna sessione registrata</strong>Inizia dal Giorno A e salva i carichi eseguiti.</div>`;
@@ -157,7 +210,7 @@ function dashboard() {
     sectionTitle(
       "La tua settimana, in ordine.",
       "Allenati, mangia bene, risparmia tempo.",
-      `<span class="pill">✦ Settimana ${state.profile.week} di 8</span>`,
+      `<span class="pill">✦ Settimana ${esc(state.profile.week)} di 8</span>`,
     ) +
     metricList() +
     `<div class="stack"><div class="twocol">${panel("Calendario settimanale", `<div class="daygrid">${DAYS.map((d, i) => `<div class="daybox ${GYM[d] ? "gym" : ""}"><div class="day-icon">${GYM[d] ? "◆" : "·"}</div><strong>${DAYSHORT[i]}</strong><span>${GYM[d] ? "Giorno " + GYM[d] : "Riposo"}</span></div>`).join("")}</div><p class="subtle" style="margin:18px 0 0">Palestra lunedì, mercoledì e venerdì · 19:30–22:00. Settimana modificabile dalla sezione Allenamenti.</p>`, `<button class="btn small" data-go="training">Apri scheda →</button>`)}${panel("Il piano di oggi · " + day, `<div class="summary-list"><div class="summary-row"><i>13</i><div><strong>Pranzo</strong><small>${esc(meal.lunch || "Da pianificare")}</small></div></div><div class="summary-row"><i>18</i><div><strong>Spuntino</strong><small>${esc(meal.pre || "Da pianificare")}</small></div></div><div class="summary-row"><i>22</i><div><strong>Cena</strong><small>${esc(meal.dinner || "Da pianificare")}</small></div></div></div>${assigned ? `<div class="inline-note" style="margin-top:16px">Oggi: allenamento <strong>${assigned}</strong>. Preparati lo spuntino e tieni pronta la cena.</div>` : ""}`, `<button class="btn small" data-go="meals">Modifica pasti →</button>`)}</div><div class="twocol">${panel("Ultimi allenamenti", recentWorkouts(), `<button class="btn small" data-go="training">Registra →</button>`)}${panel("Le tue priorità", `<div class="summary-list"><div class="summary-row"><i>✓</i><div><strong>3 allenamenti</strong><small>Segui A, B e C senza aumentare arbitrariamente il volume.</small></div></div><div class="summary-row"><i>✓</i><div><strong>Spesa sotto controllo</strong><small>Prezzi iniziali stimati. Verifica il carrello Esselunga.</small></div></div><div class="summary-row"><i>✓</i><div><strong>Weekend organizzato</strong><small>Prepara soprattutto le cene; evita di saltare sistematicamente i pasti.</small></div></div></div>`)}</div></div>`
@@ -165,7 +218,12 @@ function dashboard() {
 }
 function training() {
   const r = state.routines[selectedRoutine] || [];
-  const week = Math.min(8, Math.max(1, selectedWeek));
+  const week = clampWeek(selectedWeek);
+  const d = currentDraft();
+  const dv = (name) => esc(d[name] ?? "");
+  const draftNote = hasDraftValues(d)
+    ? `<div class="inline-note" style="margin-bottom:16px">Bozza salvata su questo dispositivo${d._updated ? " alle " + new Date(d._updated).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" }) : ""}. <button type="button" class="quiet" data-discard-draft="${esc(draftId())}">Scarta bozza</button></div>`
+    : "";
   const previous = [...state.workouts]
     .filter((x) => x.routine === selectedRoutine)
     .sort((a, b) => b.date.localeCompare(a.date))[0];
@@ -186,15 +244,17 @@ function training() {
       )
       .join("")}</div><div class="twocol"><div>${panel(
       `Giorno ${selectedRoutine} · Settimana ${week}`,
-      `<form id="workout-form"><div class="form-grid" style="margin-bottom:18px"><div class="field"><label>Data sessione</label><input name="date" type="date" required value="${esc(today())}"></div><div class="field"><label>Durata effettiva (min)</label><input name="duration" type="number" min="1" max="360" placeholder="es. 85"></div></div>${r
+      `<form id="workout-form">${draftNote}<div class="form-grid" style="margin-bottom:18px"><div class="field"><label>Data sessione</label><input name="date" type="date" required value="${esc(d.date || today())}"></div><div class="field"><label>Durata effettiva (min)</label><input name="duration" type="number" min="1" max="360" placeholder="es. 85" value="${dv("duration")}"></div></div>${r
         .map((ex) => {
-          const count = ex.sets[week - 1];
+          const count = num(ex.sets[week - 1]);
           const prevSets = previous?.sets.filter((x) => x.exerciseId === ex.id) || [];
-          return `<div class="exercise"><div class="exercise-head"><div><div class="exercise-name">${esc(ex.name)}</div><div class="exercise-details">${count} serie × ${esc(ex.reps)} rip. ${previous ? "· Ultima: " + (prevSets.length ? prevSets.map((s) => s.kg + " kg").join(", ") : "n.d.") : ""}</div></div>${ex.video ? `<a href="${esc(ex.video)}" target="_blank" rel="noopener" class="btn small">Video ↗</a>` : ""}</div><div class="set-head"><div>SERIE</div><div>PESO (KG)</div><div>RIPETIZIONI</div></div><div class="sets-grid">${Array.from({ length: count }, (_, j) => `<div class="set-row"><span>#${j + 1}</span><input aria-label="Peso serie ${j + 1} ${esc(ex.name)}" type="number" inputmode="decimal" min="0" max="1000" step="0.5" name="kg_${ex.id}_${j}" placeholder="kg" value="${draft["kg_" + ex.id + "_" + j] ?? ""}"><input aria-label="Ripetizioni serie ${j + 1} ${esc(ex.name)}" type="number" inputmode="numeric" min="0" max="100" name="reps_${ex.id}_${j}" placeholder="rip." value="${draft["reps_" + ex.id + "_" + j] ?? ""}"></div>`).join("")}</div></div>`;
+          const video = safeUrl(ex.video);
+          const id = esc(ex.id);
+          return `<div class="exercise"><div class="exercise-head"><div><div class="exercise-name">${esc(ex.name)}</div><div class="exercise-details">${count} serie × ${esc(ex.reps)} rip. ${previous ? "· Ultima: " + (prevSets.length ? prevSets.map((s) => esc(s.kg) + " kg").join(", ") : "n.d.") : ""}</div></div>${video ? `<a href="${esc(video)}" target="_blank" rel="noopener noreferrer" class="btn small">Video ↗</a>` : ""}</div><div class="set-head"><div>SERIE</div><div>PESO (KG)</div><div>RIPETIZIONI</div></div><div class="sets-grid">${Array.from({ length: count }, (_, j) => `<div class="set-row"><span>#${j + 1}</span><input aria-label="Peso serie ${j + 1} ${esc(ex.name)}" type="number" inputmode="decimal" min="0" max="1000" step="0.5" name="kg_${id}_${j}" placeholder="kg" value="${dv(`kg_${ex.id}_${j}`)}"><input aria-label="Ripetizioni serie ${j + 1} ${esc(ex.name)}" type="number" inputmode="numeric" min="0" max="100" name="reps_${id}_${j}" placeholder="rip." value="${dv(`reps_${ex.id}_${j}`)}"></div>`).join("")}</div></div>`;
         })
         .join(
           "",
-        )}<div class="inline-note">Cardio finale: <strong>${CARDIO[selectedRoutine]}</strong>, 10 minuti. Il PDF indica ${week <= 4 ? "130–150" : "150–170"} BPM. Non cercare di raggiungere automaticamente questi valori: verifica l'intensità appropriata con il tuo allenatore.</div><div class="field" style="margin:16px 0"><label>Note / sensazioni / difficoltà</label><textarea name="notes" placeholder="Tecnica, recuperi, fatica, eventuali fastidi…"></textarea></div><button class="btn primary full" type="submit">✓ Salva questa sessione</button></form>`,
+        )}<div class="inline-note">Cardio finale: <strong>${esc(CARDIO[selectedRoutine] || "—")}</strong>, 10 minuti. Il PDF indica ${week <= 4 ? "130–150" : "150–170"} BPM. Non cercare di raggiungere automaticamente questi valori: verifica l'intensità appropriata con il tuo allenatore.</div><div class="field" style="margin:16px 0"><label>Note / sensazioni / difficoltà</label><textarea name="notes" placeholder="Tecnica, recuperi, fatica, eventuali fastidi…">${dv("notes")}</textarea></div><button class="btn primary full" type="submit">✓ Salva questa sessione</button></form>`,
     )}<div class="stack">${panel("Come funziona la progressione", `<div class="legend">Le serie seguono esattamente la tabella del PDF. Scegli la settimana in alto, poi inserisci peso e ripetizioni realmente completate. Le ripetizioni indicate sono intervalli obiettivo, non risultati automatici.</div><div class="spacer12"></div><p class="subtle">Settimana selezionata: <strong>${week}/8</strong>. Il carico non aumenta in automatico: registralo in base al lavoro effettivamente svolto e alle indicazioni dell'allenatore.</p><button class="btn small" data-set-profile-week="${week}">Imposta W${week} come settimana attuale</button>`)}${panel("Storico recente", recentWorkouts() + `<div class="spacer12"></div><button class="btn small" data-go="progress">Visualizza progressi →</button>`)}</div></div>`
   );
 }
@@ -241,7 +301,7 @@ function shopping() {
         .map(
           (cat) =>
             `<div class="tiny-label" style="margin:20px 0 8px">${esc(cat)}</div>${state.groceries
-              .filter((g) => g.category === cat)
+              .filter((g) => (g.category || "Altro") === cat)
               .map(
                 (g) =>
                   `<div class="shopitem ${g.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(g.id)}" ${g.checked ? "checked" : ""} aria-label="Comprato ${esc(g.name)}"><div><div class="shopname">${esc(g.name)}</div><div class="shopqty">${esc(g.qty)}</div></div><div class="shopprice">${money(g.price)}</div><button class="quiet" style="padding:5px" data-remove-shop="${esc(g.id)}" title="Rimuovi articolo">×</button></div>`,
@@ -296,7 +356,7 @@ function progress() {
               .slice(0, 15)
               .map(
                 (a) =>
-                  `<tr><td>${esc(a.date)}</td><td>${a.weight} kg</td><td>${a.waist ? a.waist + " cm" : "—"}</td><td><button class="quiet" data-del-weight="${esc(a.id)}">×</button></td></tr>`,
+                  `<tr><td>${esc(a.date)}</td><td>${esc(a.weight)} kg</td><td>${a.waist ? esc(a.waist) + " cm" : "—"}</td><td><button class="quiet" data-del-weight="${esc(a.id)}">×</button></td></tr>`,
               )
               .join("")}</tbody></table></div>`
           : ""
@@ -307,10 +367,10 @@ function progress() {
         ? sessions
             .map(
               (s) =>
-                `<div class="entry"><div><div class="entry-title">${esc(s.date)} · Giorno ${esc(s.routine)}</div><div class="entry-sub">W${s.week} · ${s.sets.length} serie · ${s.duration ? s.duration + " min · " : ""}${esc(s.notes || "Nessuna nota")}</div><details style="margin-top:7px"><summary class="micro" style="cursor:pointer">Dettaglio carichi</summary><div class="subtle" style="margin-top:9px">${s.sets
+                `<div class="entry"><div><div class="entry-title">${esc(s.date)} · Giorno ${esc(s.routine)}</div><div class="entry-sub">W${esc(s.week)} · ${s.sets.length} serie · ${s.duration ? esc(s.duration) + " min · " : ""}${esc(s.notes || "Nessuna nota")}</div><details style="margin-top:7px"><summary class="micro" style="cursor:pointer">Dettaglio carichi</summary><div class="subtle" style="margin-top:9px">${s.sets
                   .map((x) => {
-                    const e = state.routines[s.routine].find((e) => e.id === x.exerciseId);
-                    return `${esc(e?.name || x.exerciseId)}: ${x.kg}kg × ${x.reps}`;
+                    const e = (state.routines[s.routine] || []).find((e) => e.id === x.exerciseId);
+                    return `${esc(e?.name || x.exerciseId)}: ${esc(x.kg)}kg × ${esc(x.reps)}`;
                   })
                   .join(
                     "<br>",
@@ -328,7 +388,7 @@ function settings() {
       "Le impostazioni del tuo sistema.",
       "Profilo, preferenze, sicurezza e portabilità dei dati.",
     ) +
-    `<div class="twocol"><div class="stack">${panel("Il tuo profilo", `<form id="profile-form" class="stack"><div class="form-grid"><div class="field"><label>Nome (facoltativo)</label><input name="name" value="${esc(p.name)}" placeholder="Il tuo nome"></div><div class="field"><label>Età</label><input name="age" type="number" min="16" max="120" value="${p.age}"></div><div class="field"><label>Altezza (cm)</label><input name="height" type="number" min="100" max="250" value="${p.height}"></div><div class="field"><label>Peso iniziale (kg)</label><input name="startingWeight" type="number" min="20" max="500" step="0.1" value="${p.startingWeight}"></div><div class="field"><label>Budget settimanale (€)</label><input name="budget" type="number" min="0" max="1000" step="1" value="${p.budget}"></div><div class="field"><label>Settimana attuale</label><select name="week">${Array.from({ length: 8 }, (_, i) => `<option value="${i + 1}" ${p.week === i + 1 ? "selected" : ""}>Settimana ${i + 1}</option>`).join("")}</select></div></div><div class="field"><label>La tua routine</label><textarea name="notes" rows="5">${esc(p.notes)}</textarea></div><button class="btn primary">✓ Salva profilo</button></form>`)}${panel("Scheda originale", `<p class="subtle">Il PDF caricato è incluso nel progetto e consultabile dopo l'accesso.</p><a class="btn" href="/api/original-pdf" target="_blank" rel="noopener">↗ Visualizza PDF</a>`)}</div><div class="stack">${panel("Backup ed esportazione", `<p class="subtle">Scarica tutti i tuoi dati in formato JSON: allenamenti, carichi, menu, lista della spesa, dispensa e misurazioni. Per ripristinarli, seleziona un backup valido: il ripristino sostituisce i dati attuali.</p><div class="button-row"><a class="btn primary" href="/api/backup" download="fitweek-backup.json">↓ Scarica backup</a></div><hr class="separator"><div class="field"><label>Ripristina backup JSON</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" id="import-backup" style="margin-top:12px">Ripristina dal file</button>`)}${panel("Privacy e sicurezza", `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Database SQLite locale</strong><small>Conservato in un volume Docker persistente.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto da password</strong><small>Sessione lato server con cookie HttpOnly. Configura HTTPS per accessi remoti.</small></div></div><div class="summary-row"><i>↘</i><div><strong>Nessuna integrazione Esselunga</strong><small>La lista viene copiata manualmente, senza accessi al tuo account.</small></div></div></div>`)}${panel("Versione", `<div class="big-number">1.0</div><p class="subtle">MVP self-hosted. App web responsive, singolo utente. Non include notifiche push, scansione automatica dei menu né sincronizzazione con fitness tracker.</p>`)}</div></div>`
+    `<div class="twocol"><div class="stack">${panel("Il tuo profilo", `<form id="profile-form" class="stack"><div class="form-grid"><div class="field"><label>Nome (facoltativo)</label><input name="name" value="${esc(p.name)}" placeholder="Il tuo nome"></div><div class="field"><label>Età</label><input name="age" type="number" min="16" max="120" value="${esc(p.age)}"></div><div class="field"><label>Altezza (cm)</label><input name="height" type="number" min="100" max="250" value="${esc(p.height)}"></div><div class="field"><label>Peso iniziale (kg)</label><input name="startingWeight" type="number" min="20" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label>Budget settimanale (€)</label><input name="budget" type="number" min="0" max="1000" step="1" value="${esc(p.budget)}"></div><div class="field"><label>Settimana attuale</label><select name="week">${Array.from({ length: 8 }, (_, i) => `<option value="${i + 1}" ${p.week === i + 1 ? "selected" : ""}>Settimana ${i + 1}</option>`).join("")}</select></div></div><div class="field"><label>La tua routine</label><textarea name="notes" rows="5">${esc(p.notes)}</textarea></div><button class="btn primary">✓ Salva profilo</button></form>`)}${panel("Scheda originale", `<p class="subtle">Il PDF caricato è incluso nel progetto e consultabile dopo l'accesso.</p><a class="btn" href="/api/original-pdf" target="_blank" rel="noopener">↗ Visualizza PDF</a>`)}</div><div class="stack">${panel("Backup ed esportazione", `<p class="subtle">Scarica tutti i tuoi dati in formato JSON: allenamenti, carichi, menu, lista della spesa, dispensa e misurazioni. Per ripristinarli, seleziona un backup valido: il ripristino sostituisce i dati attuali.</p><div class="button-row"><a class="btn primary" href="/api/backup" download>↓ Scarica backup</a></div><hr class="separator"><div class="field"><label>Ripristina backup JSON</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" id="import-backup" style="margin-top:12px">Ripristina dal file</button>`)}${panel("Privacy e sicurezza", `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Database SQLite locale</strong><small>Conservato in un volume Docker persistente.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto da password</strong><small>Sessioni revocabili lato server, cookie HttpOnly, tentativi di accesso limitati. Configura HTTPS per accessi remoti.</small></div></div><div class="summary-row"><i>↘</i><div><strong>Nessuna integrazione Esselunga</strong><small>La lista viene copiata manualmente, senza accessi al tuo account.</small></div></div></div>`)}${panel("Sessione", `<p class="subtle">Esci da questo dispositivo, oppure invalida l'accesso su tutti i dispositivi (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`)}${panel("Versione", `<div class="big-number">1.1</div><p class="subtle">Self-hosted, singolo utente. App web responsive, singolo utente. Non include notifiche push, scansione automatica dei menu né sincronizzazione con fitness tracker.</p>`)}</div></div>`
   );
 }
 function render() {
@@ -348,21 +408,31 @@ window.addEventListener("click", async (e) => {
     return;
   }
   if (target.dataset.week) {
-    selectedWeek = num(target.dataset.week);
-    draft = {};
+    selectedWeek = clampWeek(target.dataset.week);
     render();
     return;
   }
   if (target.dataset.routine) {
     selectedRoutine = target.dataset.routine;
-    draft = {};
     render();
+    return;
+  }
+  if (target.dataset.discardDraft) {
+    if (!confirm("Scartare i valori non salvati di questa sessione?")) return;
+    clearDraft(target.dataset.discardDraft);
+    render();
+    return;
+  }
+  if (target.dataset.action === "logout" || target.dataset.action === "logout-all") {
+    const all = target.dataset.action === "logout-all";
+    if (all && !confirm("Uscire da tutti i dispositivi? Dovrai accedere di nuovo ovunque.")) return;
+    await request(all ? "/api/logout-all" : "/api/logout", { method: "POST" }).catch(() => {});
+    location.reload();
     return;
   }
   if (target.dataset.setProfileWeek) {
     state.profile.week = num(target.dataset.setProfileWeek);
-    await persist();
-    toast("Settimana corrente aggiornata");
+    if (await persist()) toast("Settimana corrente aggiornata");
     return;
   }
   if (target.dataset.removeShop) {
@@ -385,6 +455,7 @@ window.addEventListener("click", async (e) => {
     return;
   }
   if (target.dataset.delWeight) {
+    if (!confirm("Eliminare questa misurazione?")) return;
     state.weights = state.weights.filter((w) => w.id !== target.dataset.delWeight);
     render();
     persist();
@@ -449,10 +520,15 @@ window.addEventListener("click", async (e) => {
       return;
     }
     if (!confirm("Il ripristino sostituisce tutti i tuoi dati attuali. Continuare?")) return;
+    const previous = state;
     state = obj.data;
-    await persist();
-    render();
-    toast("Backup ripristinato");
+    if (await persist()) {
+      render();
+      toast("Backup ripristinato");
+    } else if (state === obj.data) {
+      state = previous;
+      render();
+    }
     return;
   }
 });
@@ -476,7 +552,7 @@ window.addEventListener("change", (e) => {
 });
 window.addEventListener("input", (e) => {
   const t = e.target;
-  if (t.name?.startsWith("kg_") || t.name?.startsWith("reps_")) draft[t.name] = t.value;
+  if (t.name && t.closest("#workout-form")) setDraftValue(t.name, t.value);
 });
 window.addEventListener("submit", async (e) => {
   const form = e.target;
@@ -501,8 +577,9 @@ window.addEventListener("submit", async (e) => {
       return;
     }
     if (form.id === "workout-form") {
-      const exs = state.routines[selectedRoutine],
-        wk = Math.min(8, Math.max(1, selectedWeek));
+      const exs = state.routines[selectedRoutine] || [],
+        wk = clampWeek(selectedWeek),
+        savedDraftId = draftId();
       const sets = [];
       let complete = true;
       for (const ex of exs) {
@@ -529,10 +606,11 @@ window.addEventListener("submit", async (e) => {
         sets,
         notes: data.notes || "",
       });
-      draft = {};
-      await persist();
-      render();
-      toast("Sessione salvata!");
+      if (await persist()) {
+        clearDraft(savedDraftId);
+        render();
+        toast("Sessione salvata!");
+      }
       return;
     }
     if (form.id === "shopping-form") {
@@ -544,9 +622,9 @@ window.addEventListener("submit", async (e) => {
         category: data.category,
         checked: false,
       });
-      await persist();
+      const ok = await persist();
       render();
-      toast("Prodotto aggiunto");
+      if (ok) toast("Prodotto aggiunto");
       return;
     }
     if (form.id === "inventory-form") {
@@ -556,9 +634,9 @@ window.addEventListener("submit", async (e) => {
         qty: data.qty.trim(),
         expiry: data.expiry || "",
       });
-      await persist();
+      const ok = await persist();
       render();
-      toast("Alimento aggiunto");
+      if (ok) toast("Alimento aggiunto");
       return;
     }
     if (form.id === "weight-form") {
@@ -569,11 +647,14 @@ window.addEventListener("submit", async (e) => {
         waist: data.waist ? num(data.waist) : null,
         note: data.note || "",
       };
-      if (reading.weight <= 0) return;
+      if (reading.weight <= 0) {
+        toast("Inserisci un peso valido");
+        return;
+      }
       state.weights.push(reading);
-      await persist();
+      const ok = await persist();
       render();
-      toast("Misurazione salvata");
+      if (ok) toast("Misurazione salvata");
       return;
     }
     if (form.id === "profile-form") {
@@ -587,10 +668,10 @@ window.addEventListener("submit", async (e) => {
         week: num(data.week),
         notes: data.notes || "",
       };
-      selectedWeek = state.profile.week;
-      await persist();
+      selectedWeek = clampWeek(state.profile.week);
+      const ok = await persist();
       render();
-      toast("Profilo aggiornato");
+      if (ok) toast("Profilo aggiornato");
       return;
     }
   } catch (err) {

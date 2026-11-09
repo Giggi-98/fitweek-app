@@ -1,0 +1,111 @@
+"""Sessioni revocabili, rate limit del login, controllo Origin, header di sicurezza."""
+import hmac
+import secrets
+import time
+from collections import defaultdict, deque
+from datetime import datetime
+from urllib.parse import urlparse
+
+from fastapi import HTTPException, Request
+from itsdangerous import BadSignature, SignatureExpired, URLSafeTimedSerializer
+
+from .config import Settings
+from .db import connect
+
+COOKIE_NAME = "fitweek_session"
+
+# CSP: niente script inline né esterni. 'unsafe-inline' sugli stili resta finché app.js
+# genera attributi style="" (da rimuovere in M2 con il design system).
+CSP = (
+    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; "
+    "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
+)
+BASE_HEADERS = {
+    "X-Content-Type-Options": "nosniff",
+    "Referrer-Policy": "same-origin",
+    "X-Frame-Options": "DENY",
+    "Permissions-Policy": "camera=(), microphone=(), geolocation=()",
+}
+
+
+def password_matches(candidate: str, expected: str) -> bool:
+    return hmac.compare_digest(candidate.encode("utf-8"), expected.encode("utf-8"))
+
+
+class LoginRateLimiter:
+    """Limita i tentativi falliti per IP in una finestra mobile (in memoria, processo singolo)."""
+
+    def __init__(self, max_failures: int, window_s: int):
+        self.max_failures = max_failures
+        self.window_s = window_s
+        self._failures: dict[str, deque[float]] = defaultdict(deque)
+
+    def _recent(self, key: str, now: float) -> deque[float]:
+        q = self._failures[key]
+        while q and now - q[0] > self.window_s:
+            q.popleft()
+        return q
+
+    def retry_after(self, key: str) -> int:
+        now = time.monotonic()
+        q = self._recent(key, now)
+        if len(q) >= self.max_failures:
+            return max(1, int(self.window_s - (now - q[0])) + 1)
+        return 0
+
+    def record_failure(self, key: str) -> None:
+        self._failures[key].append(time.monotonic())
+
+    def reset(self, key: str) -> None:
+        self._failures.pop(key, None)
+
+
+class SessionManager:
+    def __init__(self, settings: Settings):
+        self.settings = settings
+        self._serializer = URLSafeTimedSerializer(settings.session_secret, salt="fitweek-session-v2")
+
+    def create(self, user_agent: str) -> str:
+        sid = secrets.token_urlsafe(32)
+        now = datetime.now().astimezone().isoformat(timespec="seconds")
+        with connect(self.settings.db_path) as c:
+            c.execute("INSERT INTO sessions VALUES (?, ?, ?)", (sid, now, user_agent[:200]))
+        return self._serializer.dumps(sid)
+
+    def session_id(self, token: str) -> str | None:
+        if not token:
+            return None
+        try:
+            sid = self._serializer.loads(token, max_age=self.settings.session_max_age_s)
+        except (BadSignature, SignatureExpired):
+            return None
+        if not isinstance(sid, str):
+            return None
+        with connect(self.settings.db_path) as c:
+            found = c.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone()
+        return sid if found else None
+
+    def revoke(self, sid: str) -> None:
+        with connect(self.settings.db_path) as c:
+            c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+
+    def revoke_all(self) -> None:
+        with connect(self.settings.db_path) as c:
+            c.execute("DELETE FROM sessions")
+
+    def purge_expired(self) -> None:
+        cutoff = time.time() - self.settings.session_max_age_s
+        limit = datetime.fromtimestamp(cutoff).astimezone().isoformat(timespec="seconds")
+        with connect(self.settings.db_path) as c:
+            c.execute("DELETE FROM sessions WHERE created_at < ?", (limit,))
+
+
+def check_origin(request: Request) -> None:
+    """Le scritture provenienti da un browser devono avere Origin uguale all'host servito."""
+    origin = request.headers.get("origin")
+    if not origin:
+        return
+    parsed = urlparse(origin)
+    if parsed.scheme not in ("http", "https") or parsed.netloc != request.headers.get("host", ""):
+        raise HTTPException(status_code=403, detail="Origin non autorizzata")
