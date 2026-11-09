@@ -10,10 +10,10 @@ from fastapi.staticfiles import StaticFiles
 
 from . import APP_VERSION
 from .config import BASE_DIR, Settings, load_settings
-from .db import connect, transaction
+from .db import backup_to, connect, transaction
 from .logging_setup import setup_logging
 from .migrations import run_migrations
-from .schemas import LoginBody, StatePut
+from .schemas import BackupRestore, LoginBody, StatePut
 from .security import (
     BASE_HEADERS,
     COOKIE_NAME,
@@ -23,6 +23,7 @@ from .security import (
     check_origin,
     password_matches,
 )
+from .workouts import build_router, load_sessions, now_iso
 
 log = logging.getLogger("fitweek.http")
 STATIC_DIR = BASE_DIR / "static"
@@ -149,12 +150,54 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/backup", dependencies=[Depends(require_session)])
     def backup():
-        version, data = read_state()
+        with connect(settings.db_path) as c:
+            version, blob = c.execute("SELECT version, json FROM app_state WHERE id=1").fetchone()
+            sessions_ = load_sessions(c, limit=100_000)
         stamp = time.strftime("%Y%m%d")
         return JSONResponse(
-            {"format": "fitweek-backup-v1", "version": version, "data": data},
+            {"format": "fitweek-backup-v2", "version": version, "data": json.loads(blob),
+             "workout_sessions": sessions_},
             headers={"Content-Disposition": f'attachment; filename="fitweek-backup-{stamp}.json"'},
         )
+
+    @app.post("/api/v1/restore", dependencies=[Depends(check_origin), Depends(require_session)])
+    def restore(body: BackupRestore):
+        """Sostituisce stato e sedute con il contenuto del backup, dopo un backup SQLite automatico.
+        Un backup v1 (sedute dentro data.workouts) viene convertito nelle tabelle dedicate."""
+        sessions_in = [s.model_dump() for s in body.workout_sessions]
+        if body.format == "fitweek-backup-v1":
+            now = now_iso()
+            for w in body.data.workouts:
+                sessions_in.append({
+                    "id": w.id, "routine": w.routine, "week": w.week, "date": w.date, "status": "done",
+                    "started_at": None, "ended_at": None, "duration_min": w.duration, "cardio_min": None,
+                    "notes": w.notes, "source": "v1-backup", "created_at": now, "updated_at": now,
+                    "sets": [{"exercise_id": x.exerciseId, "set_index": x.set, "kg": x.kg, "reps": x.reps,
+                              "rir": None, "completed": True, "logged_at": w.date} for x in w.sets],
+                })
+        blob = json.dumps(body.data.model_dump(mode="json"), ensure_ascii=False)
+        with connect(settings.db_path) as c:
+            backup_to(c, settings.backup_dir / f"pre-restore-{time.strftime('%Y%m%d-%H%M%S')}.sqlite")
+            with transaction(c):
+                version = c.execute("SELECT version FROM app_state WHERE id=1").fetchone()[0]
+                c.execute("UPDATE app_state SET version=?, json=? WHERE id=1", (version + 1, blob))
+                c.execute("DELETE FROM set_logs")
+                c.execute("DELETE FROM workout_sessions")
+                for s in sessions_in:
+                    sets = s.pop("sets")
+                    cols = ", ".join(s)
+                    c.execute(f"INSERT OR REPLACE INTO workout_sessions ({cols}) VALUES ({','.join('?' * len(s))})",
+                              tuple(s.values()))
+                    for x in sets:
+                        c.execute(
+                            "INSERT OR REPLACE INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir,"
+                            " completed, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                            (s["id"], x["exercise_id"], x["set_index"], x["kg"], x["reps"], x["rir"],
+                             int(x["completed"]), x["logged_at"]),
+                        )
+        return {"ok": True, "version": version + 1, "sessions": len(sessions_in)}
+
+    app.include_router(build_router(settings, require_session))
 
     @app.get("/api/original-pdf", dependencies=[Depends(require_session)])
     def original_pdf():

@@ -110,3 +110,77 @@ class StatePut(Strict):
 
 class LoginBody(Strict):
     password: Text(256)
+
+
+# ---- API v1: allenamenti -------------------------------------------------------------------
+from typing import Literal  # noqa: E402
+
+IsoDateTime = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?$")]
+SessionStatus = Literal["in_progress", "done", "skipped"]
+
+
+class SessionCreate(Strict):
+    id: Id
+    routine: Key
+    week: int = Field(ge=1, le=52)
+    date: IsoDate
+
+
+class SessionPatch(Strict):
+    status: Optional[SessionStatus] = None
+    routine: Optional[Key] = None
+    week: Optional[int] = Field(default=None, ge=1, le=52)
+    date: Optional[IsoDate] = None
+    ended_at: Optional[IsoDateTime] = None
+    duration_min: Optional[float] = Field(default=None, ge=0, le=1440)
+    cardio_min: Optional[float] = Field(default=None, ge=0, le=300)
+    notes: Optional[Text(5000)] = None
+
+
+class SetLogPut(Strict):
+    kg: Optional[float] = Field(default=None, ge=0, le=1000)
+    reps: Optional[int] = Field(default=None, ge=0, le=500)
+    rir: Optional[int] = Field(default=None, ge=0, le=10)
+    completed: bool = True
+
+
+class ProgramWeekPut(Strict):
+    week: int = Field(ge=1, le=52)
+
+
+class BackupRestore(BaseModel):
+    """Backup v1 (solo stato) o v2 (stato + sedute). Le sedute sono validate qui sotto."""
+    model_config = ConfigDict(extra="ignore")
+    format: Literal["fitweek-backup-v1", "fitweek-backup-v2"]
+    data: AppState
+    workout_sessions: list["BackupSession"] = Field(default_factory=list, max_length=10_000)
+
+
+class BackupSet(Strict):
+    exercise_id: Id
+    set_index: int = Field(ge=1, le=50)
+    kg: Optional[float] = Field(default=None, ge=0, le=1000)
+    reps: Optional[int] = Field(default=None, ge=0, le=500)
+    rir: Optional[int] = Field(default=None, ge=0, le=10)
+    completed: bool = True
+    logged_at: Text(40)
+
+
+class BackupSession(Strict):
+    id: Id
+    routine: Key
+    week: int = Field(ge=1, le=52)
+    date: IsoDate
+    status: SessionStatus
+    started_at: Optional[Text(40)] = None
+    ended_at: Optional[Text(40)] = None
+    duration_min: Optional[float] = Field(default=None, ge=0, le=1440)
+    cardio_min: Optional[float] = Field(default=None, ge=0, le=300)
+    notes: Text(5000) = ""
+    source: Text(20) = "app"
+    created_at: Text(40)
+    updated_at: Text(40)
+    sets: list[BackupSet] = Field(default_factory=list, max_length=500)
+
+
+BackupRestore.model_rebuild()

@@ -121,5 +121,5 @@ def test_security_headers(client):
 
 def test_backup_format(auth_client):
     r = auth_client.get("/api/backup")
-    assert r.status_code == 200 and r.json()["format"] == "fitweek-backup-v1"
+    assert r.status_code == 200 and r.json()["format"] == "fitweek-backup-v2"
     assert "attachment" in r.headers["Content-Disposition"]

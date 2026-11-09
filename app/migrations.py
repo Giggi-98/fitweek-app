@@ -67,10 +67,69 @@ def _m003_fix_progressions(c: sqlite3.Connection) -> None:
         log.info("progressioni corrette", extra={"fields": {"exercises": changed}})
 
 
+def _m004_workout_tables(c: sqlite3.Connection) -> None:
+    """Sedute e serie in tabelle dedicate (D-003/D-005). I workouts del blob vengono copiati;
+    il blob resta intatto come riferimento/rollback ma non viene più usato dall'interfaccia."""
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS workout_sessions (
+            id TEXT PRIMARY KEY,
+            routine TEXT NOT NULL,
+            week INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('in_progress','done','skipped')),
+            started_at TEXT,
+            ended_at TEXT,
+            duration_min REAL,
+            cardio_min REAL,
+            notes TEXT NOT NULL DEFAULT '',
+            source TEXT NOT NULL DEFAULT 'app',
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT
+        )"""
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_ws_routine_date ON workout_sessions(routine, date)")
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS set_logs (
+            session_id TEXT NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+            exercise_id TEXT NOT NULL,
+            set_index INTEGER NOT NULL,
+            kg REAL,
+            reps INTEGER,
+            rir INTEGER,
+            completed INTEGER NOT NULL DEFAULT 1,
+            logged_at TEXT NOT NULL,
+            PRIMARY KEY (session_id, exercise_id, set_index)
+        )"""
+    )
+    row = c.execute("SELECT json FROM app_state WHERE id=1").fetchone()
+    if not row:
+        return
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    for w in json.loads(row[0]).get("workouts", []):
+        if not all(w.get(k) for k in ("id", "routine", "date")):
+            log.warning("seduta v1 incompleta non copiata", extra={"fields": {"id": w.get("id")}})
+            continue
+        c.execute(
+            "INSERT OR IGNORE INTO workout_sessions (id, routine, week, date, status, duration_min, notes,"
+            " source, created_at, updated_at) VALUES (?, ?, ?, ?, 'done', ?, ?, 'v1-blob', ?, ?)",
+            (w["id"], w["routine"], w.get("week") or 1, w["date"], w.get("duration"), w.get("notes", ""), now, now),
+        )
+        for s in w.get("sets", []):
+            if not s.get("exerciseId") or not s.get("set"):
+                continue
+            c.execute(
+                "INSERT OR IGNORE INTO set_logs (session_id, exercise_id, set_index, kg, reps, completed,"
+                " logged_at) VALUES (?, ?, ?, ?, ?, 1, ?)",
+                (w["id"], s["exerciseId"], s["set"], s.get("kg"), s.get("reps"), w["date"]),
+            )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
     (3, "fix_progressions_b6_c5", _m003_fix_progressions),
+    (4, "workout_tables", _m004_workout_tables),
 ]
 
 
