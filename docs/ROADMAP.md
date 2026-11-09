@@ -7,7 +7,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 | # | Milestone | Stato |
 |---|---|---|
 | M1 | Stabilizzazione, protezione dati, sicurezza | ✅ in produzione dal 2026-11-09 (resta: verifica manuale da telefono) |
-| M2 | Fondamenta frontend, design system, allenamento mobile | ⬜ |
+| M2 | Fondamenta frontend, design system, allenamento mobile | ✅ 2026-11-09 (parziali: RIR/RPE UI, note per esercizio, grafici → M3) |
 | M3 | Dashboard "Oggi" e progressi | ⬜ |
 | M4 | Alimentazione: calendario e pasti consumati | ⬜ |
 | M5 | Spesa, dispensa, budget | ⬜ |
@@ -51,14 +51,30 @@ Esito (2026-11-09): 20 test pytest; 16 controlli e2e Playwright (viewport iPhone
 Test previsti: pytest API; test della migrazione su copia del DB live; verifica manuale da telefono (checklist in PR).
 Rischi: la CSP può rompere stili inline presenti in `app.js` (mitigazione: spostare gli inline style in classi, o `style-src 'self' 'unsafe-inline'` temporaneo dichiarato); migrazione volume (mitigazione: il vecchio volume non viene cancellato).
 
-## M2 — Fondamenta frontend, design system, allenamento mobile
+## M2 — Fondamenta frontend, design system, allenamento mobile ✅
 
-**Obiettivo**: registrare una seduta dal telefono con una mano: apri l'app → "Inizia Giorno A · W3" → per ogni serie un tocco su ✓ (valori pre-compilati) → timer parte da solo.
+Obiettivo raggiunto: apri l'app → "Inizia Giorno A · W1" → ogni serie è precompilata (ultima seduta o serie precedente) → un tocco su ✓ la salva e avvia il recupero.
 
-Attività: de-minificazione e divisione in ES modules (D-002); `tokens.css` con dark/light; navigazione con hash routing e bottom nav a 5 voci; tabelle `programs/…/sessions/set_logs` con migrazione dei `workouts` esistenti (D-003, D-004); API `today`, `sessions`, `set-logs` idempotenti (D-005); settimana calcolata (D-006); logger per serie con stepper, pre-compilazione dall'ultima seduta, serie non completata, timer recupero, RPE/RIR opzionali, note per esercizio, cardio come esercizio a tempo; riepilogo fine seduta; riprogrammazione seduta saltata.
-Accettazione: seduta completa registrabile con ≤ 1 tocco per serie quando si ripetono i carichi; nessuna perdita dati chiudendo il browser a metà; dati storici migrati con conteggi identici; Lighthouse accessibilità ≥ 90 su mobile; dark e light verificati.
-Test: unit test JS delle funzioni di dominio (`node --test`), pytest su API e migrazione, checklist manuale su telefono reale.
-Rischi: regressioni durante la divisione in moduli (mitigazione: prima solo spostamento di codice, poi modifiche).
+Fatto:
+- Frontend in ES modules (D-002), CSS a token, tema chiaro/scuro/automatico, routing con hash, nav mobile a 6 voci.
+- Tabelle `workout_sessions`/`set_logs` con migrazione dei workouts del blob (D-003, D-004); API v1 idempotenti (D-005).
+- Settimana del programma calcolata dalla data di inizio, modificabile da Impostazioni (D-006).
+- Logger: stepper kg/rip, precompilazione, ✓ = serie salvata, annulla serie con un tocco, serie extra, cardio, note, termina con riepilogo (volume marcato "calcolato", confronto con la seduta precedente), annulla seduta, recupero di sedute (scelta giorno/settimana).
+- Coda offline persistente; seduta e timer sopravvivono a ricariche e schermo spento.
+- Import delle bozze non salvate della versione 1.1.
+- Backup JSON v2 con sedute; ripristino lato server con backup automatico.
+- Dashboard "Oggi": CTA allenamento, timeline del giorno, settimana con sedute fatte, media peso 7 gg (calcolata).
+- Progressi: medie settimanali (calcolate), tabella carichi recenti, storico da API.
+
+Criteri di accettazione:
+- [x] Seduta registrabile con 1 tocco per serie quando si ripetono i carichi (e2e).
+- [x] Nessuna perdita dati: ricarica a metà seduta e serie inserite offline (e2e).
+- [x] Workouts del blob migrati con conteggi identici (test migrazione).
+- [x] Tema chiaro e scuro verificati (e2e + screenshot).
+- [ ] Lighthouse accessibilità ≥ 90: non misurato (label, contrasto e target ≥ 44–48 px curati a mano).
+- [ ] Prova su telefono reale.
+
+Parziale/rimandato: RIR/RPE (colonna presente, UI no), note per singolo esercizio, grafici carichi per esercizio (M3), schede multiple (M7), wake lock schermo (richiede HTTPS).
 
 ## M3 — Dashboard "Oggi" e progressi
 Obiettivo: la dashboard risponde a "cosa faccio adesso". Timeline del giorno basata sulla routine (lavoro, pre-gym, palestra, cena); CTA allenamento; trend peso con media mobile 7 gg (marcata "calcolata"); misure aggiuntive; grafici carichi per esercizio; confronto settimane; frequenza allenamenti.

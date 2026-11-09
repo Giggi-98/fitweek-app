@@ -1,6 +1,10 @@
 # Design system
 
-## Stato attuale
+## Stato attuale (M2, 2026-11-09)
+
+Implementato: `static/css/tokens.css` (spaziature, raggi, tipografia, colori semantici scuro/chiaro, `prefers-color-scheme` + override `[data-theme]` da Impostazioni) e `static/css/app.css` (componenti). Nessun colore esadecimale fuori dai token. Restano stili inline per larghezze delle barre di avanzamento.
+
+## Stato prima di M2
 
 `static/style.css` minificato, solo tema scuro. Variabili su `:root`: `--bg #0e1417`, `--panel #182226`, `--line #2c383b`, `--muted #89999a`, `--text #f3f8f4`, `--accent #b8ee7b`, `--amber #fac887`, `--radius 18px`. Molti colori sono però scritti a mano in `app.js` (inline style) e nel grafico SVG. Componenti esistenti: `panel`, `metric`, `pill`, `btn` (`primary`, `small`, `danger`, `quiet`), `entry`, `summary-row`, `daygrid`, `exercise`/`set-row`, `shopitem`, `toast`, `bottom-nav`. Icone: caratteri Unicode. Breakpoint: 1100 / 750 / 390 px.
 

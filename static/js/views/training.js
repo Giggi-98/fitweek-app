@@ -1,0 +1,429 @@
+// Schermata allenamento: avvio seduta, registrazione serie con un tocco, recupero, riepilogo.
+import { CARDIO_MIN, PROGRAM_WEEKS, ROUTINES, cardioBpm } from "../constants.js";
+import { app, refreshWorkouts } from "../store.js";
+import { toast } from "../ui.js";
+import { $, clamp, esc, fmtDate, fmtNum, fmtTime, isoDate, num, safeUrl, storage, uid } from "../util.js";
+import { enqueue, flush, pendingCount } from "../workout/queue.js";
+import { prefs, startRest, stopRest } from "../workout/timer.js";
+
+const EDITS_KEY = "fitweek.workoutEdits.v1";
+const LEGACY_DRAFTS_KEY = "fitweek.workoutDrafts.v1";
+
+// Selezione quando non c'è una seduta attiva.
+const ui = { routine: null, week: null, summary: null };
+
+// ---- dati derivati ------------------------------------------------------------------------
+const active = () => app.today?.active_session || null;
+const routineExercises = (r) => app.state.routines[r] || [];
+const plannedSets = (ex, week) => num(ex.sets[clamp(week, 1, ex.sets.length) - 1]);
+const lastDone = (routine, exceptId) =>
+  app.sessions.find((s) => s.routine === routine && s.status === "done" && s.id !== exceptId) || null;
+const setsOf = (session, exId) =>
+  (session?.sets || []).filter((s) => s.exercise_id === exId).sort((a, b) => a.set_index - b.set_index);
+const logged = (session, exId, idx) => (session?.sets || []).find((s) => s.exercise_id === exId && s.set_index === idx);
+const parseNum = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", "."), null));
+const fmtSet = (s) => `${s.kg == null ? "—" : fmtNum(s.kg)}×${s.reps ?? "—"}`;
+
+function edits(sessionId) {
+  const e = storage.get(EDITS_KEY, null);
+  return e && e.sessionId === sessionId ? e : { sessionId, values: {}, extra: {} };
+}
+const saveEdits = (e) => storage.set(EDITS_KEY, e);
+
+/** Valori da mostrare: registrati > modificati a mano > serie precedente > ultima seduta. */
+function suggestion(session, ex, idx, prev, ed) {
+  const own = logged(session, ex.id, idx);
+  if (own) return { kg: own.kg, reps: own.reps };
+  const typed = ed.values[`${ex.id}:${idx}`];
+  if (typed) return typed;
+  if (idx > 1) {
+    const before = logged(session, ex.id, idx - 1) || ed.values[`${ex.id}:${idx - 1}`];
+    if (before && (before.completed ?? true)) return { kg: before.kg, reps: before.reps };
+  }
+  const p = prev[idx - 1] || prev[prev.length - 1];
+  return p ? { kg: p.kg, reps: p.reps } : { kg: null, reps: null };
+}
+
+function progressOf(session) {
+  const exs = routineExercises(session.routine);
+  const planned = exs.reduce((n, ex) => n + plannedSets(ex, session.week), 0);
+  const done = session.sets.filter((s) => s.completed).length;
+  return { planned, done };
+}
+const volume = (session) =>
+  session.sets.filter((s) => s.completed && s.kg != null && s.reps != null).reduce((v, s) => v + s.kg * s.reps, 0);
+
+// ---- render -------------------------------------------------------------------------------
+export function render() {
+  if (ui.summary) return renderSummary(ui.summary);
+  const s = active();
+  return s ? renderActive(s) : renderStart();
+}
+
+function legacyDraftBanner() {
+  const drafts = storage.get(LEGACY_DRAFTS_KEY, {});
+  const items = Object.entries(drafts).filter(([, d]) =>
+    Object.keys(d).some((k) => /^(kg|reps)_/.test(k) && d[k] !== ""),
+  );
+  if (!items.length) return "";
+  return items
+    .map(([id, d]) => {
+      const [routine, w] = id.split("-W");
+      return `<div class="inline-note warn">Bozza non salvata dalla versione precedente: <strong>Giorno ${esc(routine)} · W${esc(w)}</strong>${d.date ? ` del ${esc(fmtDate(d.date))}` : ""}.<div class="button-row"><button class="btn small primary" data-import-draft="${esc(id)}">Importa come seduta</button><button class="btn small" data-drop-draft="${esc(id)}">Scarta</button></div></div>`;
+    })
+    .join("");
+}
+
+function renderStart() {
+  const t = app.today;
+  const routine = ui.routine || t.routine || "A";
+  const week = ui.week || t.program_week;
+  const info = ROUTINES[routine];
+  const prev = lastDone(routine);
+  const doneToday = t.done_today.find((s) => s.routine === routine);
+  const exs = routineExercises(routine);
+  const total = exs.reduce((n, ex) => n + plannedSets(ex, week), 0);
+  const isToday = routine === t.routine;
+  return `
+  ${legacyDraftBanner()}
+  <section class="hero">
+    <span class="tiny-label">${isToday ? "Oggi" : "Seduta selezionata"} · Settimana ${t.program_week} di ${PROGRAM_WEEKS} del programma</span>
+    <h2>Giorno ${esc(routine)} <span class="muted">· W${week}</span></h2>
+    <p class="subtle">${esc(info?.focus || "")} · ${exs.length} esercizi · ${total} serie + ${CARDIO_MIN}′ ${esc(info?.cardio || "cardio")}</p>
+    ${doneToday ? `<div class="inline-note ok">Giorno ${esc(routine)} già completato oggi (${doneToday.sets.filter((x) => x.completed).length} serie).</div>` : ""}
+    <button class="btn primary xl full" data-start>▶ Inizia Giorno ${esc(routine)} · W${week}</button>
+    ${!t.routine && !ui.routine ? '<p class="subtle center">Oggi è giorno di riposo: puoi comunque recuperare una seduta.</p>' : ""}
+  </section>
+  <div class="chooser">
+    <div class="chips" role="group" aria-label="Giornata">${Object.keys(ROUTINES)
+      .map((r) => `<button class="chip ${r === routine ? "active" : ""}" data-pick-routine="${r}">Giorno ${r}<small>${ROUTINES[r].day.slice(0, 3)}</small></button>`)
+      .join("")}</div>
+    <div class="chips scroll" role="group" aria-label="Settimana">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => i + 1)
+      .map((w) => `<button class="chip ${w === week ? "active" : ""} ${w === t.program_week ? "current" : ""}" data-pick-week="${w}">W${w}</button>`)
+      .join("")}</div>
+  </div>
+  <section class="panel">
+    <div class="panel-head"><h3>Programma</h3><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF originale ↗</a></div>
+    ${exs
+      .map((ex) => {
+        const p = setsOf(prev, ex.id).filter((x) => x.completed);
+        return `<div class="entry"><div><div class="entry-title">${esc(ex.name)}</div><div class="entry-sub">${plannedSets(ex, week)} × ${esc(ex.reps)}${p.length ? ` · ultima: ${esc(p.map(fmtSet).join(" · "))}` : ""}</div></div></div>`;
+      })
+      .join("")}
+    <div class="entry"><div><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(week)} BPM (non è un obiettivo personalizzato)</div></div></div>
+  </section>`;
+}
+
+function setRow(session, ex, idx, prev, ed, planned) {
+  const own = logged(session, ex.id, idx);
+  const done = own?.completed;
+  const v = suggestion(session, ex, idx, prev, ed);
+  const extra = idx > planned;
+  return `<div class="set-row ${done ? "done" : ""} ${extra ? "extra" : ""}" data-ex="${esc(ex.id)}" data-idx="${idx}">
+    <span class="set-num" aria-label="Serie ${idx}">${idx}</span>
+    <div class="stepper"><button type="button" data-step="kg" data-dir="-1" aria-label="Meno peso">−</button><input data-field="kg" type="text" inputmode="decimal" autocomplete="off" aria-label="Peso serie ${idx} ${esc(ex.name)}" placeholder="kg" value="${esc(v.kg ?? "")}"><button type="button" data-step="kg" data-dir="1" aria-label="Più peso">+</button></div>
+    <div class="stepper"><button type="button" data-step="reps" data-dir="-1" aria-label="Meno ripetizioni">−</button><input data-field="reps" type="text" inputmode="numeric" autocomplete="off" aria-label="Ripetizioni serie ${idx} ${esc(ex.name)}" placeholder="${esc(String(ex.reps).split(/[–-]/)[0])}" value="${esc(v.reps ?? "")}"><button type="button" data-step="reps" data-dir="1" aria-label="Più ripetizioni">+</button></div>
+    <button type="button" class="set-check" data-check aria-pressed="${done ? "true" : "false"}" aria-label="${done ? "Annulla serie" : "Serie fatta"} ${idx}">✓</button>
+  </div>`;
+}
+
+function renderActive(session) {
+  const ed = edits(session.id);
+  const prevSession = lastDone(session.routine, session.id);
+  const exs = routineExercises(session.routine);
+  const { planned, done } = progressOf(session);
+  const info = ROUTINES[session.routine];
+  const nextEx = exs.find((ex) => setsOf(session, ex.id).filter((s) => s.completed).length < plannedSets(ex, session.week));
+  return `
+  <section class="wk-header">
+    <div class="wk-top">
+      <div><span class="tiny-label">In corso${session.started_at ? ` · dalle ${esc(fmtTime(session.started_at))}` : ""}</span><h2>Giorno ${esc(session.routine)} · W${esc(session.week)}</h2></div>
+      <div class="wk-count"><strong>${done}</strong><span>/${planned} serie</span></div>
+    </div>
+    <div class="bar"><div style="width:${planned ? Math.round((done / planned) * 100) : 0}%"></div></div>
+  </section>
+  ${exs
+    .map((ex) => {
+      const p = plannedSets(ex, session.week);
+      const prev = setsOf(prevSession, ex.id).filter((x) => x.completed);
+      const loggedIdx = setsOf(session, ex.id).map((s) => s.set_index);
+      const count = Math.max(p + num(ed.extra[ex.id]), ...loggedIdx, p);
+      const completed = setsOf(session, ex.id).filter((s) => s.completed).length;
+      const video = safeUrl(ex.video);
+      return `<section class="ex-card ${completed >= p ? "done" : ""} ${nextEx?.id === ex.id ? "next" : ""}" id="ex-${esc(ex.id)}">
+        <div class="ex-head">
+          <div><h3 class="ex-name">${esc(ex.name)}</h3>
+          <div class="ex-meta">${p} × ${esc(ex.reps)} rip. · ${completed}/${p} fatte</div>
+          ${prev.length ? `<div class="ex-last">Ultima volta${prevSession ? ` (${esc(fmtDate(prevSession.date))}, W${esc(prevSession.week)})` : ""}: ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
+          </div>
+          ${video ? `<a href="${esc(video)}" target="_blank" rel="noopener noreferrer" class="icon-link" aria-label="Video esecuzione">▶</a>` : ""}
+        </div>
+        <div class="set-legend" aria-hidden="true"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
+        ${Array.from({ length: count }, (_, i) => setRow(session, ex, i + 1, prev, ed, p)).join("")}
+        <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">+ serie extra</button>
+      </section>`;
+    })
+    .join("")}
+  <section class="ex-card ${session.cardio_min ? "done" : ""}">
+    <div class="ex-head"><div><h3 class="ex-name">${esc(info?.cardio || "Cardio")}</h3><div class="ex-meta">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(session.week)} BPM</div><div class="ex-last">Le BPM della scheda non sono un obiettivo personalizzato: regola l'intensità con l'allenatore.</div></div>
+    <button type="button" class="set-check" data-cardio aria-pressed="${session.cardio_min ? "true" : "false"}" aria-label="Cardio fatto">✓</button></div>
+  </section>
+  <section class="panel">
+    <div class="field"><label for="wk-notes">Note della seduta</label><textarea id="wk-notes" data-session-notes rows="3" placeholder="Tecnica, fatica, fastidi…">${esc(session.notes || "")}</textarea></div>
+    <button type="button" class="btn primary xl full" data-finish>Termina allenamento</button>
+    <button type="button" class="link-btn danger center" data-cancel-session>Annulla seduta</button>
+  </section>`;
+}
+
+function renderSummary(s) {
+  const { planned, done } = progressOf(s);
+  const vol = volume(s);
+  const prev = lastDone(s.routine, s.id);
+  const prevVol = prev ? volume(prev) : null;
+  const diff = prevVol ? Math.round(((vol - prevVol) / prevVol) * 100) : null;
+  return `<section class="hero">
+    <span class="tiny-label">Seduta completata · ${esc(fmtDate(s.date))}</span>
+    <h2>Giorno ${esc(s.routine)} · W${esc(s.week)} ✓</h2>
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">Serie</div><div class="metric-value">${done}<small>/${planned}</small></div><div class="metric-sub">completate</div></div>
+      <div class="metric"><div class="metric-label">Durata</div><div class="metric-value">${s.duration_min != null ? esc(Math.round(s.duration_min)) + "<small> min</small>" : "—"}</div><div class="metric-sub">${s.cardio_min ? "cardio incluso" : "cardio non segnato"}</div></div>
+      <div class="metric"><div class="metric-label">Volume <span class="badge-calc">calcolato</span></div><div class="metric-value">${fmtNum(vol, 0)}<small> kg</small></div><div class="metric-sub">${diff == null ? "Σ kg × ripetizioni" : `${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}`}</div></div>
+    </div>
+    ${done < planned ? `<p class="subtle">${planned - done} serie non segnate: va bene, conta la costanza.</p>` : ""}
+    <button class="btn primary full" data-close-summary>Fatto</button>
+  </section>`;
+}
+
+// ---- azioni -------------------------------------------------------------------------------
+const sessionPath = (s) => `/api/v1/workout-sessions/${encodeURIComponent(s.id)}`;
+const setPath = (s, ex, idx) => `${sessionPath(s)}/sets/${encodeURIComponent(ex)}/${idx}`;
+
+function startSession(routine, week, date = isoDate()) {
+  const s = {
+    id: uid(), routine, week, date, status: "in_progress", started_at: new Date().toISOString(),
+    ended_at: null, duration_min: null, cardio_min: null, notes: "", sets: [],
+  };
+  enqueue("POST", "/api/v1/workout-sessions", { id: s.id, routine, week, date }, `create:${s.id}`);
+  app.today.active_session = s;
+  ui.routine = ui.week = null;
+  stopRest();
+  return s;
+}
+
+function rowValues(row) {
+  return { kg: parseNum($("[data-field=kg]", row).value), reps: parseNum($("[data-field=reps]", row).value) };
+}
+
+function writeSet(session, exId, idx, values, completed) {
+  const rest = session.sets.filter((x) => !(x.exercise_id === exId && x.set_index === idx));
+  const item = { exercise_id: exId, set_index: idx, kg: values.kg, reps: values.reps, rir: null, completed, logged_at: new Date().toISOString() };
+  session.sets = [...rest, item];
+  enqueue("PUT", setPath(session, exId, idx), { kg: values.kg, reps: values.reps, completed }, `set:${exId}:${idx}:${session.id}`);
+}
+
+function toggleSet(row) {
+  const s = active();
+  const exId = row.dataset.ex;
+  const idx = num(row.dataset.idx);
+  const own = logged(s, exId, idx);
+  if (own?.completed) {
+    s.sets = s.sets.filter((x) => !(x.exercise_id === exId && x.set_index === idx));
+    enqueue("DELETE", setPath(s, exId, idx), undefined, `set:${exId}:${idx}:${s.id}`);
+    stopRest();
+    return true;
+  }
+  const v = rowValues(row);
+  if (v.reps == null || v.reps < 0) {
+    toast("Inserisci le ripetizioni fatte");
+    $("[data-field=reps]", row).focus();
+    return false;
+  }
+  if (v.kg != null && (v.kg < 0 || v.kg > 1000)) {
+    toast("Peso non valido");
+    return false;
+  }
+  writeSet(s, exId, idx, v, true);
+  const ed = edits(s.id);
+  delete ed.values[`${exId}:${idx}`];
+  saveEdits(ed);
+  startRest();
+  return true;
+}
+
+function step(btn) {
+  const row = btn.closest(".set-row");
+  const input = $(`[data-field=${btn.dataset.step}]`, row);
+  const delta = btn.dataset.step === "kg" ? prefs().kgStep : 1;
+  // Campo vuoto: parte dal valore suggerito (es. ripetizioni minime della scheda), non da zero.
+  const current = parseNum(input.value) ?? (num(btn.dataset.dir) > 0 ? parseNum(input.placeholder) ?? 0 : 0);
+  if (parseNum(input.value) == null && num(btn.dataset.dir) > 0 && parseNum(input.placeholder) != null) {
+    input.value = String(parseNum(input.placeholder));
+    rememberRow(row);
+    return;
+  }
+  const next = Math.max(0, Math.round((current + delta * num(btn.dataset.dir)) * 100) / 100);
+  input.value = String(next).replace(".", ",");
+  rememberRow(row);
+}
+
+/** Memorizza valori non ancora confermati; se la serie è già fatta, aggiorna il server. */
+function rememberRow(row) {
+  const s = active();
+  const exId = row.dataset.ex;
+  const idx = num(row.dataset.idx);
+  const v = rowValues(row);
+  if (logged(s, exId, idx)?.completed) {
+    writeSet(s, exId, idx, v, true);
+    return;
+  }
+  const ed = edits(s.id);
+  ed.values[`${exId}:${idx}`] = v;
+  saveEdits(ed);
+}
+
+function patchSession(fields, keySuffix) {
+  const s = active();
+  Object.assign(s, fields);
+  enqueue("PATCH", sessionPath(s), fields, `patch:${keySuffix}:${s.id}`);
+}
+
+async function finish() {
+  const s = active();
+  const { planned, done } = progressOf(s);
+  if (!done && !confirm("Nessuna serie segnata. Terminare comunque?")) return;
+  if (done && done < planned && !confirm(`Hai segnato ${done} serie su ${planned}. Terminare l'allenamento?`)) return;
+  const endedAt = new Date();
+  const duration = s.started_at ? Math.max(0, Math.round((endedAt - new Date(s.started_at)) / 60000)) : null;
+  enqueue("PATCH", sessionPath(s), { status: "done", ended_at: endedAt.toISOString(), duration_min: duration }, `finish:${s.id}`);
+  Object.assign(s, { status: "done", ended_at: endedAt.toISOString(), duration_min: duration });
+  stopRest();
+  storage.remove(EDITS_KEY);
+  app.today.active_session = null;
+  app.sessions = [s, ...app.sessions.filter((x) => x.id !== s.id)];
+  ui.summary = s;
+  await flush();
+  // Ricarica dal server solo se tutto è stato inviato, altrimenti si perderebbero i dati locali.
+  if (!pendingCount()) refreshWorkouts().catch(() => {});
+}
+
+function importLegacyDraft(id) {
+  const drafts = storage.get(LEGACY_DRAFTS_KEY, {});
+  const d = drafts[id];
+  if (!d) return;
+  if (active()) {
+    toast("Termina prima la seduta in corso");
+    return;
+  }
+  const [routine, w] = id.split("-W");
+  const s = startSession(routine, num(w, 1), /^\d{4}-\d{2}-\d{2}$/.test(d.date || "") ? d.date : isoDate());
+  for (const key of Object.keys(d)) {
+    const m = key.match(/^reps_(.+)_(\d+)$/);
+    if (!m || d[key] === "") continue;
+    const [, exId, j] = m;
+    writeSet(s, exId, num(j) + 1, { kg: parseNum(d[`kg_${exId}_${j}`]), reps: parseNum(d[key]) }, true);
+  }
+  if (d.notes) patchSession({ notes: String(d.notes).slice(0, 5000) }, "notes");
+  delete drafts[id];
+  storage.set(LEGACY_DRAFTS_KEY, drafts);
+  toast("Bozza importata: controlla i valori e termina la seduta.");
+}
+
+// ---- eventi (chiamati da main.js) --------------------------------------------------------
+export async function onClick(t) {
+  if (t.matches("[data-start]")) {
+    const routine = ui.routine || app.today.routine || "A";
+    startSession(routine, ui.week || app.today.program_week);
+    return true;
+  }
+  if (t.dataset.pickRoutine) return (ui.routine = t.dataset.pickRoutine), true;
+  if (t.dataset.pickWeek) return (ui.week = num(t.dataset.pickWeek)), true;
+  if (t.matches("[data-step]")) {
+    step(t);
+    return false; // niente re-render: mantiene la tastiera e la posizione
+  }
+  if (t.matches("[data-check]")) {
+    const row = t.closest(".set-row");
+    if (!toggleSet(row)) return false;
+    const card = row.closest(".ex-card");
+    requestAnimationFrame(() => {
+      const next = card && document.getElementById(card.id)?.querySelector(".set-row:not(.done)");
+      if (!next) document.querySelector(".ex-card.next")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    return true;
+  }
+  if (t.dataset.addSet) {
+    const s = active();
+    const ed = edits(s.id);
+    ed.extra[t.dataset.addSet] = num(ed.extra[t.dataset.addSet]) + 1;
+    saveEdits(ed);
+    return true;
+  }
+  if (t.matches("[data-cardio]")) {
+    patchSession({ cardio_min: active().cardio_min ? null : CARDIO_MIN }, "cardio");
+    return true;
+  }
+  if (t.matches("[data-finish]")) {
+    await finish();
+    return true;
+  }
+  if (t.matches("[data-cancel-session]")) {
+    const s = active();
+    if (!confirm("Annullare questa seduta? Le serie segnate verranno rimosse dallo storico.")) return false;
+    enqueue("DELETE", sessionPath(s), undefined, `delete:${s.id}`);
+    app.today.active_session = null;
+    storage.remove(EDITS_KEY);
+    stopRest();
+    return true;
+  }
+  if (t.matches("[data-close-summary]")) {
+    ui.summary = null;
+    location.hash = "#dashboard";
+    return true;
+  }
+  if (t.dataset.importDraft) return importLegacyDraft(t.dataset.importDraft), true;
+  if (t.dataset.dropDraft) {
+    if (!confirm("Scartare questa bozza? I valori non salvati andranno persi.")) return false;
+    const drafts = storage.get(LEGACY_DRAFTS_KEY, {});
+    delete drafts[t.dataset.dropDraft];
+    storage.set(LEGACY_DRAFTS_KEY, drafts);
+    return true;
+  }
+  return false;
+}
+
+export function onChange(t) {
+  if (t.matches("[data-session-notes]")) {
+    patchSession({ notes: t.value.slice(0, 5000) }, "notes");
+    return false;
+  }
+  if (t.matches(".set-row [data-field]")) {
+    rememberRow(t.closest(".set-row"));
+    return false;
+  }
+  return false;
+}
+
+export function onInput(t) {
+  // Le serie già fatte si aggiornano sul server al "change" (fine modifica), non a ogni tasto.
+  const row = t.closest(".set-row");
+  if (row && !row.classList.contains("done") && t.matches("[data-field]")) rememberRow(row);
+}
+
+/** Per la dashboard: sintesi dello stato allenamento di oggi. */
+export function todayStatus() {
+  const t = app.today;
+  const s = active();
+  if (s) {
+    const { planned, done } = progressOf(s);
+    return { kind: "active", routine: s.routine, week: s.week, done, planned };
+  }
+  const doneToday = t.done_today[0] || app.sessions.find((x) => x.date === t.date && x.status === "done");
+  if (doneToday) return { kind: "done", routine: doneToday.routine, week: doneToday.week };
+  if (t.routine) return { kind: "planned", routine: t.routine, week: t.program_week };
+  return { kind: "rest", week: t.program_week };
+}
+
+export const resetUi = () => {
+  ui.summary = null;
+};
+

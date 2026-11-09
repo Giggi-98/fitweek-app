@@ -82,3 +82,17 @@ inventory_items(id, food_id NULL, name, qty REAL, unit, location 'pantry'|'fridg
 2. Solo operazioni additive (`CREATE TABLE`, `ADD COLUMN`); il blob `app_state` resta intatto finché il dominio migrato non è stabile da almeno una release.
 3. Migrazioni idempotenti, in transazione, registrate in `schema_migrations`.
 4. Test di migrazione su copia del DB reale prima del deploy.
+
+## Stato dopo M2 (schema 4, 2026-11-09)
+
+Tabelle reali: `app_state` (blob), `sessions` (login), `schema_migrations`, `workout_sessions`, `set_logs`.
+
+```sql
+workout_sessions(id TEXT PK, routine, week, date, status CHECK IN ('in_progress','done','skipped'),
+                 started_at, ended_at, duration_min, cardio_min, notes, source ('app'|'v1-blob'|'v1-backup'),
+                 created_at, updated_at, deleted_at)
+set_logs(session_id → workout_sessions ON DELETE CASCADE, exercise_id, set_index, kg, reps, rir,
+         completed, logged_at, PRIMARY KEY(session_id, exercise_id, set_index))
+```
+
+Differenze rispetto al modello obiettivo: la scheda (`programs/program_days/...`) è ancora `routines` nel blob; `exercise_id` fa riferimento agli id della scheda (`a1`…`c5`). Il campo `workouts` del blob è congelato dopo la migrazione 4.

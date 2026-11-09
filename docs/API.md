@@ -38,3 +38,22 @@ Comportamenti difettosi noti: corpo non JSON o JSON non-oggetto → **500** (dev
 | M4 | `meal-plan`, `meal-templates`, `foods` |
 | M5 | `shopping-lists`, `shopping-items`, `inventory` |
 | M8 | `assistant/suggestions` (solo proposte; applicazione esplicita) |
+
+## API v1 implementate (M2, 2026-11-09)
+
+Tutte richiedono login; le scritture verificano `Origin`. Errori di validazione: 422 `{detail, errors:[{field, error}]}`.
+
+| Metodo | Path | Note |
+|---|---|---|
+| GET | `/api/v1/today` | `{date, weekday, routine, program_week, program_weeks, active_session, done_today[]}` (fuso Europe/Rome) |
+| PUT | `/api/v1/program-week` | `{week}` → sposta `profile.startDate` (lunedì) e incrementa la versione del blob |
+| GET | `/api/v1/workout-sessions?routine=&status=&limit=` | sedute non eliminate, più recenti prima, con `sets[]` |
+| GET | `/api/v1/workout-sessions/{id}` | 404 se assente/eliminata |
+| POST | `/api/v1/workout-sessions` | `{id, routine, week, date}`; idempotente (stesso id → stessa seduta), `status=in_progress`, `started_at` dal server |
+| PATCH | `/api/v1/workout-sessions/{id}` | campi parziali: `status, routine, week, date, ended_at, duration_min, cardio_min, notes`; `status=done` calcola `ended_at`/durata se mancanti |
+| DELETE | `/api/v1/workout-sessions/{id}` | eliminazione logica (`deleted_at`) |
+| PUT | `/api/v1/workout-sessions/{id}/sets/{exercise_id}/{set_index}` | `{kg, reps, rir, completed}`; upsert sulla chiave naturale |
+| DELETE | `/api/v1/workout-sessions/{id}/sets/{exercise_id}/{set_index}` | rimuove la serie |
+| POST | `/api/v1/restore` | backup `fitweek-backup-v1` o `v2`; sostituisce stato e sedute dopo un backup SQLite `pre-restore-*` |
+
+`GET /api/backup` ora produce `fitweek-backup-v2`: `{format, version, data, workout_sessions[]}`.

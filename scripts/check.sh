@@ -3,7 +3,7 @@
 # verso l'app live, nessun volume reale). Uso: scripts/check.sh
 set -euo pipefail
 cd "$(dirname "$0")/.."
-node --check static/app.js
+for f in static/js/*.js static/js/*/*.js; do node --experimental-default-type=module --check "$f" 2>/dev/null || { echo "Errore di sintassi: $f"; exit 1; }; done
 python3 -m py_compile app/*.py
 docker build -q -t fitweek:test . >/dev/null
 docker run --rm --user root -v "$PWD":/src:ro -w /src --entrypoint sh fitweek:test -c \

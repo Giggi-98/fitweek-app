@@ -21,37 +21,46 @@ Uomo, 28 anni, 166 cm, peso iniziale 90 kg, lavoro sedentario. Obiettivo: ricomp
 
 I dati corporei cambiano nel tempo: **mai sovrascrivere lo storico**, solo aggiungere misurazioni.
 
-## Stack reale (verificato 2026-11-09)
+## Stack reale (aggiornato con M2, 2026-11-09)
 
-- Backend: Python 3.12, FastAPI 0.128, uvicorn (`app.main:create_app --factory`), Pydantic per la validazione, itsdangerous per firmare l'ID di sessione.
-- Sessioni server-side revocabili (tabella `sessions`), rate limit login in memoria, header di sicurezza + CSP, log JSON su stdout.
-- DB: SQLite (WAL) in `/data/fitweek.sqlite`. Stato applicativo ancora in **una sola riga JSON** (`app_state`) con versione per il controllo 409, validato da `app/schemas.py`. Migrazioni versionate in `app/migrations.py` (tabella `schema_migrations`, backup automatico pre-migrazione). Vedi `docs/DATA_MODEL.md`.
-- Frontend: HTML + CSS + JS vanilla senza build e senza CDN, in `static/` (formattati con prettier, ancora monolitici: divisione in moduli prevista in M2, `docs/DECISIONS.md` D-002). Bozze allenamento in localStorage.
-- Test: pytest in `tests/` (API, sicurezza, migrazioni), eseguiti da `scripts/check.sh` in container usa-e-getta.
+- Backend: Python 3.12, FastAPI 0.128, uvicorn (`app.main:create_app --factory`), Pydantic, itsdangerous (firma ID sessione). Sessioni server-side revocabili, rate limit login, CSP + header di sicurezza, log JSON.
+- DB: SQLite (WAL) `/data/fitweek.sqlite`. Migrazioni versionate in `app/migrations.py` con backup automatico pre-migrazione.
+  - Allenamenti: tabelle `workout_sessions` + `set_logs` (API `/api/v1/...`, scritture idempotenti per serie).
+  - Altri domini (profilo, scheda `routines`, pasti, spesa, dispensa, pesate): ancora nel blob JSON `app_state` (`/api/state`, controllo 409), validato da `app/schemas.py`. Il campo `workouts` del blob è congelato (copiato in tabella dalla migrazione 4, non più scritto).
+- Frontend: ES modules nativi senza build né CDN (`static/js/`), CSS a token con tema chiaro/scuro (`static/css/`). Coda offline idempotente per le scritture di allenamento, timer recupero basato su orario di fine.
+- Test: pytest (`tests/`, 38) via `scripts/check.sh`; e2e Playwright (`tests/e2e/`, 24 controlli, viewport iPhone + desktop) via `scripts/e2e.sh`.
 
 ## Struttura
 
 ```
-app/main.py          create_app(): middleware, endpoint, static
-app/config.py        Settings da env (nessun default per i segreti)
-app/db.py            connessione SQLite, transazioni, backup API
+app/main.py          create_app(): middleware, auth, /api/state, backup/restore, static
+app/workouts.py      API v1 allenamenti (today, sedute, serie, settimana programma)
+app/domain.py        regole pure: settimana programma, giorno A/B/C, serie previste
 app/migrations.py    migrazioni versionate + backup pre-migrazione
-app/schemas.py       modelli Pydantic dello stato (extra=forbid)
+app/schemas.py       modelli Pydantic (extra=forbid)
 app/security.py      sessioni, rate limit, Origin, CSP/header
-app/seed.py          stato iniziale (routines verificate sul PDF, meals, groceries)
-static/              index.html, app.js, style.css (SPA vanilla)
-tests/               pytest
-scripts/             backup.sh, restore.sh, check.sh
-resources/           scheda-originale.pdf (fonte autorevole della scheda, servita solo dopo login)
-docs/                documentazione di approfondimento
-Dockerfile, docker-compose.yml, .env(.example)
+app/config.py, db.py, logging_setup.py, seed.py
+static/index.html    shell; static/css/tokens.css (colori/spazi), app.css (componenti)
+static/js/main.js    avvio, routing hash, delega eventi alla vista attiva
+static/js/{api,store,ui,util,constants}.js
+static/js/views/     dashboard, training (logger), meals, shopping, progress, settings
+static/js/workout/   queue.js (coda offline), timer.js (recupero + preferenze)
+tests/               pytest; tests/e2e/ Playwright
+scripts/             backup.sh, restore.sh, check.sh, e2e.sh (deploy-m1.sh: storico)
+resources/           scheda-originale.pdf
+docs/                documentazione
 ```
+
+Convenzioni frontend: ogni vista esporta `render()` e opzionalmente `onClick/onChange/onInput/onSubmit` (restituiscono `true` per ridisegnare). Ogni valore interpolato passa da `esc()`. Colori solo tramite token.
 
 ## Comandi
 
 ```bash
 # Sintassi + test automatici (container usa-e-getta, nessun dato reale)
 scripts/check.sh
+
+# Test end-to-end nel browser (container usa-e-getta su 127.0.0.1:18088)
+scripts/e2e.sh
 
 # Backup coerente del DB live → /opt/backups/fitweek/
 scripts/backup.sh <etichetta>
@@ -94,4 +103,4 @@ Repository dedicato in `/opt/fitweek-app` (branch `main`). `.env`, DB e backup s
 
 - Audit iniziale: `docs/AUDIT-2026-11-09.md`.
 - Milestone e avanzamento: `docs/ROADMAP.md`.
-- Problemi noti aperti: allenamento ancora salvato sul server solo a fine seduta (mitigato dalla bozza locale; per-serie in M2); modello a blob unico; frontend monolitico con stili inline (CSP con `style-src 'unsafe-inline'`); settimana del programma manuale; link video `b4` da verificare.
+- Problemi noti aperti: domini pasti/spesa/pesate ancora nel blob (M3–M5); stili inline residui (CSP `style-src 'unsafe-inline'`); RIR/RPE presenti nel modello ma senza interfaccia; promemoria/notifiche non ancora implementati (D-013, serve scelta Android/iOS e HTTPS); link video `b4` da verificare.

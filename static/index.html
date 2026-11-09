@@ -2,80 +2,74 @@
 <html lang="it">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover" />
-    <meta name="theme-color" content="#11171a" />
-    <meta name="description" content="FitWeek - palestra, pasti, spesa e progressi" />
-    <title>FitWeek · La tua settimana, sotto controllo</title>
-    <link rel="stylesheet" href="/static/style.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0f1513" media="(prefers-color-scheme: dark)" />
+    <meta name="theme-color" content="#f4f6f2" media="(prefers-color-scheme: light)" />
+    <meta name="color-scheme" content="dark light" />
+    <meta name="description" content="FitWeek — palestra, pasti, spesa e progressi" />
+    <title>FitWeek</title>
+    <link rel="stylesheet" href="/static/css/tokens.css" />
+    <link rel="stylesheet" href="/static/css/app.css" />
+    <script type="module" src="/static/js/main.js"></script>
   </head>
   <body>
+    <div id="boot" class="boot">Caricamento…</div>
+
     <div id="login" class="login-shell hidden">
       <div class="login-card">
-        <div class="brand-logo large">◈</div>
+        <div class="brand-logo large" aria-hidden="true">◈</div>
         <h1>FitWeek</h1>
         <p>La tua settimana, sotto controllo.</p>
         <form id="login-form">
-          <label
-            >Password di accesso<input
-              type="password"
-              name="password"
-              required
-              autocomplete="current-password"
-              placeholder="Inserisci la password" /></label
-          ><button class="btn primary full">Entra nell'app <span>→</span></button>
-          <p class="error" id="login-error"></p>
+          <label for="pw">Password</label>
+          <input id="pw" type="password" name="password" required autocomplete="current-password" />
+          <button class="btn primary full" type="submit">Entra</button>
+          <p class="error" id="login-error" role="alert"></p>
         </form>
       </div>
     </div>
+
     <div id="shell" class="shell hidden">
       <aside class="sidebar">
-        <div class="brand">
-          <span class="brand-logo">◈</span
-          ><span>Fit<span class="accent">Week</span><small>PERSONAL DASHBOARD</small></span>
-        </div>
-        <nav id="nav">
-          <button data-view="dashboard" class="navitem selected"><span>▦</span> Panoramica</button
-          ><button data-view="training" class="navitem"><span>◆</span> Allenamenti</button
-          ><button data-view="meals" class="navitem"><span>◉</span> Alimentazione</button
-          ><button data-view="shopping" class="navitem"><span>▤</span> Spesa & dispensa</button
-          ><button data-view="progress" class="navitem"><span>↗</span> Progressi</button
-          ><button data-view="settings" class="navitem"><span>⚙</span> Impostazioni</button>
+        <div class="brand"><span class="brand-logo" aria-hidden="true">◈</span><span>Fit<span class="accent">Week</span></span></div>
+        <nav aria-label="Principale">
+          <a href="#dashboard" data-view="dashboard" class="navitem"><span aria-hidden="true">◎</span> Oggi</a>
+          <a href="#training" data-view="training" class="navitem"><span aria-hidden="true">◆</span> Palestra</a>
+          <a href="#meals" data-view="meals" class="navitem"><span aria-hidden="true">◉</span> Pasti</a>
+          <a href="#shopping" data-view="shopping" class="navitem"><span aria-hidden="true">▤</span> Spesa &amp; dispensa</a>
+          <a href="#progress" data-view="progress" class="navitem"><span aria-hidden="true">↗</span> Progressi</a>
+          <a href="#settings" data-view="settings" class="navitem"><span aria-hidden="true">⚙</span> Impostazioni</a>
         </nav>
         <div class="side-bottom">
-          <div class="side-note">
-            <span class="tiny-label">LA TUA ROUTINE</span><strong>Lun · Mer · Ven</strong
-            ><span>19:30 – 22:00</span>
-          </div>
-          <button id="logout" class="quiet">Esci ↗</button>
+          <div class="side-note"><span class="tiny-label">Palestra</span><strong>Lun · Mer · Ven</strong><span>19:30–22:00</span></div>
+          <button id="logout" class="btn small ghost" type="button">Esci</button>
         </div>
       </aside>
       <div class="app-main">
         <header class="topbar">
-          <div>
-            <span class="top-eyebrow">YOUR WEEKLY SYSTEM</span>
-            <h1 id="page-title">Panoramica</h1>
-          </div>
-          <div class="top-actions">
-            <span id="sync" class="sync">● Sincronizzato</span>
-            <div class="avatar">F</div>
-          </div>
+          <h1 id="page-title">Oggi</h1>
+          <span id="sync" class="sync" role="status" aria-live="polite">● Sincronizzato</span>
         </header>
         <main id="content"></main>
-        <footer>
-          FitWeek · I dati restano sul tuo server · Le indicazioni alimentari sono orientative, non una
-          prescrizione medica
-        </footer>
       </div>
-      <nav class="bottom-nav" id="bottom-nav">
-        <button data-view="dashboard" class="active">▦<small>Home</small></button
-        ><button data-view="training">◆<small>Palestra</small></button
-        ><button data-view="meals">◉<small>Pasti</small></button
-        ><button data-view="shopping">▤<small>Spesa</small></button
-        ><button data-view="progress">↗<small>Progressi</small></button
-        ><button data-view="settings">⚙<small>Altro</small></button>
+      <div id="rest-bar" class="rest-bar hidden" role="timer" aria-live="polite">
+        <div class="rest-progress"><div id="rest-progress"></div></div>
+        <div class="rest-row">
+          <span id="rest-label">Recupero</span>
+          <strong id="rest-time">1:30</strong>
+          <button id="rest-plus" class="btn small" type="button">+15 s</button>
+          <button id="rest-stop" class="btn small ghost" type="button">Stop</button>
+        </div>
+      </div>
+      <nav class="bottom-nav" aria-label="Principale">
+        <a href="#dashboard" data-view="dashboard"><span aria-hidden="true">◎</span><small>Oggi</small></a>
+        <a href="#training" data-view="training"><span aria-hidden="true">◆</span><small>Palestra</small></a>
+        <a href="#meals" data-view="meals"><span aria-hidden="true">◉</span><small>Pasti</small></a>
+        <a href="#shopping" data-view="shopping"><span aria-hidden="true">▤</span><small>Spesa</small></a>
+        <a href="#progress" data-view="progress"><span aria-hidden="true">↗</span><small>Progressi</small></a>
+        <a href="#settings" data-view="settings"><span aria-hidden="true">⚙</span><small>Altro</small></a>
       </nav>
     </div>
-    <div id="toast" class="toast hidden"></div>
-    <script defer src="/static/app.js"></script>
+    <div id="toast" class="toast hidden" role="status" aria-live="polite"></div>
   </body>
 </html>

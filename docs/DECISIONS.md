@@ -5,20 +5,20 @@ Stato: **Accettata** (in vigore) · **Proposta** (in attesa di approvazione uten
 ## D-001 — Mantenere FastAPI + SQLite · Accettata
 Contesto: un utente, volumi di dati minimi, deploy su mini PC. Decisione: nessun passaggio a PostgreSQL né a un altro backend. SQLite in WAL con un solo processo uvicorn. Conseguenze: backup = file singolo via backup API; nessun servizio DB aggiuntivo. Rivalutare solo con multi-utente o accesso concorrente intenso.
 
-## D-002 — Frontend vanilla JS, de-minificato in ES modules, senza build · Proposta
+## D-002 — Frontend vanilla JS, de-minificato in ES modules, senza build · Accettata (M2, 2026-11-09)
 Contesto: `app.js` (30 KB) e `style.css` sono minificati e monolitici; nessun sorgente leggibile. React/Next/Svelte richiederebbero toolchain Node, build in Docker e riscrittura completa senza benefici proporzionati per ~6 viste. Decisione proposta: formattare i file esistenti, poi dividerli in moduli ES nativi (`<script type="module">`), CSS in tokens/base/components. Nessuna dipendenza runtime. Rivalutare (es. Preact/htm via file vendorizzato, o Lit) solo se la gestione dello stato UI della schermata allenamento diventa difficile. Alternativa scartata: riscrittura in framework con build — costo alto, rischio regressioni.
 
-## D-003 — Migrazione progressiva dal blob JSON a tabelle · Proposta
+## D-003 — Migrazione progressiva dal blob JSON a tabelle · Accettata (M2, 2026-11-09)
 Contesto: lo stato unico causa riscritture totali, conflitti tra domini non correlati, limite 2 MB, nessuna validazione/query. Decisione proposta: strangler pattern, un dominio alla volta, iniziando da palestra (M2). `/api/state` resta per i domini non ancora migrati. Migrazioni additive con backup automatico pre-migrazione.
 
 ## D-004 — Migrazioni con runner interno, senza ORM · Accettata (implementata 2026-11-09)
 SQL/py versionati in `app/migrations/`, tabella `schema_migrations`, eseguiti all'avvio in transazione dopo backup. Alembic/SQLAlchemy scartati: troppa infrastruttura per ~10 tabelle. Pydantic (già incluso in FastAPI) per la validazione.
 
-## D-005 — Registrazione allenamento per serie, idempotente · Proposta
+## D-005 — Registrazione allenamento per serie, idempotente · Accettata (M2, 2026-11-09)
 Ogni serie confermata è inviata subito con UUID client (`PUT /api/v1/set-logs/{id}`); coda locale se offline. Elimina la perdita dati a metà seduta e i conflitti 409. Quick win temporaneo in M1: bozza in localStorage nel modello attuale.
 
-## D-006 — Settimana del programma calcolata · Proposta
-`week = floor((oggi − start_date)/7) + 1`, limitata 1..8, con override manuale e gestione sedute riprogrammate. Il calcolo è funzione pura testata. Fuso orario: `Europe/Rome` (configurato in container e app).
+## D-006 — Settimana del programma calcolata · Accettata (M2, 2026-11-09)
+`week = floor((oggi − start_date)/7) + 1`, limitata 1..8 (`app/domain.py`). L'override manuale non è un valore separato: `PUT /api/v1/program-week` sposta `startDate`, così esiste una sola fonte di verità. Il calcolo è funzione pura testata. Fuso orario: `Europe/Rome` (configurato in container e app).
 
 ## D-007 — Nome volume Docker esplicito · Accettata (implementata 2026-11-09)
 Oggi `fitweek-app_fitweek_data` dipende dal nome della directory. Proposta: `volumes: fitweek_data: {name: fitweek_data}` con migrazione via backup coerente → nuovo volume → verifica → il vecchio volume resta finché l'utente non autorizza la rimozione. Momento ideale: ora (DB = solo seed).
