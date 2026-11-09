@@ -4,6 +4,7 @@ Le calorie sono sempre "teoriche": somma dei valori stimati o dichiarati dei pas
 Ogni risposta riporta quanti pasti non hanno valori, così l'interfaccia non spaccia una
 somma parziale per completa.
 """
+import hashlib
 import json
 import sqlite3
 from datetime import date, datetime, timedelta
@@ -14,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from . import domain
 from .config import Settings
 from .db import connect, transaction
-from .schemas import IsoDate, MealLogPut, MealTemplatePut, ReminderAck, ReminderPut
+from .schemas import FoodPut, IsoDate, MealItem, MealLogPut, MealTemplatePut, ReminderAck, ReminderPut
 from .security import check_origin
 from .workouts import TZ, now_iso, today
 
@@ -28,6 +29,39 @@ def _rows(c: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
 
 def _blob(c: sqlite3.Connection) -> dict:
     return json.loads(c.execute("SELECT json FROM app_state WHERE id=1").fetchone()[0])
+
+
+def meal_totals(items: list[MealItem]) -> tuple[float | None, float | None, str | None]:
+    """Somma (qty × porzione) delle voci con valori, ESCLUSE quelle portate a casa (si contano quando
+    vengono mangiate, es. a cena). Fonte: 'estimate' se almeno una voce è stimata."""
+    known = [i for i in items if i.kcal is not None and not i.takeaway]
+    if not known:
+        return None, None, None
+    kcal = round(sum(i.kcal * i.qty for i in known), 1)
+    protein = round(sum((i.protein_g or 0) * i.qty for i in known), 1)
+    sources = {i.nutrition_source or "estimate" for i in known}
+    source = "estimate" if "estimate" in sources else ("label" if sources == {"label"} else "manual")
+    return kcal, protein, source
+
+
+def _learn_foods(c: sqlite3.Connection, items: list[MealItem], now: str) -> None:
+    """Ogni piatto usato entra nel catalogo (se nuovo) e ne aumenta l'uso: i menu della mensa si ripetono."""
+    for i in items:
+        row = c.execute("SELECT id FROM foods WHERE lower(name)=lower(?) AND deleted_at IS NULL", (i.name,)).fetchone()
+        if row:
+            c.execute("UPDATE foods SET use_count=use_count+1, last_used=? WHERE id=?", (now, row[0]))
+        else:
+            slug = "".join(ch for ch in i.name.lower() if ch.isalnum())[:40]
+            fid = f"u-{slug}-{hashlib.sha1(i.name.lower().encode()).hexdigest()[:6]}"
+            c.execute("INSERT OR IGNORE INTO foods (id, category, name, kcal, protein_g, nutrition_source, use_count,"
+                      " last_used, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, 1, ?, ?, ?)",
+                      (fid, i.category, i.name, i.kcal, i.protein_g,
+                       (i.nutrition_source or "manual") if i.kcal is not None else None, now, now, now))
+
+
+def parse_items(row: dict) -> dict:
+    row["items"] = json.loads(row["items"]) if row.get("items") else []
+    return row
 
 
 def monday_of(d: date) -> date:
@@ -171,33 +205,87 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     @r.get("/meal-logs")
     def list_meal_logs(date_from: IsoDate = Query(alias="from"), date_to: IsoDate = Query(alias="to")):
         with connect(settings.db_path) as c:
-            return {"items": _rows(c, "SELECT * FROM meal_logs WHERE date BETWEEN ? AND ? AND deleted_at IS NULL"
-                                      " ORDER BY date, logged_at", (date_from, date_to))}
+            rows = _rows(c, "SELECT * FROM meal_logs WHERE date BETWEEN ? AND ? AND deleted_at IS NULL"
+                            " ORDER BY date, logged_at", (date_from, date_to))
+            return {"items": [parse_items(r) for r in rows]}
 
     @r.put("/meal-logs/{mid}", dependencies=writes)
     def put_meal_log(mid: str, body: MealLogPut):
         _check_id(mid)
         now = now_iso()
         kcal, protein, source = body.kcal, body.protein_g, body.nutrition_source
+        description = body.description
         with connect(settings.db_path) as c, transaction(c):
-            if body.template_id and kcal is None:
+            if body.items:
+                # Pasto composto: i totali derivano SEMPRE dalle voci (ricalcolati a ogni modifica).
+                kcal, protein, source = meal_totals(body.items)
+                if not description:
+                    label = lambda i: (f"{i.qty:g}× " if i.qty != 1 else "") + i.name  # noqa: E731
+                    eaten = [label(i) for i in body.items if not i.takeaway]
+                    home = [label(i) for i in body.items if i.takeaway]
+                    description = (" + ".join(eaten) + (f" · a casa: {', '.join(home)}" if home else ""))[:300]
+                _learn_foods(c, body.items, now)
+            elif body.template_id and kcal is None:
                 t = c.execute("SELECT kcal, protein_g, nutrition_source FROM meal_templates WHERE id=?",
                               (body.template_id,)).fetchone()
                 if t:
                     kcal, protein, source = t
             if body.status == "skipped":
                 kcal = protein = source = None
+            items_json = json.dumps([i.model_dump() for i in body.items], ensure_ascii=False) if body.items else None
             c.execute(
                 "INSERT INTO meal_logs (id, date, slot, status, description, template_id, kcal, protein_g,"
-                " nutrition_source, note, logged_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
+                " nutrition_source, note, logged_at, updated_at, items) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(id) DO UPDATE SET date=excluded.date, slot=excluded.slot, status=excluded.status,"
                 " description=excluded.description, template_id=excluded.template_id, kcal=excluded.kcal,"
                 " protein_g=excluded.protein_g, nutrition_source=excluded.nutrition_source, note=excluded.note,"
-                " updated_at=excluded.updated_at, deleted_at=NULL",
-                (mid, body.date, body.slot, body.status, body.description, body.template_id, kcal, protein,
-                 _source(kcal, source), body.note, now, now),
+                " updated_at=excluded.updated_at, items=excluded.items, deleted_at=NULL",
+                (mid, body.date, body.slot, body.status, description, body.template_id, kcal, protein,
+                 _source(kcal, source), body.note, now, now, items_json),
+            )
+        return {"ok": True, "kcal": kcal, "protein_g": protein, "description": description}
+
+    # ---- catalogo piatti -------------------------------------------------------------------
+    @r.get("/foods")
+    def list_foods():
+        with connect(settings.db_path) as c:
+            return {"items": _rows(c, "SELECT * FROM foods WHERE deleted_at IS NULL"
+                                      " ORDER BY category, use_count DESC, name")}
+
+    @r.put("/foods/{fid}", dependencies=writes)
+    def put_food(fid: str, body: FoodPut):
+        _check_id(fid)
+        now = now_iso()
+        with connect(settings.db_path) as c, transaction(c):
+            clash = c.execute("SELECT id FROM foods WHERE lower(name)=lower(?) AND id<>? AND deleted_at IS NULL",
+                              (body.name, fid)).fetchone()
+            if clash:
+                raise HTTPException(status_code=409, detail="Esiste già un piatto con questo nome")
+            c.execute(
+                "INSERT INTO foods (id, category, name, kcal, protein_g, nutrition_source, note, created_at, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET category=excluded.category,"
+                " name=excluded.name, kcal=excluded.kcal, protein_g=excluded.protein_g,"
+                " nutrition_source=excluded.nutrition_source, note=excluded.note, updated_at=excluded.updated_at,"
+                " deleted_at=NULL",
+                (fid, body.category, body.name, body.kcal, body.protein_g, _source(body.kcal, body.nutrition_source),
+                 body.note, now, now),
             )
         return {"ok": True}
+
+    @r.delete("/foods/{fid}", dependencies=writes)
+    def delete_food(fid: str):
+        with connect(settings.db_path) as c, transaction(c):
+            c.execute("UPDATE foods SET deleted_at=? WHERE id=?", (now_iso(), fid))
+        return {"ok": True}
+
+    @r.get("/takeaway")
+    def takeaway(day: IsoDate | None = Query(default=None, alias="date")):
+        """Voci segnate "lo porto a casa" nei pasti del giorno (es. il secondo della mensa per la cena)."""
+        d = day or today().isoformat()
+        with connect(settings.db_path) as c:
+            rows = _rows(c, "SELECT items FROM meal_logs WHERE date=? AND deleted_at IS NULL AND items IS NOT NULL", (d,))
+        found = [i for r in rows for i in json.loads(r["items"]) if i.get("takeaway")]
+        return {"date": d, "items": found}
 
     @r.delete("/meal-logs/{mid}", dependencies=writes)
     def delete_meal_log(mid: str):

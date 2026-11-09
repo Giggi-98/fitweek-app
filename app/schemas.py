@@ -166,6 +166,7 @@ class BackupRestore(BaseModel):
     meal_templates: Optional[list["BackupMealTemplate"]] = Field(default=None, max_length=2000)
     meal_logs: Optional[list["BackupMealLog"]] = Field(default=None, max_length=50_000)
     reminders: Optional[list["BackupReminder"]] = Field(default=None, max_length=500)
+    foods: Optional[list["BackupFood"]] = Field(default=None, max_length=5000)
 
 
 class BackupSet(Strict):
@@ -216,6 +217,30 @@ class MealTemplatePut(Strict):
     position: int = Field(default=0, ge=0, le=10_000)
 
 
+FoodCategory = Literal["primo", "salsa", "secondo", "contorno", "piatto_unico", "frutta", "dessert", "pane", "altro"]
+
+
+class MealItem(Strict):
+    """Una voce del vassoio. kcal/protein_g sono PER PORZIONE; qty moltiplica (es. 2 pagnottine)."""
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    category: FoodCategory = "altro"
+    qty: float = Field(default=1, gt=0, le=20)
+    kcal: Optional[float] = Field(default=None, ge=0, le=5000)
+    protein_g: Optional[float] = Field(default=None, ge=0, le=500)
+    nutrition_source: Optional[NutritionSource] = None
+    food_id: Optional[Id] = None
+    takeaway: bool = False  # "lo porto a casa" (es. il secondo della mensa per cena)
+
+
+class FoodPut(Strict):
+    category: FoodCategory
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    kcal: Optional[float] = Field(default=None, ge=0, le=5000)
+    protein_g: Optional[float] = Field(default=None, ge=0, le=500)
+    nutrition_source: Optional[NutritionSource] = None
+    note: Text(300) = ""
+
+
 class MealLogPut(Strict):
     date: IsoDate
     slot: MealSlot
@@ -226,6 +251,7 @@ class MealLogPut(Strict):
     protein_g: Optional[float] = Field(default=None, ge=0, le=500)
     nutrition_source: Optional[NutritionSource] = None
     note: Text(500) = ""
+    items: list[MealItem] = Field(default_factory=list, max_length=30)
 
 
 class ReminderPut(Strict):
@@ -258,6 +284,13 @@ class BackupMealLog(_Stamps, MealLogPut):
     model_config = ConfigDict(extra="ignore")
     id: Id
     logged_at: Text(40)
+
+
+class BackupFood(_Stamps, FoodPut):
+    model_config = ConfigDict(extra="ignore")
+    id: Id
+    note: Optional[Text(300)] = ""
+    use_count: int = Field(default=0, ge=0)
 
 
 class BackupReminder(_Stamps, ReminderPut):

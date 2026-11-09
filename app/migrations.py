@@ -247,12 +247,81 @@ def _m005_meals_and_reminders(c: sqlite3.Connection) -> None:
             )
 
 
+# Catalogo piatti (mensa e casa) con valori STIMATI per porzione tipica: marcati 'estimate'.
+# Categorie come nel menu della mensa aziendale. Si arricchisce con i piatti inseriti dall'utente.
+DEFAULT_FOODS = [
+    # (id, categoria, nome, kcal, proteine g, nota)
+    ("f-pasta", "primo", "Pasta (porzione mensa, senza salsa)", 330, 11, "~90 g di pasta secca"),
+    ("f-riso", "primo", "Riso (porzione, senza salsa)", 320, 6, "~85 g di riso crudo"),
+    ("f-minestra", "primo", "Minestra / zuppa", 180, 6, ""),
+    ("f-farro", "primo", "Insalata di farro con formaggio e verdure", 420, 14, ""),
+    ("f-torta-salata", "primo", "Torta salata", 350, 10, ""),
+    ("f-salsa-pomodoro", "salsa", "Salsa al pomodoro", 50, 2, ""),
+    ("f-salsa-verdure", "salsa", "Salsa di verdure", 70, 2, ""),
+    ("f-amatriciana", "salsa", "Salsa all'amatriciana", 140, 5, ""),
+    ("f-burrino", "salsa", "Burro (burrino ~10 g)", 75, 0, ""),
+    ("f-olio", "salsa", "Olio extravergine (1 cucchiaio)", 90, 0, ""),
+    ("f-pollo", "secondo", "Petto di pollo ai ferri", 200, 35, "~150 g cotto"),
+    ("f-scaloppina", "secondo", "Scaloppina al pomodoro", 260, 30, ""),
+    ("f-pesce", "secondo", "Filetto di pesce gratinato", 220, 28, ""),
+    ("f-mozzarella", "secondo", "Mozzarella fior di latte (125 g)", 315, 23, ""),
+    ("f-cotto", "secondo", "Prosciutto cotto (100 g)", 215, 20, ""),
+    ("f-ratatouille", "secondo", "Ratatouille", 120, 3, ""),
+    ("f-spiedini", "piatto_unico", "Spiedini di carne mista", 350, 30, ""),
+    ("f-verdure-vapore", "contorno", "Verdure al vapore (broccoli…)", 45, 4, ""),
+    ("f-patate-forno", "contorno", "Patate al forno", 200, 4, ""),
+    ("f-insalata", "contorno", "Insalata / cavolo cappuccio (senza condimento)", 30, 1, ""),
+    ("f-mela", "frutta", "Mela", 80, 0, ""),
+    ("f-yogurt", "frutta", "Yogurt (125 g)", 120, 4, ""),
+    ("f-dessert", "dessert", "Dessert / torta (fetta)", 300, 4, ""),
+    ("f-pane", "pane", "Pane, pagnottina (~100 g)", 270, 9, "2 pagnottine ≈ 200 g"),
+    ("f-acqua", "altro", "Acqua", 0, 0, ""),
+]
+
+
+def _m006_meal_items_and_foods(c: sqlite3.Connection) -> None:
+    """Pasti composti da più voci (vassoio della mensa) + catalogo piatti. Solo aggiunte."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(meal_logs)")}
+    if "items" not in cols:
+        c.execute("ALTER TABLE meal_logs ADD COLUMN items TEXT")  # JSON: [{name, category, qty, kcal, protein_g, ...}]
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS foods (
+            id TEXT PRIMARY KEY,
+            category TEXT NOT NULL,
+            name TEXT NOT NULL,
+            kcal REAL,
+            protein_g REAL,
+            nutrition_source TEXT,
+            note TEXT NOT NULL DEFAULT '',
+            use_count INTEGER NOT NULL DEFAULT 0,
+            last_used TEXT,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT
+        )"""
+    )
+    c.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_foods_name ON foods(lower(name)) WHERE deleted_at IS NULL")
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    if not c.execute("SELECT 1 FROM foods LIMIT 1").fetchone():
+        for fid, cat, name, kcal, prot, note in DEFAULT_FOODS:
+            c.execute("INSERT INTO foods (id, category, name, kcal, protein_g, nutrition_source, note, created_at,"
+                      " updated_at) VALUES (?, ?, ?, ?, ?, 'estimate', ?, ?, ?)", (fid, cat, name, kcal, prot, note, now, now))
+    # Abitudine dichiarata dall'utente: dopo la palestra ~2 pagnottine di pane (~200 g) con il secondo.
+    c.execute(
+        "INSERT OR IGNORE INTO meal_templates VALUES ('t-secondo-pane2', 'dinner',"
+        " 'Secondo del lavoro + 2 pagnottine (~200 g)', 840, 46, 'estimate', 'Secondo ~300 kcal + pane ~540 kcal.',"
+        " 2, ?, ?, NULL)",
+        (now, now),
+    )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
     (3, "fix_progressions_b6_c5", _m003_fix_progressions),
     (4, "workout_tables", _m004_workout_tables),
     (5, "meals_and_reminders", _m005_meals_and_reminders),
+    (6, "meal_items_and_foods", _m006_meal_items_and_foods),
 ]
 
 

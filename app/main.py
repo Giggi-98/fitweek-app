@@ -164,6 +164,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                   ("reminders", "1"))}
             for r in extra["reminders"]:
                 r["enabled"] = bool(r["enabled"])
+            for m in extra["meal_logs"]:
+                m["items"] = json.loads(m["items"]) if m.get("items") else []
+            extra["foods"] = [dict(r) for r in c.execute("SELECT * FROM foods WHERE deleted_at IS NULL")]
         stamp = time.strftime("%Y%m%d")
         return JSONResponse(
             {"format": "fitweek-backup-v3", "version": version, "data": json.loads(blob),
@@ -217,11 +220,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 if body.meal_logs is not None:
                     c.execute("DELETE FROM meal_logs")
                     for m in body.meal_logs:
+                        items = json.dumps([i.model_dump() for i in m.items], ensure_ascii=False) if m.items else None
                         c.execute("INSERT INTO meal_logs (id, date, slot, status, description, template_id, kcal,"
-                                  " protein_g, nutrition_source, note, logged_at, updated_at)"
-                                  " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                                  " protein_g, nutrition_source, note, logged_at, updated_at, items)"
+                                  " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                                   (m.id, m.date, m.slot, m.status, m.description, m.template_id, m.kcal,
-                                   m.protein_g, m.nutrition_source, m.note, m.logged_at, now))
+                                   m.protein_g, m.nutrition_source, m.note, m.logged_at, now, items))
+                if body.foods is not None:
+                    c.execute("DELETE FROM foods")
+                    for f in body.foods:
+                        c.execute("INSERT INTO foods (id, category, name, kcal, protein_g, nutrition_source, note,"
+                                  " use_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                  (f.id, f.category, f.name, f.kcal, f.protein_g, f.nutrition_source, f.note or "",
+                                   f.use_count, now, now))
                 if body.reminders is not None:
                     c.execute("DELETE FROM reminder_acks")
                     c.execute("DELETE FROM reminders")
