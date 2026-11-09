@@ -72,7 +72,7 @@ docker ps --filter name=fitweek ; docker inspect fitweek --format '{{.State.Heal
 docker run --rm -p 127.0.0.1:18088:8080 -e APP_PASSWORD=... -e SESSION_SECRET=... -e DB_PATH=/tmp/t.sqlite fitweek:test
 ```
 
-Build/deploy: `docs/DEPLOYMENT.md`. **Il deploy sull'istanza in uso richiede autorizzazione esplicita dell'utente.**
+Build/deploy: `scripts/deploy.sh` (dettagli in `docs/DEPLOYMENT.md`). **Il deploy sull'istanza in uso richiede autorizzazione esplicita dell'utente**; il classificatore dei permessi di Claude Code blocca il deploy anche se autorizzato a voce: in quel caso l'utente lo lancia con `! scripts/deploy.sh`.
 
 ## Regole non negoziabili
 

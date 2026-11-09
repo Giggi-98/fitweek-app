@@ -19,6 +19,8 @@ Sullo stesso host girano altri servizi (vaultwarden, jellyfin, homeassistant, gi
 
 ## Procedura di aggiornamento (da eseguire solo con autorizzazione)
 
+Automatizzata in `scripts/deploy.sh` (test → backup `pre-deploy-<commit>` → build → `up -d` → verifica healthcheck e migrazioni). Passi equivalenti manuali:
+
 1. `git status` pulito nel repo dedicato; tag della versione precedente.
 2. Backup coerente (vedi sotto) e verifica che il file sia leggibile (`PRAGMA integrity_check`).
 3. Build senza fermare il servizio: `docker compose build`.
