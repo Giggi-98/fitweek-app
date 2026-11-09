@@ -125,11 +125,134 @@ def _m004_workout_tables(c: sqlite3.Connection) -> None:
             )
 
 
+# Pasti abituali con valori nutrizionali STIMATI (medie indicative per porzione tipica, non
+# misurate): sono marcati nutrition_source='estimate' e l'interfaccia li mostra come stima.
+DEFAULT_MEAL_TEMPLATES = [
+    # (id, slot, nome, kcal, proteine g, nota)
+    ("t-mensa-primo", "lunch", "Primo + contorno (mensa)", 550, 15, "Porzione tipica di pasta/riso condito + verdure; molto variabile."),
+    ("t-secondo", "dinner", "Secondo del lavoro", 300, 28, "Carne o pesce, porzione ~150 g cotta; variabile."),
+    ("t-secondo-pane", "dinner", "Secondo del lavoro + pane", 430, 32, "Con ~50 g di pane."),
+    ("t-secondo-verdure", "dinner", "Secondo del lavoro + verdure", 350, 29, "Con una porzione di verdure."),
+    ("t-banana", "pre_workout", "Banana", 105, 1, "Banana media."),
+    ("t-yogurt-greco", "pre_workout", "Yogurt greco 0% (170 g)", 100, 17, "Verifica l'etichetta del prodotto."),
+    ("t-gallette", "pre_workout", "Gallette di riso (3)", 105, 2, "Verifica l'etichetta del prodotto."),
+    ("t-frutta", "snack", "Frutta (1 porzione)", 70, 1, "Mela, pera, arancia…"),
+    ("t-pasta-tonno", "lunch", "Pasta + tonno + verdure", 600, 30, "~90 g pasta, 1 scatoletta di tonno al naturale."),
+    ("t-riso-legumi", "lunch", "Riso + legumi + verdure", 550, 20, "~80 g riso, 1 confezione di legumi."),
+    ("t-pollo-patate", "dinner", "Pollo + patate + verdure", 550, 40, "~150 g pollo, ~200 g patate."),
+    ("t-frittata", "dinner", "Frittata (2 uova) + pane + verdure", 450, 20, ""),
+    ("t-dolce-colleghi", "other", "Dolce dei colleghi", 250, 4, "Molto variabile."),
+    ("t-sushi", "other", "Sushi / cena fuori", 800, 35, "Molto variabile."),
+]
+
+GYM_DAYS = (0, 2, 4)
+GYM_CODE = {0: "A", 2: "B", 4: "C"}
+
+
+def default_reminders() -> list[tuple]:
+    """Promemoria ricavati dalla routine dell'utente (CLAUDE.md). Tutti modificabili."""
+    r = []
+    for d in range(7):
+        work = d < 5
+        if work:
+            r.append((d, "13:00", "meal", "lunch", "Pranzo al lavoro: cosa hai preso?", "log_meal"))
+        else:
+            r.append((d, "13:00", "meal", "lunch", "Pranzo", "log_meal"))
+        if d in GYM_DAYS:
+            r.append((d, "18:30", "meal", "pre_workout", "Spuntino pre-palestra", "log_meal"))
+            r.append((d, "19:15", "workout", None, f"Palestra alle 19:30 · Giorno {GYM_CODE[d]}", "start_workout"))
+            r.append((d, "22:30", "meal", "dinner", "Cena: secondo del lavoro", "log_meal"))
+            r.append((d, "23:30", "sleep", None, "Verso il letto: obiettivo mezzanotte", "none"))
+        else:
+            r.append((d, "17:00", "meal", "snack", "Spuntino", "log_meal"))
+            r.append((d, "20:00", "meal", "dinner", "Cena: secondo del lavoro" if work else "Cena: qualcosa di semplice da casa", "log_meal"))
+            r.append((d, "23:45", "sleep", None, "Inizia a staccare: prova ad anticipare il sonno", "none"))
+    r.append((1, "08:00", "weigh_in", None, "Pesata (a digiuno, dopo il bagno)", "log_weight"))
+    r.append((4, "08:00", "weigh_in", None, "Pesata (a digiuno, dopo il bagno)", "log_weight"))
+    r.append((6, "18:00", "shopping", None, "Ordina la spesa Esselunga (consegna lunedì)", "open_shopping"))
+    return r
+
+
+def _m005_meals_and_reminders(c: sqlite3.Connection) -> None:
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS meal_templates (
+            id TEXT PRIMARY KEY,
+            slot TEXT NOT NULL,
+            name TEXT NOT NULL,
+            kcal REAL,
+            protein_g REAL,
+            nutrition_source TEXT,
+            nutrition_note TEXT NOT NULL DEFAULT '',
+            position INTEGER NOT NULL DEFAULT 0,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS meal_logs (
+            id TEXT PRIMARY KEY,
+            date TEXT NOT NULL,
+            slot TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('eaten','skipped')),
+            description TEXT NOT NULL DEFAULT '',
+            template_id TEXT,
+            kcal REAL,
+            protein_g REAL,
+            nutrition_source TEXT,
+            note TEXT NOT NULL DEFAULT '',
+            logged_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT
+        )"""
+    )
+    c.execute("CREATE INDEX IF NOT EXISTS idx_meal_logs_date ON meal_logs(date)")
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS reminders (
+            id TEXT PRIMARY KEY,
+            weekday INTEGER NOT NULL CHECK(weekday BETWEEN 0 AND 6),
+            time TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            slot TEXT,
+            title TEXT NOT NULL,
+            action TEXT NOT NULL,
+            enabled INTEGER NOT NULL DEFAULT 1,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS reminder_acks (
+            reminder_id TEXT NOT NULL,
+            date TEXT NOT NULL,
+            status TEXT NOT NULL CHECK(status IN ('done','dismissed','snoozed')),
+            snooze_until TEXT,
+            at TEXT NOT NULL,
+            PRIMARY KEY (reminder_id, date)
+        )"""
+    )
+    now = datetime.now().astimezone().isoformat(timespec="seconds")
+    if not c.execute("SELECT 1 FROM meal_templates LIMIT 1").fetchone():
+        for pos, (tid, slot, name, kcal, prot, note) in enumerate(DEFAULT_MEAL_TEMPLATES):
+            c.execute(
+                "INSERT INTO meal_templates VALUES (?, ?, ?, ?, ?, 'estimate', ?, ?, ?, ?, NULL)",
+                (tid, slot, name, kcal, prot, note, pos, now, now),
+            )
+    if not c.execute("SELECT 1 FROM reminders LIMIT 1").fetchone():
+        for d, time_, kind, slot, title, action in default_reminders():
+            rid = f"r{d}-{time_.replace(':', '')}-{kind}"
+            c.execute(
+                "INSERT INTO reminders VALUES (?, ?, ?, ?, ?, ?, ?, 1, ?, ?)",
+                (rid, d, time_, kind, slot, title, action, now, now),
+            )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
     (3, "fix_progressions_b6_c5", _m003_fix_progressions),
     (4, "workout_tables", _m004_workout_tables),
+    (5, "meals_and_reminders", _m005_meals_and_reminders),
 ]
 
 

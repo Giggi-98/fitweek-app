@@ -151,9 +151,13 @@ class ProgramWeekPut(Strict):
 class BackupRestore(BaseModel):
     """Backup v1 (solo stato) o v2 (stato + sedute). Le sedute sono validate qui sotto."""
     model_config = ConfigDict(extra="ignore")
-    format: Literal["fitweek-backup-v1", "fitweek-backup-v2"]
+    format: Literal["fitweek-backup-v1", "fitweek-backup-v2", "fitweek-backup-v3"]
     data: AppState
     workout_sessions: list["BackupSession"] = Field(default_factory=list, max_length=10_000)
+    # v3: assenti nei backup precedenti → None = non toccare le tabelle esistenti
+    meal_templates: Optional[list["BackupMealTemplate"]] = Field(default=None, max_length=2000)
+    meal_logs: Optional[list["BackupMealLog"]] = Field(default=None, max_length=50_000)
+    reminders: Optional[list["BackupReminder"]] = Field(default=None, max_length=500)
 
 
 class BackupSet(Strict):
@@ -181,6 +185,76 @@ class BackupSession(Strict):
     created_at: Text(40)
     updated_at: Text(40)
     sets: list[BackupSet] = Field(default_factory=list, max_length=500)
+
+
+
+
+
+# ---- API v1: pasti e promemoria (M4) -------------------------------------------------------
+MealSlot = Literal["lunch", "snack", "pre_workout", "dinner", "other"]
+NutritionSource = Literal["estimate", "label", "manual"]
+HHMM = Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
+ReminderKind = Literal["meal", "workout", "weigh_in", "shopping", "sleep", "custom"]
+ReminderAction = Literal["log_meal", "start_workout", "log_weight", "open_shopping", "none"]
+
+
+class MealTemplatePut(Strict):
+    slot: MealSlot
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    kcal: Optional[float] = Field(default=None, ge=0, le=5000)
+    protein_g: Optional[float] = Field(default=None, ge=0, le=500)
+    nutrition_source: Optional[NutritionSource] = None
+    nutrition_note: Text(300) = ""
+    position: int = Field(default=0, ge=0, le=10_000)
+
+
+class MealLogPut(Strict):
+    date: IsoDate
+    slot: MealSlot
+    status: Literal["eaten", "skipped"] = "eaten"
+    description: Text(300) = ""
+    template_id: Optional[Id] = None
+    kcal: Optional[float] = Field(default=None, ge=0, le=5000)
+    protein_g: Optional[float] = Field(default=None, ge=0, le=500)
+    nutrition_source: Optional[NutritionSource] = None
+    note: Text(500) = ""
+
+
+class ReminderPut(Strict):
+    weekday: int = Field(ge=0, le=6)
+    time: HHMM
+    kind: ReminderKind
+    slot: Optional[MealSlot] = None
+    title: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    action: ReminderAction = "none"
+    enabled: bool = True
+
+
+class ReminderAck(Strict):
+    date: IsoDate
+    status: Literal["done", "dismissed", "snoozed"]
+    snooze_minutes: Optional[int] = Field(default=None, ge=1, le=240)
+
+
+class _Stamps(BaseModel):
+    model_config = ConfigDict(extra="ignore")  # tollera colonne aggiunte in futuro
+
+
+class BackupMealTemplate(_Stamps, MealTemplatePut):
+    model_config = ConfigDict(extra="ignore")
+    id: Id
+    nutrition_note: Optional[Text(300)] = ""
+
+
+class BackupMealLog(_Stamps, MealLogPut):
+    model_config = ConfigDict(extra="ignore")
+    id: Id
+    logged_at: Text(40)
+
+
+class BackupReminder(_Stamps, ReminderPut):
+    model_config = ConfigDict(extra="ignore")
+    id: Id
 
 
 BackupRestore.model_rebuild()

@@ -67,7 +67,7 @@ export async function onClick(t) {
     } catch {
       return toast("File non leggibile"), false;
     }
-    if (!/^fitweek-backup-v[12]$/.test(obj?.format || "")) return toast("Non è un backup FitWeek"), false;
+    if (!/^fitweek-backup-v[123]$/.test(obj?.format || "")) return toast("Non è un backup FitWeek"), false;
     if (!confirm("Il ripristino sostituisce tutti i dati attuali (il server ne conserva una copia). Continuare?")) return false;
     try {
       const out = await request("/api/v1/restore", { method: "POST", body: obj });

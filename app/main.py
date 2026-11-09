@@ -1,6 +1,7 @@
 """Applicazione FastAPI. Avvio: uvicorn app.main:create_app --factory"""
 import json
 import logging
+import sqlite3
 import time
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -23,6 +24,7 @@ from .security import (
     check_origin,
     password_matches,
 )
+from . import daily
 from .workouts import build_router, load_sessions, now_iso
 
 log = logging.getLogger("fitweek.http")
@@ -153,10 +155,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         with connect(settings.db_path) as c:
             version, blob = c.execute("SELECT version, json FROM app_state WHERE id=1").fetchone()
             sessions_ = load_sessions(c, limit=100_000)
+            c.row_factory = sqlite3.Row
+            extra = {t: [dict(r) for r in c.execute(f"SELECT * FROM {t} WHERE {w}")]
+                     for t, w in (("meal_templates", "deleted_at IS NULL"), ("meal_logs", "deleted_at IS NULL"),
+                                  ("reminders", "1"))}
+            for r in extra["reminders"]:
+                r["enabled"] = bool(r["enabled"])
         stamp = time.strftime("%Y%m%d")
         return JSONResponse(
-            {"format": "fitweek-backup-v2", "version": version, "data": json.loads(blob),
-             "workout_sessions": sessions_},
+            {"format": "fitweek-backup-v3", "version": version, "data": json.loads(blob),
+             "workout_sessions": sessions_, **extra},
             headers={"Content-Disposition": f'attachment; filename="fitweek-backup-{stamp}.json"'},
         )
 
@@ -195,9 +203,32 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                             (s["id"], x["exercise_id"], x["set_index"], x["kg"], x["reps"], x["rir"],
                              int(x["completed"]), x["logged_at"]),
                         )
+                now = now_iso()
+                if body.meal_templates is not None:
+                    c.execute("DELETE FROM meal_templates")
+                    for t in body.meal_templates:
+                        c.execute("INSERT INTO meal_templates (id, slot, name, kcal, protein_g, nutrition_source,"
+                                  " nutrition_note, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                  (t.id, t.slot, t.name, t.kcal, t.protein_g, t.nutrition_source,
+                                   t.nutrition_note or "", t.position, now, now))
+                if body.meal_logs is not None:
+                    c.execute("DELETE FROM meal_logs")
+                    for m in body.meal_logs:
+                        c.execute("INSERT INTO meal_logs (id, date, slot, status, description, template_id, kcal,"
+                                  " protein_g, nutrition_source, note, logged_at, updated_at)"
+                                  " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                                  (m.id, m.date, m.slot, m.status, m.description, m.template_id, m.kcal,
+                                   m.protein_g, m.nutrition_source, m.note, m.logged_at, now))
+                if body.reminders is not None:
+                    c.execute("DELETE FROM reminder_acks")
+                    c.execute("DELETE FROM reminders")
+                    for r in body.reminders:
+                        c.execute("INSERT INTO reminders VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                  (r.id, r.weekday, r.time, r.kind, r.slot, r.title, r.action, int(r.enabled), now, now))
         return {"ok": True, "version": version + 1, "sessions": len(sessions_in)}
 
     app.include_router(build_router(settings, require_session))
+    app.include_router(daily.build_router(settings, require_session))
 
     @app.get("/api/original-pdf", dependencies=[Depends(require_session)])
     def original_pdf():
