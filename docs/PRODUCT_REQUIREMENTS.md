@@ -69,6 +69,15 @@ Legenda stato: ✅ implementato · 🟡 parziale · ⬜ pianificato. Dettaglio n
 - ⬜ Medie settimanali (calcolate, marcate come tali), misure aggiuntive
 - ⬜ Carichi per esercizio nel tempo, frequenza allenamenti, note di recupero
 
+### G. Promemoria e inserimento rapido (richiesta 2026-11-09)
+- ⬜ L'app ricorda attivamente cosa fare: spuntino pre-palestra, pasti, allenamento, pesata, spesa del lunedì. Orari derivati dalla routine, modificabili, silenziabili.
+- ⬜ Tocco sul promemoria → popup di inserimento rapido (es. "Cosa hai mangiato?" con scelte abituali + testo libero; "Peso di oggi").
+- ⬜ Pesata quando l'app lo ricorda (frequenza configurabile, default proposta: 1–2 volte a settimana, stessa condizione, es. mattina).
+- ⬜ In palestra: per ogni esercizio serie e peso della settimana corrente del programma.
+- ⬜ Dashboard settimanale: pasti consumati, **calorie teoriche** (sempre marcate come stima, con fonte), serie completate vs previste, peso e andamento.
+- Tono: promemoria gentili, nessuna colpevolizzazione per pasti saltati o "sgarri"; nessun obiettivo calorico prescrittivo.
+- Implementazione proposta: app Capacitor con notifiche locali (D-013).
+
 ### F. Assistente AI (opzionale)
 - ⬜ Architettura predisposta, disattivata di default, chiavi solo backend, consenso esplicito per l'invio di dati, proposte che l'utente approva.
 

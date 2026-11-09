@@ -6,12 +6,12 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 
 | # | Milestone | Stato |
 |---|---|---|
-| M1 | Stabilizzazione, protezione dati, sicurezza | 🔄 (audit + docs fatti; implementazione ⏸) |
+| M1 | Stabilizzazione, protezione dati, sicurezza | 🔄 codice e test completati; deploy ⏸ in attesa di permesso |
 | M2 | Fondamenta frontend, design system, allenamento mobile | ⬜ |
 | M3 | Dashboard "Oggi" e progressi | ⬜ |
 | M4 | Alimentazione: calendario e pasti consumati | ⬜ |
 | M5 | Spesa, dispensa, budget | ⬜ |
-| M6 | PWA e offline | ⬜ |
+| M6 | App mobile (Capacitor) con promemoria e offline — anticipabile dopo M2 (D-013) | ⬜ |
 | M7 | Rifinitura: accessibilità, performance, schede multiple | ⬜ |
 | M8 | Assistente AI opzionale e integrazioni | ⬜ |
 
@@ -70,8 +70,9 @@ Accettazione: nessun valore nutrizionale mostrato senza fonte; weekend con propo
 ## M5 — Spesa, dispensa, budget
 Liste per settimana con storico; quantità numeriche + unità; prezzo stimato vs reale; spesa effettiva vs budget; dispensa con luogo e scadenze; generazione lista = fabbisogno piano − inventario; esportazione testo; nessuna integrazione Esselunga automatica (D-010).
 
-## M6 — PWA e offline
-Manifest, icone, service worker per la shell, coda offline delle serie. Prerequisito: HTTPS in LAN (D-008) — decisione utente.
+## M6 — App mobile Capacitor, promemoria, offline
+Richiesta utente 2026-11-09 (D-013). Shell Capacitor sulla SPA esistente; notifiche locali programmate dalla routine (spuntino, pasti, palestra, pesata, spesa); tocco → popup di inserimento rapido; coda offline. Prerequisiti: HTTPS sul server (reverse proxy), auth adatta a un'app nativa, scelta piattaforma (Android/iOS). Le parti dati (pasti consumati, calorie teoriche, pesate pianificate) arrivano da M3–M4, quindi M6 può partire in parallelo a M4 una volta pronta l'infrastruttura HTTPS.
+Accettazione: promemoria che arrivano all'orario anche con app chiusa e senza rete; dal promemoria all'inserimento salvato in ≤ 3 tocchi.
 
 ## M7 — Rifinitura
 Accessibilità completa, performance, schede multiple / nuovo programma dopo le 8 settimane, sonno (registrazione leggera, opzionale).
