@@ -53,6 +53,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             response.headers["Cache-Control"] = "no-cache"
         if request.url.path.startswith("/api/"):
             response.headers.setdefault("Cache-Control", "no-store")
+        elif request.url.path.startswith("/static/"):
+            # Rivalida sempre (ETag): dopo un deploy il browser non usa file JS/CSS vecchi.
+            response.headers["Cache-Control"] = "no-cache"
         if request.url.path != "/api/health":
             log.info(
                 "request",

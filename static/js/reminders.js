@@ -7,6 +7,8 @@ import { DAYS, PLAN_KEY, SLOTS, SOURCE_LABEL } from "./constants.js";
 import { app, persistState, refreshDaily } from "./store.js";
 import { closeModal, modalOpen, openModal, toast } from "./ui.js";
 import { $, esc, fmtNum, isoDate, num, uid } from "./util.js";
+import { icon } from "./icons.js";
+import { haptic } from "./motion.js";
 import { enqueue, flush } from "./workout/queue.js";
 
 const SNOOZE_MIN = 15;
@@ -72,11 +74,12 @@ export function openMealLog({ slot = "other", date = todayIso(), reminderId = nu
   const chip = (t) =>
     `<button type="button" class="pick" data-tpl="${esc(t.id)}"><span>${esc(t.name)}</span>${t.kcal != null ? `<small>${t.nutrition_source === "estimate" ? "~" : ""}${fmtNum(t.kcal, 0)} kcal · ${SOURCE_LABEL[t.nutrition_source] || "stima"}</small>` : "<small>senza valori</small>"}</button>`;
   openModal(
-    `<h2 id="modal-title">${esc(title || SLOTS[slot] || "Pasto")}</h2>
+    `<div class="modal-ic">${icon({ lunch: "soup", pre_workout: "zap", snack: "apple", dinner: "utensils" }[slot] || "cookie")}</div>
+    <h2 id="modal-title">${esc(title || SLOTS[slot] || "Pasto")}</h2>
     <p class="subtle">Cosa hai mangiato? Un tocco per registrare.</p>
-    ${planned ? `<button type="button" class="btn primary full" data-m="planned">✓ Come previsto: ${esc(planned)}</button>` : ""}
+    ${planned ? `<button type="button" class="btn primary xl full" data-m="planned">${icon("check")}Come previsto: ${esc(planned)}</button>` : ""}
     <div class="pick-list">${templates.map(chip).join("") || '<p class="subtle">Nessun pasto abituale per questo momento: aggiungili da Pasti → Abituali.</p>'}</div>
-    <details class="free"><summary>Altro / scrivi tu</summary>
+    <details class="free"><summary>${icon("pencil", "sm")}Altro / scrivi tu</summary>
       <div class="field"><label for="m-desc">Descrizione</label><input id="m-desc" maxlength="300" placeholder="es. piadina prosciutto e formaggio"></div>
       <div class="field"><label for="m-kcal">Calorie, se le conosci (facoltativo)</label><input id="m-kcal" inputmode="numeric" placeholder="es. 450"></div>
       <button type="button" class="btn full" data-m="free">Salva</button>
@@ -105,6 +108,7 @@ export function openMealLog({ slot = "other", date = todayIso(), reminderId = nu
       }
       if (!body) return false;
       enqueue("PUT", `/api/v1/meal-logs/${uid()}`, body);
+      haptic(12);
       toast(body.status === "skipped" ? "Segnato come saltato" : "Pasto registrato");
       afterChange();
       return true;
@@ -116,7 +120,8 @@ export function openMealLog({ slot = "other", date = todayIso(), reminderId = nu
 export function openWeighIn({ reminderId = null } = {}) {
   const last = [...app.state.weights].sort((a, b) => b.date.localeCompare(a.date))[0];
   openModal(
-    `<h2 id="modal-title">Pesata</h2>
+    `<div class="modal-ic">${icon("scale")}</div>
+    <h2 id="modal-title">Pesata</h2>
     <p class="subtle">Stesse condizioni ogni volta: al mattino, a digiuno, dopo il bagno.${last ? ` Ultima: ${esc(fmtNum(last.weight))} kg.` : ""}</p>
     <div class="field"><label for="m-weight">Peso (kg)</label><input id="m-weight" inputmode="decimal" autofocus placeholder="${last ? esc(String(last.weight).replace(".", ",")) : "es. 89,4"}"></div>
     <button type="button" class="btn primary full" data-m="save">Salva</button>
@@ -143,7 +148,8 @@ function openSimple(item) {
   };
   const [label, hash] = actions[item.action] || ["Ok, fatto", null];
   openModal(
-    `<h2 id="modal-title">${esc(item.title)}</h2>
+    `<div class="modal-ic">${icon({ start_workout: "dumbbell", open_shopping: "shopping-cart" }[item.action] || (item.kind === "sleep" ? "moon" : "bell"))}</div>
+    <h2 id="modal-title">${esc(item.title)}</h2>
     <p class="subtle">${esc(item.time)}</p>
     <button type="button" class="btn primary full" data-m="go" autofocus>${label}</button>
     ${laterButtons(item.id)}`,

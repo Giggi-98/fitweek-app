@@ -46,7 +46,7 @@ function romeMinuteAgo() {
   await page.waitForSelector('#modal', { state: 'hidden' });
   await page.waitForSelector('.agenda li.done', { timeout: 8000 });
   check('promemoria completato dal pasto registrato', (await page.locator('.agenda li.done').count()) === 1);
-  const weekly = await page.textContent('.wk-days');
+  const weekly = await page.textContent('.wk-chart');
   check('settimana: calorie teoriche del giorno', /105/.test(weekly), weekly.replace(/\s+/g, ' ').slice(0, 80));
   await page.screenshot({ path: `${SHOTS}/m4-2-dashboard.png`, fullPage: true });
 
@@ -103,7 +103,7 @@ function romeMinuteAgo() {
   check('pasto abituale modificato', tpl.kcal === 110 && tpl.nutrition_source === 'label');
 
   // 7. Impostazioni: promemoria
-  await page.click('.bottom-nav [data-view=settings]');
+  await page.click('.topbar [data-view=settings]');
   await page.waitForSelector('.rem-row');
   const row = page.locator('[data-rem-form="e2e-meal"]');
   await row.locator('input[name=time]').fill('07:30');

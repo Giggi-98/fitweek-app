@@ -25,7 +25,9 @@ export function setSync(kind) {
   if (!el) return;
   const queued = pendingOps > 0;
   el.dataset.state = lastError ? "error" : queued ? "saving" : "ok";
-  el.textContent = lastError ? "● Non salvato" : queued ? `◌ In salvataggio (${pendingOps})` : "● Sincronizzato";
+  const text = lastError ? "Non salvato" : queued ? `Salvataggio (${pendingOps})` : "Sincronizzato";
+  el.querySelector(".sync-text").textContent = text;
+  el.title = text;
 }
 export function setPending(n) {
   pendingOps = n;

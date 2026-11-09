@@ -30,7 +30,7 @@ I dati corporei cambiano nel tempo: **mai sovrascrivere lo storico**, solo aggiu
   - Altri domini (profilo, scheda `routines`, pasti, spesa, dispensa, pesate): ancora nel blob JSON `app_state` (`/api/state`, controllo 409), validato da `app/schemas.py`. Il campo `workouts` del blob è congelato (copiato in tabella dalla migrazione 4, non più scritto).
 - Frontend: ES modules nativi senza build né CDN (`static/js/`), CSS a token con tema chiaro/scuro (`static/css/`). Coda offline idempotente per le scritture di allenamento e pasti, timer recupero basato su orario di fine. `static/js/reminders.js`: controlla l'agenda ogni minuto **con l'app aperta** e apre il popup giusto (`<dialog>`); nessuna notifica a schermo spento finché non c'è l'app nativa (D-013).
 - App Android (M6): shell Capacitor 6 in `mobile/` che carica la webapp da `server.url` (HTTP LAN, cleartext) e programma **notifiche locali** dei promemoria (prossimi 14 giorni, riallineate a ogni apertura/modifica) tramite `static/js/native.js` + `static/js/schedule.js` (funzione pura). Pagina offline inclusa nell'APK. Build in Docker con `scripts/build-apk.sh` → `mobile/dist/` (bind mount in sola lettura su `/app/downloads`), download dopo login da Impostazioni. Chiave di firma in `/opt/fitweek-secrets/` (mai nel repo; perderla = non poter aggiornare l'app installata).
-- Test: pytest (`tests/`, 52) + test JS puri (`tests/js/*.test.mjs`, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 48 controlli, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
+- Test: pytest (`tests/`, 52; con date ISO validate davvero, non solo nel formato) + test JS puri (`tests/js/*.test.mjs`, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 49 controlli, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
 
 ## Struttura
 
@@ -56,6 +56,8 @@ static/js/native.js  integrazione Android (no-op nel browser); static/js/schedul
 resources/           scheda-originale.pdf
 docs/                documentazione
 ```
+
+Design system v2 "sportivo premium": `docs/DESIGN_SYSTEM.md` (token, icone Lucide in `static/js/icons.js`, movimento in `static/js/motion.js`, grafici secondo la skill dataviz). **Orari sempre a 24 ore**: niente `type="time"`/`type="date"` nativi per i dati frequenti.
 
 Convenzioni frontend: ogni vista esporta `render()` e opzionalmente `onClick/onChange/onInput/onSubmit` (restituiscono `true` per ridisegnare). Ogni valore interpolato passa da `esc()`. Colori solo tramite token.
 

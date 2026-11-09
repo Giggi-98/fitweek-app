@@ -4,14 +4,22 @@ I modelli rifiutano campi sconosciuti: se il frontend aggiunge un campo, va aggi
 (e in docs/DATA_MODEL.md). I limiti sono larghi per non rifiutare dati legittimi, ma
 impediscono tipi errati (es. HTML al posto di un numero) e payload anomali.
 """
+from datetime import date as _date
 from typing import Annotated, Any, Optional
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+
+
+def _real_date(v: str) -> str:
+    """Il formato da solo non basta: rifiuta date inesistenti come 2026-10-34."""
+    if v:
+        _date.fromisoformat(v)
+    return v
 
 Id = Annotated[str, StringConstraints(pattern=r"^[A-Za-z0-9_-]{1,64}$")]
 Key = Annotated[str, StringConstraints(min_length=1, max_length=20)]
-IsoDate = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$")]
-OptIsoDate = Annotated[str, StringConstraints(pattern=r"^(\d{4}-\d{2}-\d{2})?$")]
+IsoDate = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}$"), AfterValidator(_real_date)]
+OptIsoDate = Annotated[str, StringConstraints(pattern=r"^(\d{4}-\d{2}-\d{2})?$"), AfterValidator(_real_date)]
 HttpsUrl = Annotated[str, StringConstraints(pattern=r"^(https://[^\s\"'<>]{1,300})?$")]
 
 

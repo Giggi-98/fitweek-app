@@ -31,12 +31,12 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   });
   await page.reload();
   await page.waitForSelector('#shell:not(.hidden)');
-  check('login + dashboard', await page.locator('.today-cta').isVisible());
+  check('login + dashboard', Boolean(await page.waitForSelector('.today-hero')));
   await shot(page, '1-dashboard-dark');
 
   // Palestra
   await page.click('.bottom-nav [data-view=training]');
-  check('banner bozza precedente', await page.locator('[data-import-draft]').isVisible());
+  check('banner bozza precedente', Boolean(await page.waitForSelector('[data-import-draft]')));
   await shot(page, '2-training-start');
   await page.click('[data-start]');
   await page.waitForSelector('.set-row');
@@ -67,14 +67,17 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await ctx.setOffline(true);
   await page.locator('#ex-a1 .set-row').nth(2).locator('[data-check]').click();
   await page.waitForTimeout(300);
-  const syncOffline = await page.textContent('#sync');
-  check('offline: serie in coda', /In salvataggio/.test(syncOffline), syncOffline);
+  const syncOffline = await page.textContent('#sync .sync-text');
+  check('offline: serie in coda', /Salvataggio \(1\)/.test(syncOffline), syncOffline);
   await ctx.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.waitForSelector('#sync[data-state=ok]', { timeout: 10000 });
   const t1 = await page.evaluate(() => fetch('/api/v1/today').then((r) => r.json()));
   check('offline → online: 3 serie sul server', t1.active_session.sets.length === 3, String(t1.active_session.sets.length));
 
+  // Esercizio completato → si chiude da solo; si riapre con un tocco
+  check('esercizio completato si chiude', (await page.locator('#ex-a1 .set-row').count()) === 0);
+  await page.click('[data-toggle-ex="a1"]');
   // Annulla una serie (toggle) e rifalla
   await page.locator('#ex-a1 .set-row').nth(2).locator('[data-check]').click();
   await page.waitForTimeout(400);
@@ -83,6 +86,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await page.locator('#ex-a1 .set-row').nth(2).locator('[data-check]').click();
 
   // Serie extra, cardio, note, fine
+  await page.click('[data-toggle-ex="a1"]');
   await page.click('[data-add-set="a1"]');
   check('serie extra aggiunta', (await page.locator('#ex-a1 .set-row').count()) === 4);
   await page.click('[data-cardio]');
@@ -92,10 +96,10 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await page.click('[data-finish]');
   await page.waitForSelector('[data-close-summary]');
   const summary = await page.textContent('.hero');
-  check('riepilogo con volume calcolato', /calcolato/.test(summary) && /3\s*\/\d+/.test(summary.replace(/\s+/g, ' ')), summary.replace(/\s+/g, ' ').slice(0, 120));
+  check('riepilogo con volume calcolato', /calc/.test(summary) && /3\s*\/\d+/.test(summary.replace(/\s+/g, ' ')), summary.replace(/\s+/g, ' ').slice(0, 120));
   await shot(page, '4-summary');
   await page.click('[data-close-summary]');
-  await page.waitForSelector('.today-cta.done');
+  await page.waitForSelector('.today-hero.done');
   check('dashboard: allenamento completato', true);
   const list = await page.evaluate(() => fetch('/api/v1/workout-sessions').then((r) => r.json()));
   const s = list.items[0];
@@ -134,7 +138,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await shot(page, '5-progress');
 
   // Impostazioni: settimana programma, tema chiaro
-  await page.click('.bottom-nav [data-view=settings]');
+  await page.click('.topbar [data-view=settings]');
   await page.selectOption('#prog-week', '3');
   await page.click('#program-form button');
   await page.waitForTimeout(500);
@@ -142,7 +146,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   check('settimana programma impostata', t4.program_week === 3);
   await page.click('[data-theme-set=light]');
   const bg = await page.evaluate(() => getComputedStyle(document.body).backgroundColor);
-  check('tema chiaro', bg === 'rgb(244, 246, 242)', bg);
+  check('tema chiaro', bg === 'rgb(242, 244, 240)', bg);
   await page.click('.bottom-nav [data-view=training]');
   await page.click('[data-start]');
   await page.waitForSelector('.set-row');

@@ -1,6 +1,16 @@
 # Design system
 
-## Stato attuale (M2, 2026-11-09)
+## Stato attuale: v2 "sportivo premium" (1.5.0, 2026-11-09)
+
+Scelta dell'utente: direzione "sportivo premium". Implementazione:
+- **Token** (`static/css/tokens.css`): fondo quasi nero con bagliori radiali, superfici a strati, accento lime elettrico `#c8ff47` (chiaro: `#3d7a00`), stati success/warning/danger, tema chiaro con passi propri. Font **Inter variable** incluso in `static/fonts/` (OFL), nessun CDN.
+- **Icone** Lucide (ISC) incluse in `static/js/icons.js`: `icon(nome, classe)` → SVG inline `currentColor`. Per aggiungerne una, copiare il contenuto interno del file SVG di `lucide-static` (mai il commento di licenza).
+- **Grafici** (skill dataviz): una serie → un colore (`--chart-1`), validato con `validate_palette.js` per banda di luminosità e contrasto in entrambi i temi (in scuro il lime UI era fuori banda, quindi i grafici usano `#5fa82a`). Barre ≤ 24 px con angoli 4 px solo in cima, linea 2 px, punti ≥ 8 px con anello di superficie, griglia hairline, tooltip su hover/tocco (mirino sul grafico del peso), valori anche in tabella.
+- **Movimento** (`static/js/motion.js` + keyframes in `app.css`): ingresso a cascata solo al cambio pagina (`#content[data-anim=enter]`), View Transitions API, anelli che si disegnano, barre che crescono, conteggio dei numeri (`data-count`), "pop" e vibrazione sul ✓ della serie, scia luminosa sulla riga, coriandoli a fine esercizio e a fine seduta, foglio modale con molla. Tutto disattivato con `prefers-reduced-motion`.
+- **Navigazione**: telefono = barra flottante a 5 voci + Impostazioni nell'intestazione; desktop = barra laterale. Stesso nome "Impostazioni" ovunque.
+- **Ora e date**: sempre 24 ore. Niente `<input type="time">`/`type="date"` per dati frequenti (seguono la lingua del browser e possono mostrare AM/PM o MM/GG): campi `time24` con formattazione automatica e scelta del giorno da elenco.
+
+## Stato M2 (storico)
 
 Implementato: `static/css/tokens.css` (spaziature, raggi, tipografia, colori semantici scuro/chiaro, `prefers-color-scheme` + override `[data-theme]` da Impostazioni) e `static/css/app.css` (componenti). Nessun colore esadecimale fuori dai token. Restano stili inline per larghezze delle barre di avanzamento.
 

@@ -83,6 +83,9 @@ def test_invalid_types_rejected(auth_client):
     bad["data"]["weights"] = [{"id": "w1", "date": "2026-11-09", "weight": "<img src=x onerror=alert(1)>"}]
     assert auth_client.put("/api/state", json=bad).status_code == 422
     bad = copy.deepcopy(s)
+    bad["data"]["weights"] = [{"id": "w1", "date": "2026-10-34", "weight": 80}]
+    assert auth_client.put("/api/state", json=bad).status_code == 422, "data inesistente"
+    bad = copy.deepcopy(s)
     bad["data"]["routines"]["A"][0]["video"] = "javascript:alert(1)"
     assert auth_client.put("/api/state", json=bad).status_code == 422
     bad = copy.deepcopy(s)
@@ -117,6 +120,7 @@ def test_security_headers(client):
     assert r.headers["X-Content-Type-Options"] == "nosniff"
     assert r.headers["X-Frame-Options"] == "DENY"
     assert client.get("/api/health").headers["Cache-Control"] == "no-store"
+    assert client.get("/static/js/main.js").headers["Cache-Control"] == "no-cache"
 
 
 def test_backup_format(auth_client):

@@ -1,6 +1,7 @@
 // Lista spesa e dispensa (blob v1; storico, quantità numeriche e generazione automatica in M5).
 import { app, persistState } from "../store.js";
 import { empty, panel, sectionTitle, stat, toast } from "../ui.js";
+import { icon } from "../icons.js";
 import { esc, money, num, uid } from "../util.js";
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
@@ -28,7 +29,7 @@ export function render() {
               .filter((x) => (x.category || "Altro") === cat)
               .map(
                 (x) =>
-                  `<label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(x.qty)}</span></span><span class="shopprice">${money(x.price)}</span><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">×</button></label>`,
+                  `<label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(x.qty)}</span></span><span class="shopprice">${money(x.price)}</span><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></label>`,
               )
               .join("")}`,
         )
@@ -39,7 +40,7 @@ export function render() {
       `<form id="shopping-form" class="stack"><div class="form-grid"><div class="field"><label for="sh-name">Prodotto</label><input id="sh-name" name="name" required maxlength="120" placeholder="es. Banane"></div><div class="field"><label for="sh-qty">Quantità</label><input id="sh-qty" name="qty" required maxlength="60" placeholder="es. 1 kg"></div><div class="field"><label for="sh-price">Prezzo stimato (€)</label><input id="sh-price" name="price" type="number" min="0" step="0.01" value="0" inputmode="decimal"></div><div class="field"><label for="sh-cat">Categoria</label><select id="sh-cat" name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">+ Aggiungi prodotto</button></form>`,
     )}</div><div class="stack">${panel(
       "Dispensa",
-      `${app.state.inventory.length ? app.state.inventory.map((x) => `<div class="entry"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${x.expiry ? " · scade " + esc(x.expiry) : ""}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">×</button></div>`).join("") : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
+      `${app.state.inventory.length ? app.state.inventory.map((x) => `<div class="entry"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${x.expiry ? " · scade " + esc(x.expiry) : ""}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("") : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
       <hr class="separator"><form id="inventory-form" class="stack"><div class="field"><label for="in-name">Alimento</label><input id="in-name" name="name" required maxlength="120" placeholder="es. Riso"></div><div class="form-grid"><div class="field"><label for="in-qty">Quantità</label><input id="in-qty" name="qty" required maxlength="60" placeholder="es. 300 g"></div><div class="field"><label for="in-exp">Scadenza (facoltativa)</label><input id="in-exp" name="expiry" type="date"></div></div><button class="btn primary" type="submit">+ Aggiungi in dispensa</button></form>`,
     )}${panel("Da ricordare", '<div class="inline-note">Nessuna integrazione con Esselunga: copia la lista e verifica prezzi, disponibilità e ordine minimo sul sito.</div><div class="inline-note warn"><strong>Conservazione:</strong> sottovuoto non significa conservabile senza limiti. Segui etichetta e temperatura.</div>')}</div></div>`
   );

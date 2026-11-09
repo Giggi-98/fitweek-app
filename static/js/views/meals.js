@@ -1,6 +1,7 @@
 // Pasti: diario (cosa hai mangiato), piano ricorrente, pasti abituali con valori stimati.
 import { request } from "../api.js";
 import { DAYS, GYM, MEAL_DEFAULTS, SLOTS, SOURCE_LABEL } from "../constants.js";
+import { icon } from "../icons.js";
 import { guessSlot, openMealLog } from "../reminders.js";
 import { app, persistState, refreshDaily } from "../store.js";
 import { empty, panel, sectionTitle, toast } from "../ui.js";
@@ -34,8 +35,9 @@ async function loadLogs() {
   ui.loadedFor = key;
 }
 
+const SLOT_ICON = { lunch: "soup", pre_workout: "zap", snack: "apple", dinner: "utensils", other: "cookie" };
 const tabs = () =>
-  `<div class="chips" role="tablist">${[["diary", "Diario"], ["plan", "Piano"], ["templates", "Abituali"]]
+  `<div class="segmented" role="tablist">${[["diary", "Diario"], ["plan", "Piano"], ["templates", "Abituali"]]
     .map(([k, l]) => `<button class="chip ${ui.tab === k ? "active" : ""}" role="tab" aria-selected="${ui.tab === k}" data-tab="${k}">${l}</button>`)
     .join("")}</div>`;
 
@@ -49,7 +51,7 @@ function diary() {
     return '<p class="subtle">Caricamento…</p>';
   }
   const today = isoDate();
-  return `<div class="week-nav"><button class="btn small" data-week-shift="-1" aria-label="Settimana precedente">←</button><strong>${esc(fmtDate(days[0]))} – ${esc(fmtDate(days[6]))}</strong><button class="btn small" data-week-shift="1" ${ui.weekOffset >= 0 ? "disabled" : ""} aria-label="Settimana successiva">→</button></div>
+  return `<div class="week-nav"><button class="icon-btn" data-week-shift="-1" aria-label="Settimana precedente">${icon("chevron-left")}</button><strong>${esc(fmtDate(days[0]))} – ${esc(fmtDate(days[6]))}</strong><button class="icon-btn" data-week-shift="1" ${ui.weekOffset >= 0 ? "disabled" : ""} aria-label="Settimana successiva">${icon("chevron-right")}</button></div>
   <p class="subtle">Le calorie sono <strong>stime teoriche</strong> (pasti abituali o valori inseriti da te), non misure né obiettivi.</p>
   ${days
     .filter((d) => d <= today)
@@ -61,8 +63,8 @@ function diary() {
       const missing = eaten.filter((m) => m.kcal == null).length;
       return panel(
         `${esc(fmtDate(d))}${d === today ? " · oggi" : ""}`,
-        `${logs.length ? logs.map((m) => `<div class="entry ${m.status}"><div><div class="entry-title">${esc(SLOTS[m.slot] || m.slot)}: ${m.status === "skipped" ? "saltato" : esc(m.description || "—")}</div><div class="entry-sub">${m.status === "skipped" ? "" : esc(kcalLabel(m))}</div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">×</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
-        <div class="day-foot"><span>${eaten.length ? `Totale teorico: <strong>~${fmtNum(kcal, 0)} kcal</strong>${missing ? ` (+${missing} senza valori)` : ""}` : ""}</span><button class="btn small" data-add-log="${esc(d)}">+ Pasto</button></div>`,
+        `${logs.length ? logs.map((m) => `<div class="entry ${m.status}"><div class="entry-main"><span class="slot-ic">${icon(SLOT_ICON[m.slot] || "utensils")}</span><div><div class="entry-title">${m.status === "skipped" ? "Saltato" : esc(m.description || "—")}</div><div class="entry-sub">${esc(SLOTS[m.slot] || m.slot)}${m.status === "skipped" ? "" : ` · ${esc(kcalLabel(m))}`}</div></div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
+        <div class="day-foot"><span>${eaten.length ? `Totale teorico <span class="kcal">~${fmtNum(kcal, 0)} kcal</span>${missing ? ` · ${missing} senza valori` : ""}` : ""}</span><button class="btn small" data-add-log="${esc(d)}">${icon("plus", "sm")}Pasto</button></div>`,
       );
     })
     .join("")}`;
@@ -88,7 +90,7 @@ function templates() {
       panel(
         esc(SLOTS[slot]),
         items.length
-          ? items.map((t) => `<form class="tpl-row" data-tpl-form="${esc(t.id)}"><input name="name" value="${esc(t.name)}" maxlength="120" aria-label="Nome"><input name="kcal" inputmode="numeric" value="${esc(t.kcal ?? "")}" placeholder="kcal" aria-label="Calorie"><input name="protein_g" inputmode="numeric" value="${esc(t.protein_g ?? "")}" placeholder="prot. g" aria-label="Proteine"><select name="nutrition_source" aria-label="Fonte">${Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}" ${t.nutrition_source === k ? "selected" : ""}>${l}</option>`).join("")}</select><input type="hidden" name="slot" value="${esc(t.slot)}"><input type="hidden" name="position" value="${esc(t.position)}"><button class="btn small" type="submit">Salva</button><button type="button" class="icon-btn" data-del-tpl="${esc(t.id)}" aria-label="Elimina">×</button>${t.nutrition_note ? `<small class="tpl-note">${esc(t.nutrition_note)}</small>` : ""}</form>`).join("")
+          ? items.map((t) => `<form class="tpl-row" data-tpl-form="${esc(t.id)}"><input name="name" value="${esc(t.name)}" maxlength="120" aria-label="Nome"><input name="kcal" inputmode="numeric" value="${esc(t.kcal ?? "")}" placeholder="kcal" aria-label="Calorie"><input name="protein_g" inputmode="numeric" value="${esc(t.protein_g ?? "")}" placeholder="prot. g" aria-label="Proteine"><select name="nutrition_source" aria-label="Fonte">${Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}" ${t.nutrition_source === k ? "selected" : ""}>${l}</option>`).join("")}</select><input type="hidden" name="slot" value="${esc(t.slot)}"><input type="hidden" name="position" value="${esc(t.position)}"><button class="btn small" type="submit">Salva</button><button type="button" class="icon-btn" data-del-tpl="${esc(t.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button>${t.nutrition_note ? `<small class="tpl-note">${esc(t.nutrition_note)}</small>` : ""}</form>`).join("")
           : empty("Nessun pasto abituale", ""),
       ),
     )
@@ -101,7 +103,7 @@ function templates() {
 
 export function render() {
   const body = ui.tab === "plan" ? plan() : ui.tab === "templates" ? templates() : diary();
-  return sectionTitle("Cosa hai mangiato", "Un tocco per registrare; le calorie teoriche le calcola l'app.", `<button class="btn primary small" data-add-log="${isoDate()}">+ Pasto</button>`) + tabs() + body;
+  return sectionTitle("Cosa hai mangiato", "Un tocco per registrare; le calorie teoriche le calcola l'app.", `<button class="btn primary" data-add-log="${isoDate()}">${icon("plus", "sm")}Pasto</button>`) + tabs() + body;
 }
 
 const optNum = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", ".")));

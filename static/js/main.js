@@ -4,7 +4,9 @@ import { app, loadAll, refreshWorkouts } from "./store.js";
 import { initModal, toast } from "./ui.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
-import { $, $$ } from "./util.js";
+import { $, $$, fmtDate } from "./util.js";
+import { icon } from "./icons.js";
+import { enter, transition } from "./motion.js";
 import * as dashboard from "./views/dashboard.js";
 import * as meals from "./views/meals.js";
 import * as progress from "./views/progress.js";
@@ -17,12 +19,12 @@ import { addRest, initRestTimer, stopRest } from "./workout/timer.js";
 settings.applyTheme();
 
 const VIEWS = {
-  dashboard: { title: "Oggi", mod: dashboard },
-  training: { title: "Palestra", mod: training },
+  dashboard: { title: "Oggi", mod: dashboard, eyebrow: () => fmtDate(app.today?.date || "") },
+  training: { title: "Palestra", mod: training, eyebrow: () => `Settimana ${app.today?.program_week ?? ""} di 8` },
   meals: { title: "Pasti", mod: meals },
   shopping: { title: "Spesa & dispensa", mod: shopping },
   progress: { title: "Progressi", mod: progress },
-  settings: { title: "Impostazioni", mod: settings },
+  settings: { title: "Impostazioni", mod: settings, eyebrow: () => "App, promemoria e dati" },
 };
 const current = () => VIEWS[app.view].mod;
 
@@ -30,8 +32,17 @@ function render() {
   if (!app.state) return;
   const y = window.scrollY;
   $("#content").innerHTML = current().render();
+  hydrateIcons($("#content"));
   window.scrollTo({ top: y });
 }
+
+/** Sostituisce i segnaposto [data-icon] con le icone SVG (HTML statico e viste). */
+function hydrateIcons(root = document) {
+  root.querySelectorAll("[data-icon]").forEach((el) => {
+    el.outerHTML = icon(el.dataset.icon, el.dataset.iconClass || "");
+  });
+}
+hydrateIcons();
 app.render = render;
 
 function showLogin() {
@@ -45,19 +56,27 @@ app.onUnauthorized = showLogin;
 function route() {
   const name = location.hash.replace("#", "") || "dashboard";
   const next = VIEWS[name] ? name : "dashboard";
-  const changed = next !== app.view;
-  app.view = next;
-  $("#page-title").textContent = VIEWS[next].title;
-  document.title = `${VIEWS[next].title} · FitWeek`;
-  $$("[data-view]").forEach((n) => {
-    const on = n.dataset.view === next;
-    n.classList.toggle("active", on);
-    if (on) n.setAttribute("aria-current", "page");
-    else n.removeAttribute("aria-current");
-  });
-  if (changed) training.resetUi();
-  render();
-  if (changed) window.scrollTo({ top: 0 });
+  const changed = next !== app.view || !$("#content").innerHTML;
+  const apply = () => {
+    app.view = next;
+    $("#page-title").textContent = VIEWS[next].title;
+    $("#page-eyebrow").textContent = VIEWS[next].eyebrow?.() || "";
+    document.title = `${VIEWS[next].title} · FitWeek`;
+    $$("[data-view]").forEach((n) => {
+      const on = n.dataset.view === next;
+      n.classList.toggle("active", on);
+      if (on) n.setAttribute("aria-current", "page");
+      else n.removeAttribute("aria-current");
+    });
+    if (changed) training.resetUi();
+    render();
+    if (changed) {
+      window.scrollTo({ top: 0, behavior: "instant" });
+      enter($("#content"));
+    }
+  };
+  if (changed && app.state) transition(apply);
+  else apply();
 }
 
 let started = false;

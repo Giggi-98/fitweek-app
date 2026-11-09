@@ -12,7 +12,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 | M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
 | M5 | Spesa, dispensa, budget | ⬜ |
 | M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 (accesso fuori casa: serve VPN) |
-| M7 | Rifinitura: accessibilità, performance, schede multiple | ⬜ |
+| M7 | Rifinitura: redesign v2 ✅ (1.5.0); accessibilità, performance, schede multiple ⬜ |
 | M8 | Assistente AI opzionale e integrazioni | ⬜ |
 
 ---

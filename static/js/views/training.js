@@ -1,8 +1,10 @@
 // Schermata allenamento: avvio seduta, registrazione serie con un tocco, recupero, riepilogo.
 import { CARDIO_MIN, PROGRAM_WEEKS, ROUTINES, cardioBpm } from "../constants.js";
+import { icon } from "../icons.js";
+import { bump, confetti, haptic, pop, ring } from "../motion.js";
 import { app, refreshWorkouts } from "../store.js";
 import { toast } from "../ui.js";
-import { $, clamp, esc, fmtDate, fmtNum, fmtTime, isoDate, num, safeUrl, storage, uid } from "../util.js";
+import { $, clamp, esc, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
 
@@ -10,7 +12,8 @@ const EDITS_KEY = "fitweek.workoutEdits.v1";
 const LEGACY_DRAFTS_KEY = "fitweek.workoutDrafts.v1";
 
 // Selezione quando non c'è una seduta attiva.
-const ui = { routine: null, week: null, summary: null };
+// justDone/justComplete: animazioni da eseguire una sola volta al prossimo render.
+const ui = { routine: null, week: null, summary: null, justDone: null, justComplete: null, open: new Set() };
 
 // ---- dati derivati ------------------------------------------------------------------------
 const active = () => app.today?.active_session || null;
@@ -69,10 +72,21 @@ function legacyDraftBanner() {
   return items
     .map(([id, d]) => {
       const [routine, w] = id.split("-W");
-      return `<div class="inline-note warn">Bozza non salvata dalla versione precedente: <strong>Giorno ${esc(routine)} · W${esc(w)}</strong>${d.date ? ` del ${esc(fmtDate(d.date))}` : ""}.<div class="button-row"><button class="btn small primary" data-import-draft="${esc(id)}">Importa come seduta</button><button class="btn small" data-drop-draft="${esc(id)}">Scarta</button></div></div>`;
+      return `<div class="inline-note warn">${icon("triangle-alert")}<div><span>Bozza non salvata dalla versione precedente: <strong>Giorno ${esc(routine)} · W${esc(w)}</strong>${d.date ? ` del ${esc(fmtDate(d.date))}` : ""}.</span><div class="button-row"><button class="btn small primary" data-import-draft="${esc(id)}">Importa come seduta</button><button class="btn small" data-drop-draft="${esc(id)}">Scarta</button></div></div></div>`;
     })
     .join("");
 }
+
+const elapsed = (iso) => {
+  const m = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 60000));
+  return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}′` : `${m}′`;
+};
+// Il cronometro della seduta si aggiorna da solo senza ridisegnare la pagina.
+setInterval(() => {
+  const el = document.getElementById("wk-elapsed");
+  const s = active();
+  if (el && s?.started_at) el.textContent = elapsed(s.started_at);
+}, 30_000);
 
 function renderStart() {
   const t = app.today;
@@ -87,15 +101,20 @@ function renderStart() {
   return `
   ${legacyDraftBanner()}
   <section class="hero">
-    <span class="tiny-label">${isToday ? "Oggi" : "Seduta selezionata"} · Settimana ${t.program_week} di ${PROGRAM_WEEKS} del programma</span>
-    <h2>Giorno ${esc(routine)} <span class="muted">· W${week}</span></h2>
-    <p class="subtle">${esc(info?.focus || "")} · ${exs.length} esercizi · ${total} serie + ${CARDIO_MIN}′ ${esc(info?.cardio || "cardio")}</p>
-    ${doneToday ? `<div class="inline-note ok">Giorno ${esc(routine)} già completato oggi (${doneToday.sets.filter((x) => x.completed).length} serie).</div>` : ""}
-    <button class="btn primary xl full" data-start>▶ Inizia Giorno ${esc(routine)} · W${week}</button>
-    ${!t.routine && !ui.routine ? '<p class="subtle center">Oggi è giorno di riposo: puoi comunque recuperare una seduta.</p>' : ""}
+    <span class="eyebrow">${isToday ? "Oggi" : "Seduta selezionata"} · settimana ${t.program_week} del programma</span>
+    <h2>Giorno ${esc(routine)}<span class="muted"> · W${week}</span></h2>
+    <p class="subtle">${esc(info?.focus || "")}</p>
+    <div class="metrics">
+      <div class="metric"><div class="metric-label">${icon("list-checks", "sm")}Esercizi</div><div class="metric-value">${exs.length}</div></div>
+      <div class="metric"><div class="metric-label">${icon("dumbbell", "sm")}Serie</div><div class="metric-value">${total}</div></div>
+      <div class="metric"><div class="metric-label">${icon("timer", "sm")}Cardio</div><div class="metric-value">${CARDIO_MIN}<small>′</small></div></div>
+      <div class="metric"><div class="metric-label">${icon("clock", "sm")}Ultima</div><div class="metric-value">${prev ? esc(fmtDate(prev.date).split(" ").slice(1).join(" ")) : "—"}</div></div>
+    </div>
+    ${doneToday ? `<div class="inline-note ok">${icon("circle-check")}<div>Giorno ${esc(routine)} già completato oggi (${doneToday.sets.filter((x) => x.completed).length} serie).</div></div>` : ""}
+    ${!t.routine && !ui.routine ? `<div class="inline-note">${icon("info")}<div>Oggi è giorno di riposo: puoi comunque recuperare una seduta saltata.</div></div>` : ""}
   </section>
   <div class="chooser">
-    <div class="chips" role="group" aria-label="Giornata">${Object.keys(ROUTINES)
+    <div class="segmented" role="group" aria-label="Giornata">${Object.keys(ROUTINES)
       .map((r) => `<button class="chip ${r === routine ? "active" : ""}" data-pick-routine="${r}">Giorno ${r}<small>${ROUTINES[r].day.slice(0, 3)}</small></button>`)
       .join("")}</div>
     <div class="chips scroll" role="group" aria-label="Settimana">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => i + 1)
@@ -103,15 +122,18 @@ function renderStart() {
       .join("")}</div>
   </div>
   <section class="panel">
-    <div class="panel-head"><h3>Programma</h3><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF originale ↗</a></div>
+    <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a></div>
+    <div class="ex-preview">
     ${exs
-      .map((ex) => {
+      .map((ex, i) => {
         const p = setsOf(prev, ex.id).filter((x) => x.completed);
-        return `<div class="entry"><div><div class="entry-title">${esc(ex.name)}</div><div class="entry-sub">${plannedSets(ex, week)} × ${esc(ex.reps)}${p.length ? ` · ultima: ${esc(p.map(fmtSet).join(" · "))}` : ""}</div></div></div>`;
+        return `<div class="entry"><div class="entry-main"><span class="ex-idx">${i + 1}</span><div><div class="entry-title">${esc(ex.name)}</div><div class="entry-sub">${plannedSets(ex, week)} × ${esc(ex.reps)}${p.length ? ` · ultima ${esc(p.map(fmtSet).join(" · "))}` : ""}</div></div></div></div>`;
       })
       .join("")}
-    <div class="entry"><div><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(week)} BPM (non è un obiettivo personalizzato)</div></div></div>
-  </section>`;
+      <div class="entry"><div class="entry-main"><span class="ex-idx">${icon("timer", "sm")}</span><div><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(week)} BPM, non un obiettivo personalizzato</div></div></div></div>
+    </div>
+  </section>
+  <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>`;
 }
 
 function setRow(session, ex, idx, prev, ed, planned) {
@@ -119,11 +141,12 @@ function setRow(session, ex, idx, prev, ed, planned) {
   const done = own?.completed;
   const v = suggestion(session, ex, idx, prev, ed);
   const extra = idx > planned;
-  return `<div class="set-row ${done ? "done" : ""} ${extra ? "extra" : ""}" data-ex="${esc(ex.id)}" data-idx="${idx}">
+  const just = ui.justDone === `${ex.id}:${idx}` ? "just-done" : "";
+  return `<div class="set-row ${done ? "done" : ""} ${extra ? "extra" : ""} ${just}" data-ex="${esc(ex.id)}" data-idx="${idx}">
     <span class="set-num" aria-label="Serie ${idx}">${idx}</span>
-    <div class="stepper"><button type="button" data-step="kg" data-dir="-1" aria-label="Meno peso">−</button><input data-field="kg" type="text" inputmode="decimal" autocomplete="off" aria-label="Peso serie ${idx} ${esc(ex.name)}" placeholder="kg" value="${esc(v.kg ?? "")}"><button type="button" data-step="kg" data-dir="1" aria-label="Più peso">+</button></div>
-    <div class="stepper"><button type="button" data-step="reps" data-dir="-1" aria-label="Meno ripetizioni">−</button><input data-field="reps" type="text" inputmode="numeric" autocomplete="off" aria-label="Ripetizioni serie ${idx} ${esc(ex.name)}" placeholder="${esc(String(ex.reps).split(/[–-]/)[0])}" value="${esc(v.reps ?? "")}"><button type="button" data-step="reps" data-dir="1" aria-label="Più ripetizioni">+</button></div>
-    <button type="button" class="set-check" data-check aria-pressed="${done ? "true" : "false"}" aria-label="${done ? "Annulla serie" : "Serie fatta"} ${idx}">✓</button>
+    <div class="stepper"><button type="button" data-step="kg" data-dir="-1" aria-label="Meno peso">${icon("minus")}</button><input data-field="kg" type="text" inputmode="decimal" autocomplete="off" aria-label="Peso serie ${idx} ${esc(ex.name)}" placeholder="kg" value="${esc(v.kg == null ? "" : String(v.kg).replace(".", ","))}"><button type="button" data-step="kg" data-dir="1" aria-label="Più peso">${icon("plus")}</button></div>
+    <div class="stepper"><button type="button" data-step="reps" data-dir="-1" aria-label="Meno ripetizioni">${icon("minus")}</button><input data-field="reps" type="text" inputmode="numeric" autocomplete="off" aria-label="Ripetizioni serie ${idx} ${esc(ex.name)}" placeholder="${esc(String(ex.reps).split(/[–-]/)[0])}" value="${esc(v.reps ?? "")}"><button type="button" data-step="reps" data-dir="1" aria-label="Più ripetizioni">${icon("plus")}</button></div>
+    <button type="button" class="set-check" data-check aria-pressed="${done ? "true" : "false"}" aria-label="${done ? "Annulla serie" : "Serie fatta"} ${idx}">${icon("check")}</button>
   </div>`;
 }
 
@@ -134,45 +157,55 @@ function renderActive(session) {
   const { planned, done } = progressOf(session);
   const info = ROUTINES[session.routine];
   const nextEx = exs.find((ex) => setsOf(session, ex.id).filter((s) => s.completed).length < plannedSets(ex, session.week));
-  return `
+  const html = `
   <section class="wk-header">
-    <div class="wk-top">
-      <div><span class="tiny-label">In corso${session.started_at ? ` · dalle ${esc(fmtTime(session.started_at))}` : ""}</span><h2>Giorno ${esc(session.routine)} · W${esc(session.week)}</h2></div>
-      <div class="wk-count"><strong>${done}</strong><span>/${planned} serie</span></div>
+    ${ring(planned ? done / planned : 0, { size: 62, stroke: 7, label: String(done), sub: `/${planned}` })}
+    <div class="ex-main">
+      <h2>Giorno ${esc(session.routine)} · W${esc(session.week)}</h2>
+      <div class="wk-meta"><span>${icon("clock")}<span id="wk-elapsed">${session.started_at ? elapsed(session.started_at) : "—"}</span></span><span>${icon("dumbbell")}${done}/${planned} serie</span>${nextEx ? `<span>${icon("arrow-right")}${esc(nextEx.name)}</span>` : `<span>${icon("trophy")}Serie completate</span>`}</div>
     </div>
-    <div class="bar"><div style="width:${planned ? Math.round((done / planned) * 100) : 0}%"></div></div>
   </section>
   ${exs
-    .map((ex) => {
+    .map((ex, i) => {
       const p = plannedSets(ex, session.week);
       const prev = setsOf(prevSession, ex.id).filter((x) => x.completed);
       const loggedIdx = setsOf(session, ex.id).map((s) => s.set_index);
       const count = Math.max(p + num(ed.extra[ex.id]), ...loggedIdx, p);
       const completed = setsOf(session, ex.id).filter((s) => s.completed).length;
+      const isDone = completed >= p;
+      const open = !isDone || ui.open.has(ex.id);
       const video = safeUrl(ex.video);
-      return `<section class="ex-card ${completed >= p ? "done" : ""} ${nextEx?.id === ex.id ? "next" : ""}" id="ex-${esc(ex.id)}">
+      const dots = Array.from({ length: Math.max(p, completed) }, (_, k) => `<i class="${k < completed ? "on" : ""}"></i>`).join("");
+      const cls = [isDone ? "done" : "", open ? "open" : "", nextEx?.id === ex.id ? "next" : "", ui.justComplete === ex.id ? "just-complete" : ""].join(" ");
+      return `<section class="ex-card ${cls}" id="ex-${esc(ex.id)}">
         <div class="ex-head">
-          <div><h3 class="ex-name">${esc(ex.name)}</h3>
-          <div class="ex-meta">${p} × ${esc(ex.reps)} rip. · ${completed}/${p} fatte</div>
-          ${prev.length ? `<div class="ex-last">Ultima volta${prevSession ? ` (${esc(fmtDate(prevSession.date))}, W${esc(prevSession.week)})` : ""}: ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
-          </div>
-          ${video ? `<a href="${esc(video)}" target="_blank" rel="noopener noreferrer" class="icon-link" aria-label="Video esecuzione">▶</a>` : ""}
+          <button type="button" class="ex-toggle" ${isDone ? `data-toggle-ex="${esc(ex.id)}" aria-expanded="${open}"` : 'tabindex="-1"'}>
+            <span class="ex-num">${isDone ? icon("check", "sm") : i + 1}</span>
+            <span class="ex-main"><span class="ex-name">${esc(ex.name)}</span>
+            <span class="ex-meta">${p} × ${esc(ex.reps)} rip.${isDone && !open ? ` · ${esc(setsOf(session, ex.id).filter((x) => x.completed).map(fmtSet).join(" · "))}` : ""}</span>
+            <span class="ex-dots" aria-label="${completed} serie su ${p}">${dots}</span></span>
+          </button>
+          ${video ? `<a href="${esc(video)}" target="_blank" rel="noopener noreferrer" class="icon-link" aria-label="Video esecuzione">${icon("circle-play")}</a>` : ""}
         </div>
+        ${open ? `
+        ${prev.length ? `<div class="ex-last">Ultima volta${prevSession ? ` (${esc(fmtDate(prevSession.date))}, W${esc(prevSession.week)})` : ""}: ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
         <div class="set-legend" aria-hidden="true"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
-        ${Array.from({ length: count }, (_, i) => setRow(session, ex, i + 1, prev, ed, p)).join("")}
-        <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">+ serie extra</button>
+        ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, p)).join("")}
+        <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">${icon("plus", "sm")}Serie extra</button>` : ""}
       </section>`;
     })
     .join("")}
   <section class="ex-card ${session.cardio_min ? "done" : ""}">
-    <div class="ex-head"><div><h3 class="ex-name">${esc(info?.cardio || "Cardio")}</h3><div class="ex-meta">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(session.week)} BPM</div><div class="ex-last">Le BPM della scheda non sono un obiettivo personalizzato: regola l'intensità con l'allenatore.</div></div>
-    <button type="button" class="set-check" data-cardio aria-pressed="${session.cardio_min ? "true" : "false"}" aria-label="Cardio fatto">✓</button></div>
+    <div class="ex-head"><span class="ex-num">${icon("timer", "sm")}</span><div class="ex-main"><h3 class="ex-name">${esc(info?.cardio || "Cardio")}</h3><div class="ex-meta">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(session.week)} BPM</div><div class="ex-last">Le BPM della scheda non sono un obiettivo personalizzato.</div></div>
+    <button type="button" class="set-check" data-cardio aria-pressed="${session.cardio_min ? "true" : "false"}" aria-label="Cardio fatto">${icon("check")}</button></div>
   </section>
   <section class="panel">
     <div class="field"><label for="wk-notes">Note della seduta</label><textarea id="wk-notes" data-session-notes rows="3" placeholder="Tecnica, fatica, fastidi…">${esc(session.notes || "")}</textarea></div>
-    <button type="button" class="btn primary xl full" data-finish>Termina allenamento</button>
+    <button type="button" class="btn primary xl full" data-finish>${icon("trophy")}Termina allenamento</button>
     <button type="button" class="link-btn danger center" data-cancel-session>Annulla seduta</button>
   </section>`;
+  ui.justDone = ui.justComplete = null;
+  return html;
 }
 
 function renderSummary(s) {
@@ -181,16 +214,16 @@ function renderSummary(s) {
   const prev = lastDone(s.routine, s.id);
   const prevVol = prev ? volume(prev) : null;
   const diff = prevVol ? Math.round(((vol - prevVol) / prevVol) * 100) : null;
-  return `<section class="hero">
-    <span class="tiny-label">Seduta completata · ${esc(fmtDate(s.date))}</span>
-    <h2>Giorno ${esc(s.routine)} · W${esc(s.week)} ✓</h2>
+  return `<section class="hero finish">
+    <div class="trophy">${icon("trophy")}</div>
+    <div><span class="eyebrow">Seduta completata · ${esc(fmtDate(s.date))}</span><h2>Giorno ${esc(s.routine)} · W${esc(s.week)}</h2></div>
     <div class="metrics">
-      <div class="metric"><div class="metric-label">Serie</div><div class="metric-value">${done}<small>/${planned}</small></div><div class="metric-sub">completate</div></div>
-      <div class="metric"><div class="metric-label">Durata</div><div class="metric-value">${s.duration_min != null ? esc(Math.round(s.duration_min)) + "<small> min</small>" : "—"}</div><div class="metric-sub">${s.cardio_min ? "cardio incluso" : "cardio non segnato"}</div></div>
-      <div class="metric"><div class="metric-label">Volume <span class="badge-calc">calcolato</span></div><div class="metric-value">${fmtNum(vol, 0)}<small> kg</small></div><div class="metric-sub">${diff == null ? "Σ kg × ripetizioni" : `${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}`}</div></div>
+      <div class="metric"><div class="metric-label">Serie</div><div class="metric-value"><span data-count="${done}">${done}</span><small>/${planned}</small></div></div>
+      <div class="metric"><div class="metric-label">Durata</div><div class="metric-value">${s.duration_min != null ? `<span data-count="${Math.round(s.duration_min)}">${esc(Math.round(s.duration_min))}</span><small>′</small>` : "—"}</div></div>
+      <div class="metric"><div class="metric-label">Volume <span class="badge-calc">calc.</span></div><div class="metric-value"><span data-count="${Math.round(vol)}">${fmtNum(vol, 0)}</span><small> kg</small></div></div>
     </div>
-    ${done < planned ? `<p class="subtle">${planned - done} serie non segnate: va bene, conta la costanza.</p>` : ""}
-    <button class="btn primary full" data-close-summary>Fatto</button>
+    <p class="subtle">${diff == null ? "Volume = Σ kg × ripetizioni." : `Volume ${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}.`} ${done < planned ? `${planned - done} serie non segnate: va bene, conta la costanza.` : "Tutte le serie fatte."}${s.cardio_min ? " Cardio ✓." : ""}</p>
+    <button class="btn primary xl full" data-close-summary>Fatto</button>
   </section>`;
 }
 
@@ -247,6 +280,15 @@ function toggleSet(row) {
   delete ed.values[`${exId}:${idx}`];
   saveEdits(ed);
   startRest();
+  haptic(15);
+  ui.justDone = `${exId}:${idx}`;
+  const ex = routineExercises(s.routine).find((e) => e.id === exId);
+  if (ex && setsOf(s, exId).filter((x) => x.completed).length === plannedSets(ex, s.week)) {
+    ui.justComplete = exId;
+    ui.open.delete(exId);
+    haptic([20, 60, 30]);
+    requestAnimationFrame(() => confetti(document.getElementById(`ex-${exId}`), 24));
+  }
   return true;
 }
 
@@ -263,6 +305,7 @@ function step(btn) {
   }
   const next = Math.max(0, Math.round((current + delta * num(btn.dataset.dir)) * 100) / 100);
   input.value = String(next).replace(".", ",");
+  bump(input, num(btn.dataset.dir));
   rememberRow(row);
 }
 
@@ -301,6 +344,8 @@ async function finish() {
   app.today.active_session = null;
   app.sessions = [s, ...app.sessions.filter((x) => x.id !== s.id)];
   ui.summary = s;
+  haptic([30, 80, 30, 80, 60]);
+  setTimeout(() => confetti(null, 70), 250);
   await flush();
   // Ricarica dal server solo se tutto è stato inviato, altrimenti si perderebbero i dati locali.
   if (!pendingCount()) refreshWorkouts().catch(() => {});
@@ -351,6 +396,12 @@ export async function onClick(t) {
     });
     return true;
   }
+  if (t.dataset.toggleEx) {
+    const id = t.dataset.toggleEx;
+    if (ui.open.has(id)) ui.open.delete(id);
+    else ui.open.add(id);
+    return true;
+  }
   if (t.dataset.addSet) {
     const s = active();
     const ed = edits(s.id);
@@ -359,7 +410,12 @@ export async function onClick(t) {
     return true;
   }
   if (t.matches("[data-cardio]")) {
-    patchSession({ cardio_min: active().cardio_min ? null : CARDIO_MIN }, "cardio");
+    const on = !active().cardio_min;
+    patchSession({ cardio_min: on ? CARDIO_MIN : null }, "cardio");
+    if (on) {
+      haptic(15);
+      pop(t);
+    }
     return true;
   }
   if (t.matches("[data-finish]")) {
@@ -425,5 +481,6 @@ export function todayStatus() {
 
 export const resetUi = () => {
   ui.summary = null;
+  ui.open.clear();
 };
 
