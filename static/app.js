@@ -1,65 +1,613 @@
-'use strict';
-const DAYS=['Lunedì','Martedì','Mercoledì','Giovedì','Venerdì','Sabato','Domenica'];
-const DAYSHORT=['Lun','Mar','Mer','Gio','Ven','Sab','Dom'];
-const GYM={'Lunedì':'A','Mercoledì':'B','Venerdì':'C'};
-const CARDIO={A:'Cyclette',B:'Tapis roulant inclinato',C:'Vogatore'};
-const $=sel=>document.querySelector(sel);
-const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
-const money=n=>new Intl.NumberFormat('it-IT',{style:'currency',currency:'EUR'}).format(Number(n)||0);
-const today=()=>{const d=new Date();return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`};
-const num=(v,defaultNum=0)=>{const n=Number(v);return Number.isFinite(n)?n:defaultNum};
-const uid=()=>globalThis.crypto?.randomUUID?.()||('id'+Date.now()+Math.random().toString(36).slice(2));
-let state=null,version=0,view='dashboard',selectedRoutine='A',draft={},saving=Promise.resolve(),dirty=false;
-let selectedWeek=1;
-const titles={dashboard:'Panoramica',training:'Allenamenti',meals:'Alimentazione',shopping:'Spesa & dispensa',progress:'Progressi',settings:'Impostazioni'};
-function toast(msg){const n=$('#toast');n.textContent=msg;n.classList.remove('hidden');clearTimeout(toast.timer);toast.timer=setTimeout(()=>n.classList.add('hidden'),3500)}
-async function request(path,opts={}){const res=await fetch(path,{credentials:'same-origin',...opts,headers:{...opts.headers,...(opts.body?{'Content-Type':'application/json'}:{})}});if(!res.ok){const body=await res.json().catch(()=>({}));const e=new Error(body.detail||`HTTP ${res.status}`);e.status=res.status;throw e;}return res.json()}
-async function load(){try{const out=await request('/api/state');state=out.data;version=out.version;selectedWeek=Number(state.profile.week)||1;$('#shell').classList.remove('hidden');$('#login').classList.add('hidden');render()}catch(e){if(e.status===401){$('#login').classList.remove('hidden');$('#shell').classList.add('hidden')}else toast('Errore: '+e.message)}}
-function sync(status){$('#sync').textContent=status==='saving'?'◌ Salvataggio…':status==='error'?'● Errore salvataggio':'● Sincronizzato';$('#sync').style.color=status==='error'?'#ff9e97':'#9fc7a0'}
-function persist(){if(!state)return;dirty=true;sync('saving');const snapshot=JSON.parse(JSON.stringify(state));saving=saving.then(async()=>{let payload=snapshot;if(dirty){payload=JSON.parse(JSON.stringify(state));dirty=false;}const out=await request('/api/state',{method:'PUT',body:JSON.stringify({version,data:payload})});version=out.version;sync('ok')}).catch(e=>{sync('error');toast(e.status===409?'Modifica contemporanea: aggiorna la pagina per evitare conflitti.':'Salvataggio non riuscito: '+e.message)});return saving}
-function changeView(next){view=next;document.querySelectorAll('[data-view]').forEach(n=>n.classList.toggle('active',n.dataset.view===view));document.querySelectorAll('.sidebar .navitem').forEach(n=>n.classList.toggle('selected',n.dataset.view===view));$('#page-title').textContent=titles[view];window.scrollTo({top:0,behavior:'instant'});render()}
-function panel(title,body,action=''){return `<section class="panel"><div class="panel-head"><h3>${title}</h3>${action}</div>${body}</section>`}
-function sectionTitle(title,desc,right=''){return `<div class="intro"><div><h2>${title}</h2><p>${desc}</p></div>${right}</div>`}
-function stat(label,value,sub,icon){return `<div class="metric"><div class="metric-label">${label}<span class="metric-icon">${icon}</span></div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`}
-function metricList(){const last=state.weights.slice().sort((a,b)=>b.date.localeCompare(a.date))[0];const w=last?.weight??state.profile.startingWeight;const nwork=state.workouts.length;const prices=state.groceries.reduce((n,g)=>n+num(g.price),0);const taken=state.groceries.filter(g=>g.checked).length;return `<div class="metrics">${stat('Peso attuale',`${Number(w).toLocaleString('it-IT')} <small style="font-size:14px">kg</small>`,'Obiettivo: ricomposizione','↗')}${stat('Allenamenti registrati',nwork,'Storico permanente','◆')}${stat('Spesa programmata',money(prices),'Budget: '+money(state.profile.budget),'▤')}${stat('Lista completata',`${taken}/${state.groceries.length}`,'Prodotti contrassegnati','✓')}</div>`}
-function recentWorkouts(){const arr=[...state.workouts].sort((a,b)=>b.date.localeCompare(a.date)).slice(0,4);return arr.length?arr.map(x=>`<div class="entry"><div><div class="entry-title">Giorno ${esc(x.routine)} · Settimana ${x.week}</div><div class="entry-sub">${esc(x.date)} · ${x.sets.length} serie registrate${x.duration?' · '+x.duration+' min':''}</div></div><span class="pill neutral">Completato ✓</span></div>`).join(''):`<div class="data-empty"><strong>Nessuna sessione registrata</strong>Inizia dal Giorno A e salva i carichi eseguiti.</div>`}
-function dashboard(){const todayIndex=(new Date().getDay()+6)%7;const day=DAYS[todayIndex];const meal=state.meals[day]||{};const assigned=GYM[day];return sectionTitle('La tua settimana, in ordine.','Allenati, mangia bene, risparmia tempo.',`<span class="pill">✦ Settimana ${state.profile.week} di 8</span>`)+metricList()+`<div class="stack"><div class="twocol">${panel('Calendario settimanale',`<div class="daygrid">${DAYS.map((d,i)=>`<div class="daybox ${GYM[d]?'gym':''}"><div class="day-icon">${GYM[d]?'◆':'·'}</div><strong>${DAYSHORT[i]}</strong><span>${GYM[d]?'Giorno '+GYM[d]:'Riposo'}</span></div>`).join('')}</div><p class="subtle" style="margin:18px 0 0">Palestra lunedì, mercoledì e venerdì · 19:30–22:00. Settimana modificabile dalla sezione Allenamenti.</p>`,`<button class="btn small" data-go="training">Apri scheda →</button>`)}${panel('Il piano di oggi · '+day,`<div class="summary-list"><div class="summary-row"><i>13</i><div><strong>Pranzo</strong><small>${esc(meal.lunch||'Da pianificare')}</small></div></div><div class="summary-row"><i>18</i><div><strong>Spuntino</strong><small>${esc(meal.pre||'Da pianificare')}</small></div></div><div class="summary-row"><i>22</i><div><strong>Cena</strong><small>${esc(meal.dinner||'Da pianificare')}</small></div></div></div>${assigned?`<div class="inline-note" style="margin-top:16px">Oggi: allenamento <strong>${assigned}</strong>. Preparati lo spuntino e tieni pronta la cena.</div>`:''}`,`<button class="btn small" data-go="meals">Modifica pasti →</button>`)}</div><div class="twocol">${panel('Ultimi allenamenti',recentWorkouts(),`<button class="btn small" data-go="training">Registra →</button>`)}${panel('Le tue priorità',`<div class="summary-list"><div class="summary-row"><i>✓</i><div><strong>3 allenamenti</strong><small>Segui A, B e C senza aumentare arbitrariamente il volume.</small></div></div><div class="summary-row"><i>✓</i><div><strong>Spesa sotto controllo</strong><small>Prezzi iniziali stimati. Verifica il carrello Esselunga.</small></div></div><div class="summary-row"><i>✓</i><div><strong>Weekend organizzato</strong><small>Prepara soprattutto le cene; evita di saltare sistematicamente i pasti.</small></div></div></div>`)}</div></div>`}
-function training(){const r=state.routines[selectedRoutine]||[];const week=Math.min(8,Math.max(1,selectedWeek));const previous=[...state.workouts].filter(x=>x.routine===selectedRoutine).sort((a,b)=>b.date.localeCompare(a.date))[0];return sectionTitle('Il tuo programma A · B · C','Scheda originale caricata · progressione su 8 settimane.',`<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">↗ PDF originale</a>`)+`<div class="week-tabs">${Array.from({length:8},(_,i)=>`<button data-week="${i+1}" class="${week===i+1?'active':''}">W${i+1}</button>`).join('')}</div><div class="grid3" style="margin-bottom:18px">${[['A','Lunedì','Schiena · spalle · tricipiti'],['B','Mercoledì','Petto · gambe · bicipiti'],['C','Venerdì','Full body · polpacci']].map(([id,d,desc])=>`<button class="panel" data-routine="${id}" style="text-align:left;cursor:pointer;border-color:${selectedRoutine===id?'#a8d973':'#2c383b'};background:${selectedRoutine===id?'#23352b':'#182226'}"><span class="tiny-label">${d}</span><h3 style="margin:8px 0 5px">GIORNO ${id}</h3><span class="subtle">${desc}</span></button>`).join('')}</div><div class="twocol"><div>${panel(`Giorno ${selectedRoutine} · Settimana ${week}`,`<form id="workout-form"><div class="form-grid" style="margin-bottom:18px"><div class="field"><label>Data sessione</label><input name="date" type="date" required value="${esc(today())}"></div><div class="field"><label>Durata effettiva (min)</label><input name="duration" type="number" min="1" max="360" placeholder="es. 85"></div></div>${r.map(ex=>{const count=ex.sets[week-1];const prevSets=previous?.sets.filter(x=>x.exerciseId===ex.id)||[];return `<div class="exercise"><div class="exercise-head"><div><div class="exercise-name">${esc(ex.name)}</div><div class="exercise-details">${count} serie × ${esc(ex.reps)} rip. ${previous?'· Ultima: '+(prevSets.length?prevSets.map(s=>s.kg+' kg').join(', '):'n.d.') :''}</div></div>${ex.video?`<a href="${esc(ex.video)}" target="_blank" rel="noopener" class="btn small">Video ↗</a>`:''}</div><div class="set-head"><div>SERIE</div><div>PESO (KG)</div><div>RIPETIZIONI</div></div><div class="sets-grid">${Array.from({length:count},(_,j)=>`<div class="set-row"><span>#${j+1}</span><input aria-label="Peso serie ${j+1} ${esc(ex.name)}" type="number" inputmode="decimal" min="0" max="1000" step="0.5" name="kg_${ex.id}_${j}" placeholder="kg" value="${draft['kg_'+ex.id+'_'+j]??''}"><input aria-label="Ripetizioni serie ${j+1} ${esc(ex.name)}" type="number" inputmode="numeric" min="0" max="100" name="reps_${ex.id}_${j}" placeholder="rip." value="${draft['reps_'+ex.id+'_'+j]??''}"></div>`).join('')}</div></div>`}).join('')}<div class="inline-note">Cardio finale: <strong>${CARDIO[selectedRoutine]}</strong>, 10 minuti. Il PDF indica ${week<=4?'130–150':'150–170'} BPM. Non cercare di raggiungere automaticamente questi valori: verifica l'intensità appropriata con il tuo allenatore.</div><div class="field" style="margin:16px 0"><label>Note / sensazioni / difficoltà</label><textarea name="notes" placeholder="Tecnica, recuperi, fatica, eventuali fastidi…"></textarea></div><button class="btn primary full" type="submit">✓ Salva questa sessione</button></form>`)}<div class="stack">${panel('Come funziona la progressione',`<div class="legend">Le serie seguono esattamente la tabella del PDF. Scegli la settimana in alto, poi inserisci peso e ripetizioni realmente completate. Le ripetizioni indicate sono intervalli obiettivo, non risultati automatici.</div><div class="spacer12"></div><p class="subtle">Settimana selezionata: <strong>${week}/8</strong>. Il carico non aumenta in automatico: registralo in base al lavoro effettivamente svolto e alle indicazioni dell'allenatore.</p><button class="btn small" data-set-profile-week="${week}">Imposta W${week} come settimana attuale</button>`)}${panel('Storico recente',recentWorkouts()+`<div class="spacer12"></div><button class="btn small" data-go="progress">Visualizza progressi →</button>`)}</div></div>`}
-function meals(){return sectionTitle('Mangiare bene, senza complicazioni.','Il piano è modificabile; la scheda pranzo del lavoro cambia ogni giorno.',`<span class="pill neutral">🍽 Una persona</span>`)+`<div class="inline-note" style="margin-bottom:20px">Dal lunedì al venerdì: pranzo al lavoro (primo + contorno) e secondo sottovuoto per la cena. Nei giorni di palestra, spuntino leggero verso le 18:15 e cena pronta alle 22:15–22:30. Conserva il secondo secondo etichetta e catena del freddo.</div><div class="grid3">${DAYS.map(day=>{const m=state.meals[day]||{};return `<section class="meal-card"><h3>${day} ${GYM[day]?'<span class="pill">◆ Palestra '+GYM[day]+'</span>':'<span class="pill neutral">Riposo</span>'}</h3>${[['lunch','Pranzo · 13:00'],['pre','Spuntino'],['dinner','Cena']].map(([k,label])=>`<div class="field"><label>${label}</label><textarea rows="2" data-meal-day="${day}" data-meal-key="${k}">${esc(m[k]||'')}</textarea></div>`).join('')}</section>`}).join('')}</div><div class="spacer20"></div>${panel('Strategia alimentare',`<div class="summary-list"><div class="summary-row"><i>1</i><div><strong>Non forzare la colazione</strong><small>Valuta l'adeguatezza nutrizionale della giornata, non soltanto l'orario dei pasti.</small></div></div><div class="summary-row"><i>2</i><div><strong>Proteine distribuite</strong><small>Il primo e il contorno potrebbero contenerne poche; considera yogurt, legumi, uova o altri alimenti durante il giorno.</small></div></div><div class="summary-row"><i>3</i><div><strong>Weekend semplice</strong><small>Priorità alle cene organizzate. I pasti proposti sono esempi e non dosi prescritte.</small></div></div></div>`)}<div class="spacer20"></div><button class="btn" id="reset-meals">Ripristina i suggerimenti iniziali</button>`}
-function shopping(){const total=state.groceries.reduce((s,g)=>s+num(g.price),0);const remaining=state.groceries.filter(g=>!g.checked).reduce((s,g)=>s+num(g.price),0);const ratio=state.profile.budget?Math.min(100,total/num(state.profile.budget,50)*100):0;const categories=[...new Set(state.groceries.map(g=>g.category||'Altro'))];return sectionTitle('Una spesa, zero sprechi.','Lista settimanale e inventario di quello che hai già in casa.',`<span class="pill neutral">Consegna: lunedì</span>`)+`<div class="metrics">${stat('Totale stimato',money(total),'Prezzi da verificare su Esselunga','€')}${stat('Da acquistare',money(remaining),'Articoli ancora da spuntare','▤')}${stat('Budget',money(state.profile.budget),'Limite settimanale desiderato','◎')}${stat('Dispensa',state.inventory.length,'Alimenti censiti','▦')}</div><div class="twocol"><div class="stack">${panel('Lista Esselunga',`<div class="bar"><div style="width:${ratio}%"></div></div><p class="subtle" style="margin:10px 0 18px">${total>state.profile.budget?'<strong style="color:#fac887">Attenzione:</strong> supera il budget stimato.':'Rientra nel budget stimato, esclusa consegna.'} I prezzi sono ipotesi iniziali, non quotazioni live.</p>${categories.map(cat=>`<div class="tiny-label" style="margin:20px 0 8px">${esc(cat)}</div>${state.groceries.filter(g=>g.category===cat).map(g=>`<div class="shopitem ${g.checked?'done':''}"><input type="checkbox" data-check-item="${esc(g.id)}" ${g.checked?'checked':''} aria-label="Comprato ${esc(g.name)}"><div><div class="shopname">${esc(g.name)}</div><div class="shopqty">${esc(g.qty)}</div></div><div class="shopprice">${money(g.price)}</div><button class="quiet" style="padding:5px" data-remove-shop="${esc(g.id)}" title="Rimuovi articolo">×</button></div>`).join('')}`).join('')}<div class="spacer20"></div><div class="button-row"><button class="btn small" id="copy-shopping">Copia lista</button><button class="btn small" id="clear-shopping">Deseleziona tutto</button></div>`)}${panel('Aggiungi alla spesa',`<form id="shopping-form" class="stack"><div class="form-grid"><div class="field"><label>Prodotto</label><input name="name" required placeholder="es. Banane"></div><div class="field"><label>Quantità</label><input name="qty" required placeholder="es. 1 kg"></div><div class="field"><label>Prezzo stimato (€)</label><input name="price" type="number" min="0" step="0.01" value="0"></div><div class="field"><label>Categoria</label><select name="category"><option>Spuntini</option><option>Proteine</option><option>Verdure e frutta</option><option>Dispensa</option><option>Altro</option></select></div></div><button class="btn primary" type="submit">+ Aggiungi prodotto</button></form>`)}</div><div class="stack">${panel('La tua dispensa',`<p class="subtle">Segna cosa hai già per evitare doppioni nella prossima spesa.</p>${state.inventory.length?state.inventory.map(g=>`<div class="entry"><div><div class="entry-title">${esc(g.name)}</div><div class="entry-sub">${esc(g.qty)} ${g.expiry?'· Scadenza: '+esc(g.expiry):''}</div></div><button class="quiet" data-remove-inv="${esc(g.id)}">×</button></div>`).join(''):'<div class="data-empty"><strong>Dispensa non ancora censita</strong>Comincia da 3–4 alimenti già in casa.</div>'}<hr class="separator"><form id="inventory-form" class="stack"><div class="field"><label>Alimento</label><input name="name" required placeholder="es. Riso"></div><div class="field"><label>Quantità</label><input name="qty" required placeholder="es. 300 g"></div><div class="field"><label>Scadenza (opzionale)</label><input name="expiry" type="date"></div><button class="btn primary" type="submit">+ Aggiungi in dispensa</button></form>`)}${panel('Da ricordare',`<div class="inline-note">Una spesa online non equivale a un carrello Esselunga integrato: copia la lista e controlla prezzi, disponibilità, consegna e ordine minimo prima di pagare.</div><div class="spacer12"></div><div class="inline-note warn"><strong>Conservazione:</strong> sottovuoto ≠ conservabile senza limiti. Segui sempre etichetta e temperatura prescritta.</div>`)}</div></div>`}
-function svgChart(){const arr=[...state.weights].filter(a=>num(a.weight)>0).sort((a,b)=>a.date.localeCompare(b.date));if(!arr.length)return '<div class="data-empty"><strong>Ancora nessuna pesata</strong>Inserisci il primo peso per vedere l’andamento.</div>';const vals=arr.map(x=>num(x.weight));let lo=Math.min(...vals)-1.5,hi=Math.max(...vals)+1.5;if(hi-lo<3){lo-=1;hi+=1}const pts=arr.map((a,i)=>{const x=50+(arr.length===1?.5:i/(arr.length-1))*690;const y=200-(num(a.weight)-lo)/(hi-lo)*155;return `${x},${y}`}).join(' ');return `<svg class="chart" viewBox="0 0 790 250" role="img" aria-label="Grafico del peso corporeo"><line x1="45" y1="45" x2="755" y2="45" stroke="#354642"/><line x1="45" y1="123" x2="755" y2="123" stroke="#354642"/><line x1="45" y1="200" x2="755" y2="200" stroke="#354642"/><text x="3" y="49" fill="#9aaba1" font-size="12">${hi.toFixed(1)}</text><text x="3" y="203" fill="#9aaba1" font-size="12">${lo.toFixed(1)}</text><polyline points="${pts}" stroke="#b8ee7b" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>${arr.map((a,i)=>{const [x,y]=pts.split(' ')[i].split(',');return `<circle cx="${x}" cy="${y}" r="5" fill="#b8ee7b"/>`}).join('')}<text x="48" y="236" fill="#9aaba1" font-size="12">${esc(arr[0].date)}</text><text x="754" y="236" text-anchor="end" fill="#9aaba1" font-size="12">${esc(arr[arr.length-1].date)}</text></svg>`}
-function progress(){const sessions=[...state.workouts].sort((a,b)=>b.date.localeCompare(a.date));const weigh=[...state.weights].sort((a,b)=>b.date.localeCompare(a.date));return sectionTitle('I numeri che contano.','Carichi, peso e regolarità nel tempo.')+`<div class="twocol"><div class="stack">${panel('Andamento del peso',svgChart())}${panel('Registra peso e girovita',`<form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label>Data</label><input type="date" name="date" value="${today()}" required></div><div class="field"><label>Peso (kg)</label><input type="number" name="weight" min="20" max="500" step="0.1" required placeholder="es. 89,4"></div><div class="field"><label>Girovita (cm) · facoltativo</label><input type="number" name="waist" min="20" max="250" step="0.1" placeholder="es. 100"></div><div class="field"><label>Note · facoltativo</label><input name="note" placeholder="es. mattina a digiuno"></div></div><button class="btn primary">+ Registra misurazione</button></form><div class="spacer20"></div>${weigh.length?`<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0,15).map(a=>`<tr><td>${esc(a.date)}</td><td>${a.weight} kg</td><td>${a.waist?a.waist+' cm':'—'}</td><td><button class="quiet" data-del-weight="${esc(a.id)}">×</button></td></tr>`).join('')}</tbody></table></div>`:''}`)}</div><div class="stack">${panel('Storico allenamenti',sessions.length?sessions.map(s=>`<div class="entry"><div><div class="entry-title">${esc(s.date)} · Giorno ${esc(s.routine)}</div><div class="entry-sub">W${s.week} · ${s.sets.length} serie · ${s.duration?s.duration+' min · ':''}${esc(s.notes||'Nessuna nota')}</div><details style="margin-top:7px"><summary class="micro" style="cursor:pointer">Dettaglio carichi</summary><div class="subtle" style="margin-top:9px">${s.sets.map(x=>{const e=state.routines[s.routine].find(e=>e.id===x.exerciseId);return `${esc(e?.name||x.exerciseId)}: ${x.kg}kg × ${x.reps}`}).join('<br>')}</div></details></div><button class="quiet" data-del-workout="${esc(s.id)}" title="Elimina sessione">×</button></div>`).join(''):'<div class="data-empty"><strong>Nessun allenamento registrato</strong>Compila il diario dalla pagina Allenamenti.</div>')}${panel('Come leggere i progressi',`<p class="subtle">Confronta le medie settimanali del peso, il girovita e la qualità dei carichi. Un peso che scende lentamente, con forza stabile o in crescita, può essere coerente con la ricomposizione corporea.</p><p class="subtle">Oscillazioni giornaliere sono normali. Se emergono dolori o sintomi persistenti, confrontati con un professionista.</p>`)}</div></div>`}
-function settings(){const p=state.profile;return sectionTitle('Le impostazioni del tuo sistema.','Profilo, preferenze, sicurezza e portabilità dei dati.')+`<div class="twocol"><div class="stack">${panel('Il tuo profilo',`<form id="profile-form" class="stack"><div class="form-grid"><div class="field"><label>Nome (facoltativo)</label><input name="name" value="${esc(p.name)}" placeholder="Il tuo nome"></div><div class="field"><label>Età</label><input name="age" type="number" min="16" max="120" value="${p.age}"></div><div class="field"><label>Altezza (cm)</label><input name="height" type="number" min="100" max="250" value="${p.height}"></div><div class="field"><label>Peso iniziale (kg)</label><input name="startingWeight" type="number" min="20" max="500" step="0.1" value="${p.startingWeight}"></div><div class="field"><label>Budget settimanale (€)</label><input name="budget" type="number" min="0" max="1000" step="1" value="${p.budget}"></div><div class="field"><label>Settimana attuale</label><select name="week">${Array.from({length:8},(_,i)=>`<option value="${i+1}" ${p.week===i+1?'selected':''}>Settimana ${i+1}</option>`).join('')}</select></div></div><div class="field"><label>La tua routine</label><textarea name="notes" rows="5">${esc(p.notes)}</textarea></div><button class="btn primary">✓ Salva profilo</button></form>`)}${panel('Scheda originale',`<p class="subtle">Il PDF caricato è incluso nel progetto e consultabile dopo l'accesso.</p><a class="btn" href="/api/original-pdf" target="_blank" rel="noopener">↗ Visualizza PDF</a>`)}</div><div class="stack">${panel('Backup ed esportazione',`<p class="subtle">Scarica tutti i tuoi dati in formato JSON: allenamenti, carichi, menu, lista della spesa, dispensa e misurazioni. Per ripristinarli, seleziona un backup valido: il ripristino sostituisce i dati attuali.</p><div class="button-row"><a class="btn primary" href="/api/backup" download="fitweek-backup.json">↓ Scarica backup</a></div><hr class="separator"><div class="field"><label>Ripristina backup JSON</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" id="import-backup" style="margin-top:12px">Ripristina dal file</button>`)}${panel('Privacy e sicurezza',`<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Database SQLite locale</strong><small>Conservato in un volume Docker persistente.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto da password</strong><small>Sessione lato server con cookie HttpOnly. Configura HTTPS per accessi remoti.</small></div></div><div class="summary-row"><i>↘</i><div><strong>Nessuna integrazione Esselunga</strong><small>La lista viene copiata manualmente, senza accessi al tuo account.</small></div></div></div>`)}${panel('Versione',`<div class="big-number">1.0</div><p class="subtle">MVP self-hosted. App web responsive, singolo utente. Non include notifiche push, scansione automatica dei menu né sincronizzazione con fitness tracker.</p>`)}</div></div>`}
-function render(){if(!state)return;$('#content').innerHTML=({dashboard,training,meals,shopping,progress,settings}[view])();}
+"use strict";
+const DAYS = ["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì", "Sabato", "Domenica"];
+const DAYSHORT = ["Lun", "Mar", "Mer", "Gio", "Ven", "Sab", "Dom"];
+const GYM = { Lunedì: "A", Mercoledì: "B", Venerdì: "C" };
+const CARDIO = { A: "Cyclette", B: "Tapis roulant inclinato", C: "Vogatore" };
+const $ = (sel) => document.querySelector(sel);
+const esc = (v) =>
+  String(v ?? "").replace(
+    /[&<>"']/g,
+    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+  );
+const money = (n) =>
+  new Intl.NumberFormat("it-IT", { style: "currency", currency: "EUR" }).format(Number(n) || 0);
+const today = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+};
+const num = (v, defaultNum = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : defaultNum;
+};
+const uid = () =>
+  globalThis.crypto?.randomUUID?.() || "id" + Date.now() + Math.random().toString(36).slice(2);
+let state = null,
+  version = 0,
+  view = "dashboard",
+  selectedRoutine = "A",
+  draft = {},
+  saving = Promise.resolve(),
+  dirty = false;
+let selectedWeek = 1;
+const titles = {
+  dashboard: "Panoramica",
+  training: "Allenamenti",
+  meals: "Alimentazione",
+  shopping: "Spesa & dispensa",
+  progress: "Progressi",
+  settings: "Impostazioni",
+};
+function toast(msg) {
+  const n = $("#toast");
+  n.textContent = msg;
+  n.classList.remove("hidden");
+  clearTimeout(toast.timer);
+  toast.timer = setTimeout(() => n.classList.add("hidden"), 3500);
+}
+async function request(path, opts = {}) {
+  const res = await fetch(path, {
+    credentials: "same-origin",
+    ...opts,
+    headers: { ...opts.headers, ...(opts.body ? { "Content-Type": "application/json" } : {}) },
+  });
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    const e = new Error(body.detail || `HTTP ${res.status}`);
+    e.status = res.status;
+    throw e;
+  }
+  return res.json();
+}
+async function load() {
+  try {
+    const out = await request("/api/state");
+    state = out.data;
+    version = out.version;
+    selectedWeek = Number(state.profile.week) || 1;
+    $("#shell").classList.remove("hidden");
+    $("#login").classList.add("hidden");
+    render();
+  } catch (e) {
+    if (e.status === 401) {
+      $("#login").classList.remove("hidden");
+      $("#shell").classList.add("hidden");
+    } else toast("Errore: " + e.message);
+  }
+}
+function sync(status) {
+  $("#sync").textContent =
+    status === "saving" ? "◌ Salvataggio…" : status === "error" ? "● Errore salvataggio" : "● Sincronizzato";
+  $("#sync").style.color = status === "error" ? "#ff9e97" : "#9fc7a0";
+}
+function persist() {
+  if (!state) return;
+  dirty = true;
+  sync("saving");
+  const snapshot = JSON.parse(JSON.stringify(state));
+  saving = saving
+    .then(async () => {
+      let payload = snapshot;
+      if (dirty) {
+        payload = JSON.parse(JSON.stringify(state));
+        dirty = false;
+      }
+      const out = await request("/api/state", {
+        method: "PUT",
+        body: JSON.stringify({ version, data: payload }),
+      });
+      version = out.version;
+      sync("ok");
+    })
+    .catch((e) => {
+      sync("error");
+      toast(
+        e.status === 409
+          ? "Modifica contemporanea: aggiorna la pagina per evitare conflitti."
+          : "Salvataggio non riuscito: " + e.message,
+      );
+    });
+  return saving;
+}
+function changeView(next) {
+  view = next;
+  document
+    .querySelectorAll("[data-view]")
+    .forEach((n) => n.classList.toggle("active", n.dataset.view === view));
+  document
+    .querySelectorAll(".sidebar .navitem")
+    .forEach((n) => n.classList.toggle("selected", n.dataset.view === view));
+  $("#page-title").textContent = titles[view];
+  window.scrollTo({ top: 0, behavior: "instant" });
+  render();
+}
+function panel(title, body, action = "") {
+  return `<section class="panel"><div class="panel-head"><h3>${title}</h3>${action}</div>${body}</section>`;
+}
+function sectionTitle(title, desc, right = "") {
+  return `<div class="intro"><div><h2>${title}</h2><p>${desc}</p></div>${right}</div>`;
+}
+function stat(label, value, sub, icon) {
+  return `<div class="metric"><div class="metric-label">${label}<span class="metric-icon">${icon}</span></div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`;
+}
+function metricList() {
+  const last = state.weights.slice().sort((a, b) => b.date.localeCompare(a.date))[0];
+  const w = last?.weight ?? state.profile.startingWeight;
+  const nwork = state.workouts.length;
+  const prices = state.groceries.reduce((n, g) => n + num(g.price), 0);
+  const taken = state.groceries.filter((g) => g.checked).length;
+  return `<div class="metrics">${stat("Peso attuale", `${Number(w).toLocaleString("it-IT")} <small style="font-size:14px">kg</small>`, "Obiettivo: ricomposizione", "↗")}${stat("Allenamenti registrati", nwork, "Storico permanente", "◆")}${stat("Spesa programmata", money(prices), "Budget: " + money(state.profile.budget), "▤")}${stat("Lista completata", `${taken}/${state.groceries.length}`, "Prodotti contrassegnati", "✓")}</div>`;
+}
+function recentWorkouts() {
+  const arr = [...state.workouts].sort((a, b) => b.date.localeCompare(a.date)).slice(0, 4);
+  return arr.length
+    ? arr
+        .map(
+          (x) =>
+            `<div class="entry"><div><div class="entry-title">Giorno ${esc(x.routine)} · Settimana ${x.week}</div><div class="entry-sub">${esc(x.date)} · ${x.sets.length} serie registrate${x.duration ? " · " + x.duration + " min" : ""}</div></div><span class="pill neutral">Completato ✓</span></div>`,
+        )
+        .join("")
+    : `<div class="data-empty"><strong>Nessuna sessione registrata</strong>Inizia dal Giorno A e salva i carichi eseguiti.</div>`;
+}
+function dashboard() {
+  const todayIndex = (new Date().getDay() + 6) % 7;
+  const day = DAYS[todayIndex];
+  const meal = state.meals[day] || {};
+  const assigned = GYM[day];
+  return (
+    sectionTitle(
+      "La tua settimana, in ordine.",
+      "Allenati, mangia bene, risparmia tempo.",
+      `<span class="pill">✦ Settimana ${state.profile.week} di 8</span>`,
+    ) +
+    metricList() +
+    `<div class="stack"><div class="twocol">${panel("Calendario settimanale", `<div class="daygrid">${DAYS.map((d, i) => `<div class="daybox ${GYM[d] ? "gym" : ""}"><div class="day-icon">${GYM[d] ? "◆" : "·"}</div><strong>${DAYSHORT[i]}</strong><span>${GYM[d] ? "Giorno " + GYM[d] : "Riposo"}</span></div>`).join("")}</div><p class="subtle" style="margin:18px 0 0">Palestra lunedì, mercoledì e venerdì · 19:30–22:00. Settimana modificabile dalla sezione Allenamenti.</p>`, `<button class="btn small" data-go="training">Apri scheda →</button>`)}${panel("Il piano di oggi · " + day, `<div class="summary-list"><div class="summary-row"><i>13</i><div><strong>Pranzo</strong><small>${esc(meal.lunch || "Da pianificare")}</small></div></div><div class="summary-row"><i>18</i><div><strong>Spuntino</strong><small>${esc(meal.pre || "Da pianificare")}</small></div></div><div class="summary-row"><i>22</i><div><strong>Cena</strong><small>${esc(meal.dinner || "Da pianificare")}</small></div></div></div>${assigned ? `<div class="inline-note" style="margin-top:16px">Oggi: allenamento <strong>${assigned}</strong>. Preparati lo spuntino e tieni pronta la cena.</div>` : ""}`, `<button class="btn small" data-go="meals">Modifica pasti →</button>`)}</div><div class="twocol">${panel("Ultimi allenamenti", recentWorkouts(), `<button class="btn small" data-go="training">Registra →</button>`)}${panel("Le tue priorità", `<div class="summary-list"><div class="summary-row"><i>✓</i><div><strong>3 allenamenti</strong><small>Segui A, B e C senza aumentare arbitrariamente il volume.</small></div></div><div class="summary-row"><i>✓</i><div><strong>Spesa sotto controllo</strong><small>Prezzi iniziali stimati. Verifica il carrello Esselunga.</small></div></div><div class="summary-row"><i>✓</i><div><strong>Weekend organizzato</strong><small>Prepara soprattutto le cene; evita di saltare sistematicamente i pasti.</small></div></div></div>`)}</div></div>`
+  );
+}
+function training() {
+  const r = state.routines[selectedRoutine] || [];
+  const week = Math.min(8, Math.max(1, selectedWeek));
+  const previous = [...state.workouts]
+    .filter((x) => x.routine === selectedRoutine)
+    .sort((a, b) => b.date.localeCompare(a.date))[0];
+  return (
+    sectionTitle(
+      "Il tuo programma A · B · C",
+      "Scheda originale caricata · progressione su 8 settimane.",
+      `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">↗ PDF originale</a>`,
+    ) +
+    `<div class="week-tabs">${Array.from({ length: 8 }, (_, i) => `<button data-week="${i + 1}" class="${week === i + 1 ? "active" : ""}">W${i + 1}</button>`).join("")}</div><div class="grid3" style="margin-bottom:18px">${[
+      ["A", "Lunedì", "Schiena · spalle · tricipiti"],
+      ["B", "Mercoledì", "Petto · gambe · bicipiti"],
+      ["C", "Venerdì", "Full body · polpacci"],
+    ]
+      .map(
+        ([id, d, desc]) =>
+          `<button class="panel" data-routine="${id}" style="text-align:left;cursor:pointer;border-color:${selectedRoutine === id ? "#a8d973" : "#2c383b"};background:${selectedRoutine === id ? "#23352b" : "#182226"}"><span class="tiny-label">${d}</span><h3 style="margin:8px 0 5px">GIORNO ${id}</h3><span class="subtle">${desc}</span></button>`,
+      )
+      .join("")}</div><div class="twocol"><div>${panel(
+      `Giorno ${selectedRoutine} · Settimana ${week}`,
+      `<form id="workout-form"><div class="form-grid" style="margin-bottom:18px"><div class="field"><label>Data sessione</label><input name="date" type="date" required value="${esc(today())}"></div><div class="field"><label>Durata effettiva (min)</label><input name="duration" type="number" min="1" max="360" placeholder="es. 85"></div></div>${r
+        .map((ex) => {
+          const count = ex.sets[week - 1];
+          const prevSets = previous?.sets.filter((x) => x.exerciseId === ex.id) || [];
+          return `<div class="exercise"><div class="exercise-head"><div><div class="exercise-name">${esc(ex.name)}</div><div class="exercise-details">${count} serie × ${esc(ex.reps)} rip. ${previous ? "· Ultima: " + (prevSets.length ? prevSets.map((s) => s.kg + " kg").join(", ") : "n.d.") : ""}</div></div>${ex.video ? `<a href="${esc(ex.video)}" target="_blank" rel="noopener" class="btn small">Video ↗</a>` : ""}</div><div class="set-head"><div>SERIE</div><div>PESO (KG)</div><div>RIPETIZIONI</div></div><div class="sets-grid">${Array.from({ length: count }, (_, j) => `<div class="set-row"><span>#${j + 1}</span><input aria-label="Peso serie ${j + 1} ${esc(ex.name)}" type="number" inputmode="decimal" min="0" max="1000" step="0.5" name="kg_${ex.id}_${j}" placeholder="kg" value="${draft["kg_" + ex.id + "_" + j] ?? ""}"><input aria-label="Ripetizioni serie ${j + 1} ${esc(ex.name)}" type="number" inputmode="numeric" min="0" max="100" name="reps_${ex.id}_${j}" placeholder="rip." value="${draft["reps_" + ex.id + "_" + j] ?? ""}"></div>`).join("")}</div></div>`;
+        })
+        .join(
+          "",
+        )}<div class="inline-note">Cardio finale: <strong>${CARDIO[selectedRoutine]}</strong>, 10 minuti. Il PDF indica ${week <= 4 ? "130–150" : "150–170"} BPM. Non cercare di raggiungere automaticamente questi valori: verifica l'intensità appropriata con il tuo allenatore.</div><div class="field" style="margin:16px 0"><label>Note / sensazioni / difficoltà</label><textarea name="notes" placeholder="Tecnica, recuperi, fatica, eventuali fastidi…"></textarea></div><button class="btn primary full" type="submit">✓ Salva questa sessione</button></form>`,
+    )}<div class="stack">${panel("Come funziona la progressione", `<div class="legend">Le serie seguono esattamente la tabella del PDF. Scegli la settimana in alto, poi inserisci peso e ripetizioni realmente completate. Le ripetizioni indicate sono intervalli obiettivo, non risultati automatici.</div><div class="spacer12"></div><p class="subtle">Settimana selezionata: <strong>${week}/8</strong>. Il carico non aumenta in automatico: registralo in base al lavoro effettivamente svolto e alle indicazioni dell'allenatore.</p><button class="btn small" data-set-profile-week="${week}">Imposta W${week} come settimana attuale</button>`)}${panel("Storico recente", recentWorkouts() + `<div class="spacer12"></div><button class="btn small" data-go="progress">Visualizza progressi →</button>`)}</div></div>`
+  );
+}
+function meals() {
+  return (
+    sectionTitle(
+      "Mangiare bene, senza complicazioni.",
+      "Il piano è modificabile; la scheda pranzo del lavoro cambia ogni giorno.",
+      `<span class="pill neutral">🍽 Una persona</span>`,
+    ) +
+    `<div class="inline-note" style="margin-bottom:20px">Dal lunedì al venerdì: pranzo al lavoro (primo + contorno) e secondo sottovuoto per la cena. Nei giorni di palestra, spuntino leggero verso le 18:15 e cena pronta alle 22:15–22:30. Conserva il secondo secondo etichetta e catena del freddo.</div><div class="grid3">${DAYS.map(
+      (day) => {
+        const m = state.meals[day] || {};
+        return `<section class="meal-card"><h3>${day} ${GYM[day] ? '<span class="pill">◆ Palestra ' + GYM[day] + "</span>" : '<span class="pill neutral">Riposo</span>'}</h3>${[
+          ["lunch", "Pranzo · 13:00"],
+          ["pre", "Spuntino"],
+          ["dinner", "Cena"],
+        ]
+          .map(
+            ([k, label]) =>
+              `<div class="field"><label>${label}</label><textarea rows="2" data-meal-day="${day}" data-meal-key="${k}">${esc(m[k] || "")}</textarea></div>`,
+          )
+          .join("")}</section>`;
+      },
+    ).join(
+      "",
+    )}</div><div class="spacer20"></div>${panel("Strategia alimentare", `<div class="summary-list"><div class="summary-row"><i>1</i><div><strong>Non forzare la colazione</strong><small>Valuta l'adeguatezza nutrizionale della giornata, non soltanto l'orario dei pasti.</small></div></div><div class="summary-row"><i>2</i><div><strong>Proteine distribuite</strong><small>Il primo e il contorno potrebbero contenerne poche; considera yogurt, legumi, uova o altri alimenti durante il giorno.</small></div></div><div class="summary-row"><i>3</i><div><strong>Weekend semplice</strong><small>Priorità alle cene organizzate. I pasti proposti sono esempi e non dosi prescritte.</small></div></div></div>`)}<div class="spacer20"></div><button class="btn" id="reset-meals">Ripristina i suggerimenti iniziali</button>`
+  );
+}
+function shopping() {
+  const total = state.groceries.reduce((s, g) => s + num(g.price), 0);
+  const remaining = state.groceries.filter((g) => !g.checked).reduce((s, g) => s + num(g.price), 0);
+  const ratio = state.profile.budget ? Math.min(100, (total / num(state.profile.budget, 50)) * 100) : 0;
+  const categories = [...new Set(state.groceries.map((g) => g.category || "Altro"))];
+  return (
+    sectionTitle(
+      "Una spesa, zero sprechi.",
+      "Lista settimanale e inventario di quello che hai già in casa.",
+      `<span class="pill neutral">Consegna: lunedì</span>`,
+    ) +
+    `<div class="metrics">${stat("Totale stimato", money(total), "Prezzi da verificare su Esselunga", "€")}${stat("Da acquistare", money(remaining), "Articoli ancora da spuntare", "▤")}${stat("Budget", money(state.profile.budget), "Limite settimanale desiderato", "◎")}${stat("Dispensa", state.inventory.length, "Alimenti censiti", "▦")}</div><div class="twocol"><div class="stack">${panel(
+      "Lista Esselunga",
+      `<div class="bar"><div style="width:${ratio}%"></div></div><p class="subtle" style="margin:10px 0 18px">${total > state.profile.budget ? '<strong style="color:#fac887">Attenzione:</strong> supera il budget stimato.' : "Rientra nel budget stimato, esclusa consegna."} I prezzi sono ipotesi iniziali, non quotazioni live.</p>${categories
+        .map(
+          (cat) =>
+            `<div class="tiny-label" style="margin:20px 0 8px">${esc(cat)}</div>${state.groceries
+              .filter((g) => g.category === cat)
+              .map(
+                (g) =>
+                  `<div class="shopitem ${g.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(g.id)}" ${g.checked ? "checked" : ""} aria-label="Comprato ${esc(g.name)}"><div><div class="shopname">${esc(g.name)}</div><div class="shopqty">${esc(g.qty)}</div></div><div class="shopprice">${money(g.price)}</div><button class="quiet" style="padding:5px" data-remove-shop="${esc(g.id)}" title="Rimuovi articolo">×</button></div>`,
+              )
+              .join("")}`,
+        )
+        .join(
+          "",
+        )}<div class="spacer20"></div><div class="button-row"><button class="btn small" id="copy-shopping">Copia lista</button><button class="btn small" id="clear-shopping">Deseleziona tutto</button></div>`,
+    )}${panel("Aggiungi alla spesa", `<form id="shopping-form" class="stack"><div class="form-grid"><div class="field"><label>Prodotto</label><input name="name" required placeholder="es. Banane"></div><div class="field"><label>Quantità</label><input name="qty" required placeholder="es. 1 kg"></div><div class="field"><label>Prezzo stimato (€)</label><input name="price" type="number" min="0" step="0.01" value="0"></div><div class="field"><label>Categoria</label><select name="category"><option>Spuntini</option><option>Proteine</option><option>Verdure e frutta</option><option>Dispensa</option><option>Altro</option></select></div></div><button class="btn primary" type="submit">+ Aggiungi prodotto</button></form>`)}</div><div class="stack">${panel("La tua dispensa", `<p class="subtle">Segna cosa hai già per evitare doppioni nella prossima spesa.</p>${state.inventory.length ? state.inventory.map((g) => `<div class="entry"><div><div class="entry-title">${esc(g.name)}</div><div class="entry-sub">${esc(g.qty)} ${g.expiry ? "· Scadenza: " + esc(g.expiry) : ""}</div></div><button class="quiet" data-remove-inv="${esc(g.id)}">×</button></div>`).join("") : '<div class="data-empty"><strong>Dispensa non ancora censita</strong>Comincia da 3–4 alimenti già in casa.</div>'}<hr class="separator"><form id="inventory-form" class="stack"><div class="field"><label>Alimento</label><input name="name" required placeholder="es. Riso"></div><div class="field"><label>Quantità</label><input name="qty" required placeholder="es. 300 g"></div><div class="field"><label>Scadenza (opzionale)</label><input name="expiry" type="date"></div><button class="btn primary" type="submit">+ Aggiungi in dispensa</button></form>`)}${panel("Da ricordare", `<div class="inline-note">Una spesa online non equivale a un carrello Esselunga integrato: copia la lista e controlla prezzi, disponibilità, consegna e ordine minimo prima di pagare.</div><div class="spacer12"></div><div class="inline-note warn"><strong>Conservazione:</strong> sottovuoto ≠ conservabile senza limiti. Segui sempre etichetta e temperatura prescritta.</div>`)}</div></div>`
+  );
+}
+function svgChart() {
+  const arr = [...state.weights]
+    .filter((a) => num(a.weight) > 0)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  if (!arr.length)
+    return '<div class="data-empty"><strong>Ancora nessuna pesata</strong>Inserisci il primo peso per vedere l’andamento.</div>';
+  const vals = arr.map((x) => num(x.weight));
+  let lo = Math.min(...vals) - 1.5,
+    hi = Math.max(...vals) + 1.5;
+  if (hi - lo < 3) {
+    lo -= 1;
+    hi += 1;
+  }
+  const pts = arr
+    .map((a, i) => {
+      const x = 50 + (arr.length === 1 ? 0.5 : i / (arr.length - 1)) * 690;
+      const y = 200 - ((num(a.weight) - lo) / (hi - lo)) * 155;
+      return `${x},${y}`;
+    })
+    .join(" ");
+  return `<svg class="chart" viewBox="0 0 790 250" role="img" aria-label="Grafico del peso corporeo"><line x1="45" y1="45" x2="755" y2="45" stroke="#354642"/><line x1="45" y1="123" x2="755" y2="123" stroke="#354642"/><line x1="45" y1="200" x2="755" y2="200" stroke="#354642"/><text x="3" y="49" fill="#9aaba1" font-size="12">${hi.toFixed(1)}</text><text x="3" y="203" fill="#9aaba1" font-size="12">${lo.toFixed(1)}</text><polyline points="${pts}" stroke="#b8ee7b" stroke-width="3" fill="none" stroke-linecap="round" stroke-linejoin="round"/>${arr
+    .map((a, i) => {
+      const [x, y] = pts.split(" ")[i].split(",");
+      return `<circle cx="${x}" cy="${y}" r="5" fill="#b8ee7b"/>`;
+    })
+    .join(
+      "",
+    )}<text x="48" y="236" fill="#9aaba1" font-size="12">${esc(arr[0].date)}</text><text x="754" y="236" text-anchor="end" fill="#9aaba1" font-size="12">${esc(arr[arr.length - 1].date)}</text></svg>`;
+}
+function progress() {
+  const sessions = [...state.workouts].sort((a, b) => b.date.localeCompare(a.date));
+  const weigh = [...state.weights].sort((a, b) => b.date.localeCompare(a.date));
+  return (
+    sectionTitle("I numeri che contano.", "Carichi, peso e regolarità nel tempo.") +
+    `<div class="twocol"><div class="stack">${panel("Andamento del peso", svgChart())}${panel(
+      "Registra peso e girovita",
+      `<form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label>Data</label><input type="date" name="date" value="${today()}" required></div><div class="field"><label>Peso (kg)</label><input type="number" name="weight" min="20" max="500" step="0.1" required placeholder="es. 89,4"></div><div class="field"><label>Girovita (cm) · facoltativo</label><input type="number" name="waist" min="20" max="250" step="0.1" placeholder="es. 100"></div><div class="field"><label>Note · facoltativo</label><input name="note" placeholder="es. mattina a digiuno"></div></div><button class="btn primary">+ Registra misurazione</button></form><div class="spacer20"></div>${
+        weigh.length
+          ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh
+              .slice(0, 15)
+              .map(
+                (a) =>
+                  `<tr><td>${esc(a.date)}</td><td>${a.weight} kg</td><td>${a.waist ? a.waist + " cm" : "—"}</td><td><button class="quiet" data-del-weight="${esc(a.id)}">×</button></td></tr>`,
+              )
+              .join("")}</tbody></table></div>`
+          : ""
+      }`,
+    )}</div><div class="stack">${panel(
+      "Storico allenamenti",
+      sessions.length
+        ? sessions
+            .map(
+              (s) =>
+                `<div class="entry"><div><div class="entry-title">${esc(s.date)} · Giorno ${esc(s.routine)}</div><div class="entry-sub">W${s.week} · ${s.sets.length} serie · ${s.duration ? s.duration + " min · " : ""}${esc(s.notes || "Nessuna nota")}</div><details style="margin-top:7px"><summary class="micro" style="cursor:pointer">Dettaglio carichi</summary><div class="subtle" style="margin-top:9px">${s.sets
+                  .map((x) => {
+                    const e = state.routines[s.routine].find((e) => e.id === x.exerciseId);
+                    return `${esc(e?.name || x.exerciseId)}: ${x.kg}kg × ${x.reps}`;
+                  })
+                  .join(
+                    "<br>",
+                  )}</div></details></div><button class="quiet" data-del-workout="${esc(s.id)}" title="Elimina sessione">×</button></div>`,
+            )
+            .join("")
+        : '<div class="data-empty"><strong>Nessun allenamento registrato</strong>Compila il diario dalla pagina Allenamenti.</div>',
+    )}${panel("Come leggere i progressi", `<p class="subtle">Confronta le medie settimanali del peso, il girovita e la qualità dei carichi. Un peso che scende lentamente, con forza stabile o in crescita, può essere coerente con la ricomposizione corporea.</p><p class="subtle">Oscillazioni giornaliere sono normali. Se emergono dolori o sintomi persistenti, confrontati con un professionista.</p>`)}</div></div>`
+  );
+}
+function settings() {
+  const p = state.profile;
+  return (
+    sectionTitle(
+      "Le impostazioni del tuo sistema.",
+      "Profilo, preferenze, sicurezza e portabilità dei dati.",
+    ) +
+    `<div class="twocol"><div class="stack">${panel("Il tuo profilo", `<form id="profile-form" class="stack"><div class="form-grid"><div class="field"><label>Nome (facoltativo)</label><input name="name" value="${esc(p.name)}" placeholder="Il tuo nome"></div><div class="field"><label>Età</label><input name="age" type="number" min="16" max="120" value="${p.age}"></div><div class="field"><label>Altezza (cm)</label><input name="height" type="number" min="100" max="250" value="${p.height}"></div><div class="field"><label>Peso iniziale (kg)</label><input name="startingWeight" type="number" min="20" max="500" step="0.1" value="${p.startingWeight}"></div><div class="field"><label>Budget settimanale (€)</label><input name="budget" type="number" min="0" max="1000" step="1" value="${p.budget}"></div><div class="field"><label>Settimana attuale</label><select name="week">${Array.from({ length: 8 }, (_, i) => `<option value="${i + 1}" ${p.week === i + 1 ? "selected" : ""}>Settimana ${i + 1}</option>`).join("")}</select></div></div><div class="field"><label>La tua routine</label><textarea name="notes" rows="5">${esc(p.notes)}</textarea></div><button class="btn primary">✓ Salva profilo</button></form>`)}${panel("Scheda originale", `<p class="subtle">Il PDF caricato è incluso nel progetto e consultabile dopo l'accesso.</p><a class="btn" href="/api/original-pdf" target="_blank" rel="noopener">↗ Visualizza PDF</a>`)}</div><div class="stack">${panel("Backup ed esportazione", `<p class="subtle">Scarica tutti i tuoi dati in formato JSON: allenamenti, carichi, menu, lista della spesa, dispensa e misurazioni. Per ripristinarli, seleziona un backup valido: il ripristino sostituisce i dati attuali.</p><div class="button-row"><a class="btn primary" href="/api/backup" download="fitweek-backup.json">↓ Scarica backup</a></div><hr class="separator"><div class="field"><label>Ripristina backup JSON</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" id="import-backup" style="margin-top:12px">Ripristina dal file</button>`)}${panel("Privacy e sicurezza", `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Database SQLite locale</strong><small>Conservato in un volume Docker persistente.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto da password</strong><small>Sessione lato server con cookie HttpOnly. Configura HTTPS per accessi remoti.</small></div></div><div class="summary-row"><i>↘</i><div><strong>Nessuna integrazione Esselunga</strong><small>La lista viene copiata manualmente, senza accessi al tuo account.</small></div></div></div>`)}${panel("Versione", `<div class="big-number">1.0</div><p class="subtle">MVP self-hosted. App web responsive, singolo utente. Non include notifiche push, scansione automatica dei menu né sincronizzazione con fitness tracker.</p>`)}</div></div>`
+  );
+}
+function render() {
+  if (!state) return;
+  $("#content").innerHTML = { dashboard, training, meals, shopping, progress, settings }[view]();
+}
 // Click delegation
-window.addEventListener('click',async e=>{const target=e.target.closest('button,[data-go]');if(!target||!state)return;
- if(target.dataset.view){changeView(target.dataset.view);return}
- if(target.dataset.go){changeView(target.dataset.go);return}
- if(target.dataset.week){selectedWeek=num(target.dataset.week);draft={};render();return}
- if(target.dataset.routine){selectedRoutine=target.dataset.routine;draft={};render();return}
- if(target.dataset.setProfileWeek){state.profile.week=num(target.dataset.setProfileWeek);await persist();toast('Settimana corrente aggiornata');return}
- if(target.dataset.removeShop){state.groceries=state.groceries.filter(g=>g.id!==target.dataset.removeShop);render();persist();return}
- if(target.dataset.removeInv){state.inventory=state.inventory.filter(g=>g.id!==target.dataset.removeInv);render();persist();return}
- if(target.dataset.delWorkout){if(!confirm('Eliminare questa sessione?'))return;state.workouts=state.workouts.filter(w=>w.id!==target.dataset.delWorkout);render();persist();return}
- if(target.dataset.delWeight){state.weights=state.weights.filter(w=>w.id!==target.dataset.delWeight);render();persist();return}
- if(target.id==='copy-shopping'){const t=state.groceries.filter(g=>!g.checked).map(g=>`${g.name} — ${g.qty} — ${money(g.price)}`).join('\n');try{await navigator.clipboard.writeText(t);toast('Lista copiata negli appunti')}catch{toast('Copia non disponibile: usa HTTPS o localhost')}return}
- if(target.id==='clear-shopping'){state.groceries.forEach(g=>g.checked=false);render();persist();return}
- if(target.id==='reset-meals'){if(!confirm('Sostituire tutti i pasti pianificati con i suggerimenti iniziali?'))return;const defaults={'Lunedì':['Primo + contorno dal lavoro','Banana','Secondo del lavoro + accompagnamento'],'Martedì':['Primo + contorno dal lavoro','Yogurt o frutta','Secondo del lavoro + verdure'],'Mercoledì':['Primo + contorno dal lavoro','Banana o gallette','Secondo del lavoro + accompagnamento'],'Giovedì':['Primo + contorno dal lavoro','Frutta o yogurt','Secondo del lavoro + contorno'],'Venerdì':['Primo + contorno dal lavoro','Banana','Secondo del lavoro + accompagnamento'],'Sabato':['Pasta + ceci o tonno + verdure','Frutta (facoltativo)','Pollo + patate + verdure'],'Domenica':['Riso + legumi + verdure','Yogurt (facoltativo)','Frittata + pane + verdure']};Object.entries(defaults).forEach(([d,[l,p,c]])=>state.meals[d]={lunch:l,pre:p,dinner:c});render();persist();return}
- if(target.id==='import-backup'){const file=$('#import-file').files[0];if(!file){toast('Seleziona un file JSON');return}let obj;try{obj=JSON.parse(await file.text())}catch{toast('File JSON non leggibile');return}if(obj.format!=='fitweek-backup-v1'||!obj.data||!['profile','routines','workouts','weights','meals','groceries','inventory'].every(k=>k in obj.data)){toast('Backup FitWeek non valido');return}if(!confirm('Il ripristino sostituisce tutti i tuoi dati attuali. Continuare?'))return;state=obj.data;await persist();render();toast('Backup ripristinato');return}
+window.addEventListener("click", async (e) => {
+  const target = e.target.closest("button,[data-go]");
+  if (!target || !state) return;
+  if (target.dataset.view) {
+    changeView(target.dataset.view);
+    return;
+  }
+  if (target.dataset.go) {
+    changeView(target.dataset.go);
+    return;
+  }
+  if (target.dataset.week) {
+    selectedWeek = num(target.dataset.week);
+    draft = {};
+    render();
+    return;
+  }
+  if (target.dataset.routine) {
+    selectedRoutine = target.dataset.routine;
+    draft = {};
+    render();
+    return;
+  }
+  if (target.dataset.setProfileWeek) {
+    state.profile.week = num(target.dataset.setProfileWeek);
+    await persist();
+    toast("Settimana corrente aggiornata");
+    return;
+  }
+  if (target.dataset.removeShop) {
+    state.groceries = state.groceries.filter((g) => g.id !== target.dataset.removeShop);
+    render();
+    persist();
+    return;
+  }
+  if (target.dataset.removeInv) {
+    state.inventory = state.inventory.filter((g) => g.id !== target.dataset.removeInv);
+    render();
+    persist();
+    return;
+  }
+  if (target.dataset.delWorkout) {
+    if (!confirm("Eliminare questa sessione?")) return;
+    state.workouts = state.workouts.filter((w) => w.id !== target.dataset.delWorkout);
+    render();
+    persist();
+    return;
+  }
+  if (target.dataset.delWeight) {
+    state.weights = state.weights.filter((w) => w.id !== target.dataset.delWeight);
+    render();
+    persist();
+    return;
+  }
+  if (target.id === "copy-shopping") {
+    const t = state.groceries
+      .filter((g) => !g.checked)
+      .map((g) => `${g.name} — ${g.qty} — ${money(g.price)}`)
+      .join("\n");
+    try {
+      await navigator.clipboard.writeText(t);
+      toast("Lista copiata negli appunti");
+    } catch {
+      toast("Copia non disponibile: usa HTTPS o localhost");
+    }
+    return;
+  }
+  if (target.id === "clear-shopping") {
+    state.groceries.forEach((g) => (g.checked = false));
+    render();
+    persist();
+    return;
+  }
+  if (target.id === "reset-meals") {
+    if (!confirm("Sostituire tutti i pasti pianificati con i suggerimenti iniziali?")) return;
+    const defaults = {
+      Lunedì: ["Primo + contorno dal lavoro", "Banana", "Secondo del lavoro + accompagnamento"],
+      Martedì: ["Primo + contorno dal lavoro", "Yogurt o frutta", "Secondo del lavoro + verdure"],
+      Mercoledì: ["Primo + contorno dal lavoro", "Banana o gallette", "Secondo del lavoro + accompagnamento"],
+      Giovedì: ["Primo + contorno dal lavoro", "Frutta o yogurt", "Secondo del lavoro + contorno"],
+      Venerdì: ["Primo + contorno dal lavoro", "Banana", "Secondo del lavoro + accompagnamento"],
+      Sabato: ["Pasta + ceci o tonno + verdure", "Frutta (facoltativo)", "Pollo + patate + verdure"],
+      Domenica: ["Riso + legumi + verdure", "Yogurt (facoltativo)", "Frittata + pane + verdure"],
+    };
+    Object.entries(defaults).forEach(([d, [l, p, c]]) => (state.meals[d] = { lunch: l, pre: p, dinner: c }));
+    render();
+    persist();
+    return;
+  }
+  if (target.id === "import-backup") {
+    const file = $("#import-file").files[0];
+    if (!file) {
+      toast("Seleziona un file JSON");
+      return;
+    }
+    let obj;
+    try {
+      obj = JSON.parse(await file.text());
+    } catch {
+      toast("File JSON non leggibile");
+      return;
+    }
+    if (
+      obj.format !== "fitweek-backup-v1" ||
+      !obj.data ||
+      !["profile", "routines", "workouts", "weights", "meals", "groceries", "inventory"].every(
+        (k) => k in obj.data,
+      )
+    ) {
+      toast("Backup FitWeek non valido");
+      return;
+    }
+    if (!confirm("Il ripristino sostituisce tutti i tuoi dati attuali. Continuare?")) return;
+    state = obj.data;
+    await persist();
+    render();
+    toast("Backup ripristinato");
+    return;
+  }
 });
-window.addEventListener('change',e=>{const t=e.target;if(!state)return;if(t.dataset.checkItem){const g=state.groceries.find(g=>g.id===t.dataset.checkItem);if(g){g.checked=t.checked;persist();render()}return}if(t.dataset.mealDay){state.meals[t.dataset.mealDay][t.dataset.mealKey]=t.value;persist();return}});
-window.addEventListener('input',e=>{const t=e.target;if(t.name?.startsWith('kg_')||t.name?.startsWith('reps_'))draft[t.name]=t.value});
-window.addEventListener('submit',async e=>{const form=e.target;if(!['login-form','workout-form','shopping-form','inventory-form','weight-form','profile-form'].includes(form.id))return;e.preventDefault();const data=Object.fromEntries(new FormData(form));try{
- if(form.id==='login-form'){await request('/api/login',{method:'POST',body:JSON.stringify({password:data.password})});$('#login-error').textContent='';await load();return}
- if(form.id==='workout-form'){const exs=state.routines[selectedRoutine],wk=Math.min(8,Math.max(1,selectedWeek));const sets=[];let complete=true;for(const ex of exs){for(let j=0;j<ex.sets[wk-1];j++){const k=data[`kg_${ex.id}_${j}`],r=data[`reps_${ex.id}_${j}`];if(k!==''&&r!==''&&k!==undefined&&r!==undefined){sets.push({exerciseId:ex.id,set:j+1,kg:num(k),reps:num(r)})}else complete=false}}
- if(!sets.length){toast('Inserisci almeno una serie con peso e ripetizioni');return}if(!complete&&!confirm('Alcune serie non sono compilate. Salvare comunque solo quelle complete?'))return;
- state.workouts.push({id:uid(),routine:selectedRoutine,week:wk,date:data.date||today(),duration:data.duration?num(data.duration):null,sets,notes:data.notes||''});draft={};await persist();render();toast('Sessione salvata!');return}
- if(form.id==='shopping-form'){state.groceries.push({id:uid(),name:data.name.trim(),qty:data.qty.trim(),price:Math.max(0,num(data.price)),category:data.category,checked:false});await persist();render();toast('Prodotto aggiunto');return}
- if(form.id==='inventory-form'){state.inventory.push({id:uid(),name:data.name.trim(),qty:data.qty.trim(),expiry:data.expiry||''});await persist();render();toast('Alimento aggiunto');return}
- if(form.id==='weight-form'){const reading={id:uid(),date:data.date||today(),weight:num(data.weight),waist:data.waist?num(data.waist):null,note:data.note||''};if(reading.weight<=0)return;state.weights.push(reading);await persist();render();toast('Misurazione salvata');return}
- if(form.id==='profile-form'){state.profile={...state.profile,name:data.name.trim(),age:num(data.age),height:num(data.height),startingWeight:num(data.startingWeight),budget:num(data.budget),week:num(data.week),notes:data.notes||''};selectedWeek=state.profile.week;await persist();render();toast('Profilo aggiornato');return}
- }catch(err){if(form.id==='login-form')$('#login-error').textContent=err.message;else toast('Errore: '+err.message)} });
-$('#nav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)changeView(b.dataset.view)});
-$('#bottom-nav').addEventListener('click',e=>{const b=e.target.closest('[data-view]');if(b)changeView(b.dataset.view)});
-$('#logout').addEventListener('click',async()=>{await request('/api/logout',{method:'POST'}).catch(()=>{});location.reload()});
+window.addEventListener("change", (e) => {
+  const t = e.target;
+  if (!state) return;
+  if (t.dataset.checkItem) {
+    const g = state.groceries.find((g) => g.id === t.dataset.checkItem);
+    if (g) {
+      g.checked = t.checked;
+      persist();
+      render();
+    }
+    return;
+  }
+  if (t.dataset.mealDay) {
+    state.meals[t.dataset.mealDay][t.dataset.mealKey] = t.value;
+    persist();
+    return;
+  }
+});
+window.addEventListener("input", (e) => {
+  const t = e.target;
+  if (t.name?.startsWith("kg_") || t.name?.startsWith("reps_")) draft[t.name] = t.value;
+});
+window.addEventListener("submit", async (e) => {
+  const form = e.target;
+  if (
+    ![
+      "login-form",
+      "workout-form",
+      "shopping-form",
+      "inventory-form",
+      "weight-form",
+      "profile-form",
+    ].includes(form.id)
+  )
+    return;
+  e.preventDefault();
+  const data = Object.fromEntries(new FormData(form));
+  try {
+    if (form.id === "login-form") {
+      await request("/api/login", { method: "POST", body: JSON.stringify({ password: data.password }) });
+      $("#login-error").textContent = "";
+      await load();
+      return;
+    }
+    if (form.id === "workout-form") {
+      const exs = state.routines[selectedRoutine],
+        wk = Math.min(8, Math.max(1, selectedWeek));
+      const sets = [];
+      let complete = true;
+      for (const ex of exs) {
+        for (let j = 0; j < ex.sets[wk - 1]; j++) {
+          const k = data[`kg_${ex.id}_${j}`],
+            r = data[`reps_${ex.id}_${j}`];
+          if (k !== "" && r !== "" && k !== undefined && r !== undefined) {
+            sets.push({ exerciseId: ex.id, set: j + 1, kg: num(k), reps: num(r) });
+          } else complete = false;
+        }
+      }
+      if (!sets.length) {
+        toast("Inserisci almeno una serie con peso e ripetizioni");
+        return;
+      }
+      if (!complete && !confirm("Alcune serie non sono compilate. Salvare comunque solo quelle complete?"))
+        return;
+      state.workouts.push({
+        id: uid(),
+        routine: selectedRoutine,
+        week: wk,
+        date: data.date || today(),
+        duration: data.duration ? num(data.duration) : null,
+        sets,
+        notes: data.notes || "",
+      });
+      draft = {};
+      await persist();
+      render();
+      toast("Sessione salvata!");
+      return;
+    }
+    if (form.id === "shopping-form") {
+      state.groceries.push({
+        id: uid(),
+        name: data.name.trim(),
+        qty: data.qty.trim(),
+        price: Math.max(0, num(data.price)),
+        category: data.category,
+        checked: false,
+      });
+      await persist();
+      render();
+      toast("Prodotto aggiunto");
+      return;
+    }
+    if (form.id === "inventory-form") {
+      state.inventory.push({
+        id: uid(),
+        name: data.name.trim(),
+        qty: data.qty.trim(),
+        expiry: data.expiry || "",
+      });
+      await persist();
+      render();
+      toast("Alimento aggiunto");
+      return;
+    }
+    if (form.id === "weight-form") {
+      const reading = {
+        id: uid(),
+        date: data.date || today(),
+        weight: num(data.weight),
+        waist: data.waist ? num(data.waist) : null,
+        note: data.note || "",
+      };
+      if (reading.weight <= 0) return;
+      state.weights.push(reading);
+      await persist();
+      render();
+      toast("Misurazione salvata");
+      return;
+    }
+    if (form.id === "profile-form") {
+      state.profile = {
+        ...state.profile,
+        name: data.name.trim(),
+        age: num(data.age),
+        height: num(data.height),
+        startingWeight: num(data.startingWeight),
+        budget: num(data.budget),
+        week: num(data.week),
+        notes: data.notes || "",
+      };
+      selectedWeek = state.profile.week;
+      await persist();
+      render();
+      toast("Profilo aggiornato");
+      return;
+    }
+  } catch (err) {
+    if (form.id === "login-form") $("#login-error").textContent = err.message;
+    else toast("Errore: " + err.message);
+  }
+});
+$("#nav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-view]");
+  if (b) changeView(b.dataset.view);
+});
+$("#bottom-nav").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-view]");
+  if (b) changeView(b.dataset.view);
+});
+$("#logout").addEventListener("click", async () => {
+  await request("/api/logout", { method: "POST" }).catch(() => {});
+  location.reload();
+});
 load();
