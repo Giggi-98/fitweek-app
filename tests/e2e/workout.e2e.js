@@ -33,13 +33,14 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
   await page.waitForSelector('#shell:not(.hidden)');
   check('login + dashboard', Boolean(await page.waitForSelector('.today-hero')));
   const ringW = await page.evaluate(() => getComputedStyle(document.querySelector('.today-hero .ring')).width);
-  check('anello dimensionato senza stili inline', ringW === '104px', ringW);
+  check('anello dimensionato senza stili inline', ringW === '92px', ringW);
   await shot(page, '1-dashboard-dark');
 
   // Palestra
   await page.click('.bottom-nav [data-view=training]');
   check('banner bozza precedente', Boolean(await page.waitForSelector('[data-import-draft]')));
   await shot(page, '2-training-start');
+  await page.click('[data-pick-routine=A]'); // il test non dipende dal giorno: nei giorni B/C la seduta proposta sarebbe un'altra
   await page.click('[data-start]');
   await page.waitForSelector('.set-row');
   const rows = page.locator('#ex-a1 .set-row');
@@ -109,6 +110,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
 
   // Seduta passata modificabile: kg della prima serie e note → volume ricalcolato
   await page.click('.bottom-nav [data-view=progress]');
+  await page.click('[data-tab=training]');
   await page.waitForSelector('[data-edit-session]');
   await page.click('[data-edit-session]');
   await page.waitForSelector('#modal[open] .es-row');
@@ -124,6 +126,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
 
   // Nuova seduta A: precompilazione dall'ultima volta
   await page.click('.bottom-nav [data-view=training]');
+  await page.click('[data-pick-routine=A]');
   await page.click('[data-pick-week="2"]');
   await page.click('[data-start]');
   await page.waitForSelector('#ex-a1 .set-row');
@@ -155,16 +158,20 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
 
   // Progressi
   await page.click('.bottom-nav [data-view=progress]');
+  await page.click('[data-tab=weight]');
   await page.click('details:has(#weight-form) summary');
   await page.fill('#w-kg', '89.4');
   await page.click('#weight-form button');
   await page.waitForSelector('.chart');
   check('pesata + grafico', await page.locator('.chart').first().isVisible());
-  check('tabella carichi', (await page.locator('text=Lat machine').count()) > 0);
+  await page.click('[data-tab=training]');
+  await page.click('[data-loads=recent]');
+  check('tabella carichi', (await page.locator('#ex-panel td', { hasText: 'Lat machine' }).count()) > 0);
+  await page.click('[data-loads=trend]');
   check('costanza: 2 sedute fatte nella griglia', (await page.locator('table.cons td.done').count()) === 2, String(await page.locator('table.cons td.done').count()));
-  check('carichi per esercizio: scelta e valori', (await page.locator('[data-ex-pick] option').count()) >= 2 && /50/.test(await page.textContent('#content .stack:nth-child(2) .metrics.three')));
+  check('carichi per esercizio: scelta e valori', (await page.locator('[data-ex-pick] option').count()) >= 2 && /50/.test(await page.textContent('#ex-panel .metrics.three')));
   await page.selectOption('[data-ex-pick]', 'b1');
-  check('cambio esercizio: carico della seduta B', /30/.test(await page.textContent('#content .stack:nth-child(2) .metrics.three')));
+  check('cambio esercizio: carico della seduta B', /30/.test(await page.textContent('#ex-panel .metrics.three')));
   // Media mobile: con 3 pesate compare la linea calcolata con legenda
   await page.evaluate(async () => {
     const s = await fetch('/api/state').then((r) => r.json());

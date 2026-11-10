@@ -2,7 +2,7 @@
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
 import { app, loadAll, persistState, refreshDaily } from "../store.js";
-import { panel, toast } from "../ui.js";
+import { panel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
 import { prefs, setPrefs } from "../workout/timer.js";
@@ -20,6 +20,7 @@ const REMINDER_TYPES = {
   sleep: ["sleep", "none", "Sonno"],
   custom: ["custom", "none", "Altro"],
 };
+const ui = { tab: "general" };
 const rem = { items: null, day: (new Date().getDay() + 6) % 7 };
 
 async function loadReminders() {
@@ -37,8 +38,8 @@ function remindersPanel() {
   return panel(
     `${icon("bell")}Promemoria`,
     `<p class="subtle">Con l'app aperta compare un popup all'orario; con l'app Android arriva anche la notifica.</p>
-    <div class="chips scroll" role="group" aria-label="Giorno">${DAYS.map((d, i) => `<button class="chip ${i === rem.day ? "active" : ""}" data-rem-day="${i}">${d.slice(0, 3)}</button>`).join("")}</div>
-    ${list
+    ${tabs(DAYS.map((d, i) => [String(i), d.slice(0, 3), null, rem.items.filter((r) => r.weekday === i && r.enabled).length]), String(rem.day), "Giorno", "rem-day")}
+    <div class="rem-list">${list
       .map(
         (r) => `<form class="rem-row ${r.enabled ? "" : "off"}" data-rem-form="${esc(r.id)}">
         <input class="time24" name="time" inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" value="${esc(r.time)}" aria-label="Orario (24 ore)" required>
@@ -47,7 +48,7 @@ function remindersPanel() {
         <button type="button" class="icon-btn" data-rem-del="${esc(r.id)}" aria-label="Elimina promemoria">${icon("trash-2", "sm")}</button>
       </form>`,
       )
-      .join("") || '<p class="subtle">Nessun promemoria in questo giorno.</p>'}
+      .join("") || '<p class="subtle">Nessun promemoria in questo giorno.</p>'}</div>
     <details class="free"><summary>${icon("plus", "sm")}Aggiungi promemoria a ${esc(DAYS[rem.day].toLowerCase())}</summary>
       <form id="rem-new" class="stack"><div class="form-grid">
         <div class="field"><label for="rn-time">Orario</label><input id="rn-time" class="time24" name="time" inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" required value="12:00"></div>
@@ -94,21 +95,24 @@ function androidPanel() {
   }
   const i = android.info;
   const next = i.next
-    ? `<hr class="separator"><p class="subtle"><strong>Versione di prova ${esc(i.next.version)}</strong> · ${mb(i.next.size)}: app autonoma, si apre anche senza rete e invia i dati al ritorno. Si installa accanto a quella attuale, senza sostituirla.</p><a class="btn full" href="/api/v1/app/android/download?channel=next" download>${icon("download")}Scarica la versione di prova</a>`
+    ? `<div class="app-next"><span class="pill accent">In prova</span><p><strong>Versione ${esc(i.next.version)}</strong> · ${mb(i.next.size)}</p><p class="subtle">App autonoma: si apre anche senza rete e invia i dati al ritorno. Si installa accanto a quella attuale, senza sostituirla.</p><a class="btn full" href="/api/v1/app/android/download?channel=next" download>${icon("download")}Scarica la versione di prova</a></div>`
     : "";
   if (!i.available) return panel(`${icon("smartphone")}App Android`, '<p class="subtle">L\'APK non è ancora stato compilato sul server (scripts/build-apk.sh).</p>', "", "", "android-panel");
   return panel(
     `${icon("smartphone")}App Android`,
-    `<p class="subtle">L'app mostra FitWeek a schermo intero e invia le <strong>notifiche dei promemoria anche ad app chiusa</strong>. Versione ${esc(i.version)} · ${mb(i.size)}.</p>
-    <a class="btn primary full" href="/api/v1/app/android/download" download>${icon("download")}Scarica APK</a>
+    `<div class="app-cols"><div class="stack">
+      <p class="subtle">L'app mostra FitWeek a schermo intero e invia le <strong>notifiche dei promemoria anche ad app chiusa</strong>. Versione ${esc(i.version)} · ${mb(i.size)}.</p>
+      <a class="btn primary full" href="/api/v1/app/android/download" download>${icon("download")}Scarica APK</a>
+      <p class="subtle">L'app si collega a ${esc(i.server_url || "")}: funziona sulla Wi-Fi di casa o con la VPN. Le notifiche arrivano ovunque.</p>
+      <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(i.sha256 || "")}</p></details>
+      ${next}
+    </div>
     <ol class="steps">
       <li>Scarica e apri il file. Il browser avvisa che è un'app esterna al Play Store: conferma <em>Scarica comunque</em>.</li>
       <li>Alla richiesta, consenti al browser di <em>installare app sconosciute</em>, poi <em>Installa</em>.</li>
       <li>Apri FitWeek, accedi e consenti le notifiche.</li>
       <li>Impostazioni → App → FitWeek → Batteria → <em>Senza restrizioni</em>; se richiesto consenti <em>Sveglie e promemoria</em>.</li>
-    </ol>
-    <p class="subtle">L'app si collega a ${esc(i.server_url || "")}: funziona sulla Wi-Fi di casa o con la VPN. Le notifiche arrivano ovunque.</p>
-    <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(i.sha256 || "")}</p></details>${next}`,
+    </ol></div>`,
     "", "", "android-panel",
   );
 }
@@ -135,21 +139,23 @@ export function render() {
   const pr = prefs();
   const theme = storage.get(THEME_KEY, "auto");
   const opt = (v, cur, label) => `<option value="${v}" ${String(v) === String(cur) ? "selected" : ""}>${label}</option>`;
-  return (
-    `<div class="twocol"><div class="stack">${androidPanel()}${remindersPanel()}${panel(
+  const general = () =>
+    `<div class="split wide-left">${panel(
+      `${icon("user")}Profilo`,
+      `<form id="profile-form" class="stack"><div class="form-grid three"><div class="field"><label for="pf-name">Nome (facoltativo)</label><input id="pf-name" name="name" maxlength="100" value="${esc(p.name)}"></div><div class="field"><label for="pf-age">Età</label><input id="pf-age" name="age" type="number" min="0" max="120" value="${esc(p.age)}"></div><div class="field"><label for="pf-h">Altezza (cm)</label><input id="pf-h" name="height" type="number" min="0" max="260" value="${esc(p.height)}"></div><div class="field"><label for="pf-w">Peso iniziale (kg)</label><input id="pf-w" name="startingWeight" type="number" min="0" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label for="pf-b">Budget spesa (€ a settimana)</label><input id="pf-b" name="budget" type="number" min="0" max="100000" step="1" value="${esc(p.budget)}"></div><div class="field"><label for="pf-prot">Riferimento proteine (g al giorno)</label><input id="pf-prot" name="proteinTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.proteinTarget ?? "")}"></div><div class="field"><label for="pf-kcal">Riferimento calorie (kcal al giorno)</label><input id="pf-kcal" name="kcalTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.kcalTarget ?? "")}"></div></div><p class="subtle">I riferimenti li scegli tu: l'app non li calcola né li consiglia, mostra solo quanto manca nella giornata.</p><div class="field"><label for="pf-n">La tua routine</label><textarea id="pf-n" name="notes" rows="4" maxlength="5000">${esc(p.notes)}</textarea></div><button class="btn primary" type="submit">Salva profilo</button></form>`,
+    )}<div class="stack">${panel(
       `${icon("calendar")}Programma`,
-      `<form id="program-form" class="stack"><div class="field"><label for="prog-week">Settimana attuale</label><select id="prog-week" name="week">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => opt(i + 1, app.today.program_week, `Settimana ${i + 1}`)).join("")}</select></div><p class="subtle">La settimana avanza da sola ogni lunedì (inizio programma: ${esc(p.startDate)}). Cambiarla qui sposta la data di inizio.</p><button class="btn" type="submit">Aggiorna settimana</button></form>
-      ${standalone ? "" : `<div class="spacer12"></div><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda originale (PDF)${icon("arrow-right", "sm")}</a>`}`,
+      `<form id="program-form" class="stack"><div class="field-row"><div class="field"><label for="prog-week">Settimana attuale</label><select id="prog-week" name="week">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => opt(i + 1, app.today.program_week, `Settimana ${i + 1}`)).join("")}</select></div><button class="btn" type="submit">Aggiorna</button></div><p class="subtle">Avanza da sola ogni lunedì (inizio programma: ${esc(p.startDate)}). Cambiarla qui sposta la data di inizio.</p></form>`,
+      standalone ? "" : `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda PDF${icon("arrow-right", "sm")}</a>`,
     )}${panel(
       `${icon("timer")}Allenamento`,
-      `<form id="prefs-form" class="stack"><div class="form-grid"><div class="field"><label for="rest">Recupero predefinito</label><select id="rest" name="restSeconds">${[60, 75, 90, 120, 150, 180].map((s) => opt(s, pr.restSeconds, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} min`)).join("")}</select></div><div class="field"><label for="kgstep">Incremento peso (+/−)</label><select id="kgstep" name="kgStep">${[0.5, 1, 1.25, 2, 2.5, 5].map((s) => opt(s, pr.kgStep, `${String(s).replace(".", ",")} kg`)).join("")}</select></div></div><label class="check"><input type="checkbox" name="sound" ${pr.sound ? "checked" : ""}> Suono a fine recupero (oltre alla vibrazione)</label><button class="btn" type="submit">Salva preferenze</button></form><p class="subtle">Preferenze salvate su questo dispositivo.</p>`,
+      `<form id="prefs-form" class="stack"><div class="form-grid two"><div class="field"><label for="rest">Recupero predefinito</label><select id="rest" name="restSeconds">${[60, 75, 90, 120, 150, 180].map((s) => opt(s, pr.restSeconds, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} min`)).join("")}</select></div><div class="field"><label for="kgstep">Incremento peso (+/−)</label><select id="kgstep" name="kgStep">${[0.5, 1, 1.25, 2, 2.5, 5].map((s) => opt(s, pr.kgStep, `${String(s).replace(".", ",")} kg`)).join("")}</select></div></div><label class="check"><input type="checkbox" name="sound" ${pr.sound ? "checked" : ""}> Suono a fine recupero (oltre alla vibrazione)</label><div class="field-row"><p class="subtle">Preferenze salvate su questo dispositivo.</p><button class="btn" type="submit">Salva preferenze</button></div></form>`,
     )}${panel(
       `${icon("sun-moon")}Aspetto`,
-      `<div class="chips" role="group" aria-label="Tema">${[["auto", "Automatico"], ["light", "Chiaro"], ["dark", "Scuro"]].map(([v, l]) => `<button class="chip ${theme === v ? "active" : ""}" data-theme-set="${v}">${l}</button>`).join("")}</div>`,
-    )}${panel(
-      `${icon("user")}Profilo`,
-      `<form id="profile-form" class="stack"><div class="form-grid two"><div class="field span2"><label for="pf-name">Nome (facoltativo)</label><input id="pf-name" name="name" maxlength="100" value="${esc(p.name)}"></div><div class="field"><label for="pf-age">Età</label><input id="pf-age" name="age" type="number" min="0" max="120" value="${esc(p.age)}"></div><div class="field"><label for="pf-h">Altezza (cm)</label><input id="pf-h" name="height" type="number" min="0" max="260" value="${esc(p.height)}"></div><div class="field"><label for="pf-w">Peso iniziale (kg)</label><input id="pf-w" name="startingWeight" type="number" min="0" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label for="pf-b">Budget spesa settimanale (€)</label><input id="pf-b" name="budget" type="number" min="0" max="100000" step="1" value="${esc(p.budget)}"></div><div class="field"><label for="pf-prot">Riferimento proteine (g al giorno)</label><input id="pf-prot" name="proteinTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.proteinTarget ?? "")}"></div><div class="field"><label for="pf-kcal">Riferimento calorie (kcal al giorno)</label><input id="pf-kcal" name="kcalTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.kcalTarget ?? "")}"></div></div><p class="subtle">I riferimenti li scegli tu: l'app non li calcola né li consiglia, mostra solo quanto manca nella giornata.</p><div class="field"><label for="pf-n">La tua routine</label><textarea id="pf-n" name="notes" rows="4" maxlength="5000">${esc(p.notes)}</textarea></div><button class="btn primary" type="submit">Salva profilo</button></form>`,
-    )}</div><div class="stack">${panel(
+      tabs([["auto", "Automatico", "sun-moon"], ["light", "Chiaro", "sun"], ["dark", "Scuro", "moon"]], theme, "Tema", "theme-set"),
+    )}</div></div>`;
+  const data = () =>
+    `<div class="grid3 even">${panel(
       `${icon("download")}Backup`,
       standalone
         ? `<p class="subtle">Backup automatico ogni notte sul server (${esc(serverUrl())}). Per scaricare o ripristinare una copia apri FitWeek dal browser.</p>`
@@ -160,11 +166,13 @@ export function render() {
     )}${panel(
       `${icon("info")}Privacy`,
       `<div class="summary-list"><div class="summary-row"><i>${icon("package", "sm")}</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker.</small></div></div><div class="summary-row"><i>${icon("utensils", "sm")}</i><div><strong>Ricerca prodotti</strong><small>Quando cerchi un alimento, il solo testo cercato va a Open Food Facts. Nient'altro esce dal server.</small></div></div><div class="summary-row"><i>${icon("user", "sm")}</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">Uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
-    )}</div></div>`
-  );
+    )}</div>`;
+  const body = ui.tab === "reminders" ? remindersPanel() : ui.tab === "app" ? androidPanel() : ui.tab === "data" ? data() : general();
+  return `${tabs([["general", "Generale", "user"], ["reminders", "Promemoria", "bell"], ["app", "App Android", "smartphone"], ["data", "Dati e accesso", "download"]], ui.tab, "Impostazioni")}${body}`;
 }
 
 export async function onClick(t) {
+  if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
   if (t.dataset.native === "test") return testNotification(), false;
   if (t.dataset.native === "sync") {
     await syncNotifications({ ask: true });

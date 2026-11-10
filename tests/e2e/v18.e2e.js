@@ -152,6 +152,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.fill('#sp-amount', '42,50');
   await page.click('#modal [data-m=save]');
   await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.click('[data-tab=spend]');
   await page.waitForSelector('.wk-chart.spend .wk-col');
   const after = (await api('/api/state')).data;
   const spend = (await api('/api/v1/grocery-spend')).items;
@@ -161,6 +162,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
 
   // 8. Progressi: sonno
   await page.click('.bottom-nav [data-view=progress]');
+  await page.click('[data-tab=sleep]');
   await page.waitForSelector('[data-edit-sleep]');
   check('progressi: notte nell\'elenco del sonno', /00:30/.test(await page.textContent('[data-edit-sleep]')));
 

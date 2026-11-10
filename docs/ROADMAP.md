@@ -160,6 +160,17 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
 
+## 1.10.0 (2026-11-11) — interfaccia a schede (design system v3)
+
+Implementato e verificato (pytest 78, test JS, e2e Playwright dei 5 file) su container usa-e-getta. **Non ancora in produzione** (serve `scripts/deploy.sh`) e **APK `next` da ricompilare** perché incorpora le pagine.
+
+- Schede orizzontali in ogni vista (`tabs()`), niente elementi sovrapposti, Oggi a tutta altezza su desktop.
+- Pasti: striscia dei 7 giorni + riepilogo del giorno; piano a griglia settimanale; abituali per momento del giorno.
+- Spesa: Lista (categorie in colonne con subtotale) / Dispensa / Spese (colonne + tabella).
+- Progressi: Peso / Allenamento / Sonno; grafici a linea disegnati alla larghezza reale.
+- Impostazioni: Generale / Promemoria / App Android / Dati e accesso.
+- Test: `workout.e2e.js` ora sceglie sempre il Giorno A (prima falliva nei giorni di palestra B/C). Nota: i test e2e restano sensibili all'orario a cavallo della mezzanotte (promemoria alle 23:57/23:59, date calcolate in UTC tra le 00:00 e le 01:00).
+
 ## 1.9.0 (2026-11-10) — app Android autonoma, tappa 1 di 2
 
 Richiesta utente: app che funziona da sola e sincronizza con il server nei due sensi, poi un modello IA sul telefono (Google AI Edge) per leggere il menu della mensa.

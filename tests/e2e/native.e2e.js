@@ -87,6 +87,7 @@ const FAKE_CAPACITOR = () => {
 
   // Pannello nativo in Impostazioni
   await page.click('.topbar [data-view=settings]');
+  await page.click('[data-tab=app]');
   await page.waitForSelector('[data-native=test]');
   const panelText = await page.textContent('#content');
   check('pannello app: stato notifiche', /consentite ✓/.test(panelText) && /notifiche programmate/.test(panelText));
@@ -100,6 +101,7 @@ const FAKE_CAPACITOR = () => {
   await wp.click('#login-form button');
   await wp.waitForSelector('#shell:not(.hidden)');
   await wp.click('.topbar [data-view=settings]');
+  await wp.click('[data-tab=app]');
   const info = await wp.evaluate(() => fetch('/api/v1/app/android').then((r) => r.json()));
   if (info.available) {
     await wp.waitForSelector('a[href="/api/v1/app/android/download"]');

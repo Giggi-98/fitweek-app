@@ -1,3 +1,4 @@
+import { icon } from "./icons.js";
 import { $, esc, fmtDate, isoDate, num } from "./util.js";
 
 export function toast(message, { action, onAction, timeout = 4000 } = {}) {
@@ -24,6 +25,14 @@ export const panel = (title, body, action = "", cls = "", id = "") =>
 export const stat = (label, value, sub, { calc = false } = {}) =>
   `<div class="metric"><div class="metric-label">${label}${calc ? ' <span class="badge-calc" title="Valore calcolato">calcolato</span>' : ""}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`;
 export const empty = (title, text) => `<div class="data-empty"><strong>${title}</strong>${text}</div>`;
+/**
+ * Schede orizzontali, uguali in tutte le viste. `items` = [[chiave, etichetta, icona?, conteggio?]].
+ * La vista riceve il click su `data-tab` (o sull'attributo indicato in `attr`).
+ */
+export const tabs = (items, active, label, attr = "tab") =>
+  `<div class="tabs" role="tablist" aria-label="${esc(label)}">${items
+    .map(([key, text, ic, count]) => `<button type="button" class="tab ${key === active ? "active" : ""}" role="tab" aria-selected="${key === active}" data-${attr}="${esc(key)}">${ic ? icon(ic, "sm") : ""}<span>${esc(text)}</span>${count == null ? "" : `<small>${esc(count)}</small>`}</button>`)
+    .join("")}</div>`;
 export const pill = (text, kind = "") => `<span class="pill ${kind}">${esc(text)}</span>`;
 
 /** La CSP vieta gli attributi style: dimensioni e variabili dinamiche viaggiano in data-* e

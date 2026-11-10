@@ -6,12 +6,14 @@ import { openComposer } from "../composer.js";
 import { guessSlot, openReminder, openSleepLog, openWeighIn } from "../reminders.js";
 import { dayNumber } from "../stats.js";
 import { app } from "../store.js";
+import { tabs } from "../ui.js";
 import { clock, countdown, gapFor, nextEvent, positionNow, toMinutes } from "../timeline.js";
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
 import { todayStatus } from "./training.js";
 
 const KIND_ICON = { meal: "utensils", workout: "dumbbell", weigh_in: "scale", shopping: "shopping-cart", sleep: "moon", custom: "bell" };
 const SLOT_ICON = { lunch: "soup", pre_workout: "zap", snack: "apple", dinner: "utensils", other: "cookie" };
+const ui = { tab: "day" }; // solo su telefono: su schermo largo giornata e settimana stanno affiancate
 const CTA = { log_meal: "Registra", start_workout: "Inizia", log_weight: "Pesa", open_shopping: "Apri", none: "Fatto" };
 
 function greeting() {
@@ -40,23 +42,23 @@ function hero() {
     const planned = st.planned || plannedFor(r, st.week);
     return `<section class="today-hero">
       <div class="today-top">
-        ${ring(planned ? done / planned : 0, { size: 104, label: `<span data-count="${done}">${done}</span>`, sub: `/${planned} serie` })}
+        ${ring(planned ? done / planned : 0, { size: 92, label: `<span data-count="${done}">${done}</span>`, sub: `di ${planned} serie` })}
         <div class="today-text">
           <span class="eyebrow">${st.kind === "active" ? "Allenamento in corso" : `Oggi palestra${gymTime() ? ` · ${esc(gymTime())}` : ""}`}</span>
           <h2>Giorno ${esc(r)} · W${esc(st.week)}</h2>
           <p>${esc(ROUTINES[r]?.focus || "")}</p>
         </div>
       </div>
-      <a class="btn primary xl full ${st.kind === "planned" ? "glow" : ""}" href="#training">${icon(st.kind === "active" ? "arrow-right" : "play")}${st.kind === "active" ? "Riprendi l'allenamento" : "Inizia l'allenamento"}</a>
+      <a class="btn primary xl today-cta ${st.kind === "planned" ? "glow" : ""}" href="#training">${icon(st.kind === "active" ? "arrow-right" : "play")}${st.kind === "active" ? "Riprendi l'allenamento" : "Inizia l'allenamento"}</a>
     </section>`;
   }
   const doneWeek = w?.workouts_done ?? 0;
   const plannedWeek = w?.workouts_planned ?? 3;
   return `<section class="today-hero ${st.kind === "done" ? "done" : ""}">
     <div class="today-top">
-      ${ring(plannedWeek ? doneWeek / plannedWeek : 0, { size: 104, label: `<span data-count="${doneWeek}">${doneWeek}</span>`, sub: `/${plannedWeek} allenam.` })}
+      ${ring(plannedWeek ? doneWeek / plannedWeek : 0, { size: 92, label: `<span data-count="${doneWeek}">${doneWeek}</span>`, sub: `di ${plannedWeek}` })}
       <div class="today-text">
-        <span class="eyebrow">${greeting()}</span>
+        <span class="eyebrow">${greeting()} · questa settimana</span>
         <h2>${st.kind === "done" ? `Giorno ${esc(r)} fatto ${icon("circle-check", "sm")}` : "Giorno di riposo"}</h2>
         <p>${st.kind === "done" ? "Ottimo lavoro. Recupera bene stanotte." : `Prossimo: ${esc(nextGym())}`}</p>
       </div>
@@ -142,7 +144,7 @@ function timeline() {
   <ol class="tl" data-timeline>
     <li class="tl-rail" aria-hidden="true"><i class="tl-fill"></i></li>
     ${items.join("")}
-    <li class="tl-now" aria-hidden="true"><span class="tl-now-time">${clock(now)}</span><i class="tl-now-dot"></i><i class="tl-now-line"></i></li>
+    <li class="tl-now" aria-hidden="true"><i class="tl-now-dot"></i></li>
   </ol>`;
 }
 
@@ -164,30 +166,32 @@ function week() {
   const w = app.weekly;
   if (!w) return "";
   const t = w.totals;
-  const max = Math.max(1, ...w.days.map((d) => d.kcal_estimate || 0));
   const today = isoDate();
+  const target = w.targets?.kcal || 0;
+  const max = Math.max(1, target, ...w.days.map((d) => d.kcal_estimate || 0)) * 1.08;
   const cols = w.days
     .map((d, i) => {
-      const h = d.kcal_estimate ? Math.max(4, Math.round((d.kcal_estimate / max) * 100)) : 0;
+      const h = d.kcal_estimate ? Math.max(3, Math.round((d.kcal_estimate / max) * 100)) : 0;
       const label = `${DAYS[i]}: ${d.kcal_estimate ? `circa ${fmtNum(d.kcal_estimate, 0)} kcal teoriche` : "nessun valore"}, ${d.meals_eaten} pasti su ${d.meals_expected}`;
       return `<button type="button" class="wk-col ${d.kcal_estimate ? "" : "empty"} ${d.date === today ? "today" : ""}" aria-label="${esc(label)}">
-        <span class="wk-tip">${d.kcal_estimate ? `~${fmtNum(d.kcal_estimate, 0)} kcal` : "—"}<small>${d.meals_eaten}/${d.meals_expected} pasti${d.meals_without_values ? ` · ${d.meals_without_values} senza valori` : ""}</small></span>
-        <span class="wk-fill" data-pct-h="${h}"></span>
+        <span class="wk-tip">${d.kcal_estimate ? `~${fmtNum(d.kcal_estimate, 0)} kcal` : "Nessun valore"}<small>${d.meals_eaten}/${d.meals_expected} pasti${d.meals_without_values ? ` · ${d.meals_without_values} senza valori` : ""}</small></span>
+        <span class="wk-stack" data-pct-h="${h}">${d.kcal_estimate ? `<em class="wk-val">${fmtNum(d.kcal_estimate, 0)}</em>` : ""}<span class="wk-fill"></span></span>
       </button>`;
     })
     .join("");
+  const ref = target ? `<span class="wk-ref" data-vars="ref:${(target / max).toFixed(3)}"></span>` : "";
   const days = w.days
     .map((d, i) => {
       const gym = GYM[DAYS[i]];
       const did = d.workouts.length > 0;
-      return `<span class="${d.date === today ? "today" : ""}">${DAYSHORT[i]}<i class="gym-dot ${did ? "done" : gym ? "planned" : ""}" title="${did ? "Allenamento fatto" : gym ? `Giorno ${gym}` : ""}"></i></span>`;
+      return `<span class="${d.date === today ? "today" : ""}">${DAYSHORT[i]}<i class="gym-dot ${did ? "done" : gym ? "planned" : ""}" title="${did ? "Allenamento fatto" : gym ? `Giorno ${gym}` : ""}">${did ? icon("check") : gym ? esc(gym) : ""}</i></span>`;
     })
     .join("");
   const sleep = t.sleep || { nights: 0 };
   return `<section class="panel dash-week">
-    <div class="panel-head"><h3>${icon("chart-line")}La settimana</h3><a class="btn small" href="#meals">Diario</a></div>
-    <p class="subtle">Calorie teoriche al giorno · pallino verde = allenamento fatto</p>
-    <div class="wk-chart">${cols}</div>
+    <div class="panel-head"><h3>${icon("chart-line")}La settimana</h3><a class="btn small" href="#meals">Diario${icon("arrow-right", "sm")}</a></div>
+    <div class="chart-caption"><span>Calorie teoriche al giorno <span class="badge-calc">stima</span></span><span class="chart-legend">${target ? `<span><i class="key ref"></i>riferimento ${fmtNum(target, 0)} kcal</span>` : ""}<span><i class="key gym done"></i>allenamento fatto</span><span><i class="key gym"></i>in programma</span></span></div>
+    <div class="wk-chart">${cols}${ref}</div>
     <div class="wk-days">${days}</div>
     <div class="metrics">
       <div class="metric"><div class="metric-label">Calorie <span class="badge-calc">stima</span></div><div class="metric-value">${t.kcal_estimate_avg ? `~<span data-count="${t.kcal_estimate_avg}">${fmtNum(t.kcal_estimate_avg, 0)}</span>` : "—"}<small> kcal/die</small></div><div class="metric-sub">${t.days_with_values ? `media su ${t.days_with_values} ${t.days_with_values === 1 ? "giorno" : "giorni"}` : "registra i pasti"}</div></div>
@@ -195,21 +199,22 @@ function week() {
       <div class="metric"><div class="metric-label">Allenamenti</div><div class="metric-value"><span data-count="${t.workouts_done}">${t.workouts_done}</span><small>/${t.workouts_planned}</small></div><div class="metric-sub">${t.sets_done}/${t.sets_planned} serie · W${esc(w.program_week)}</div></div>
       <div class="metric"><div class="metric-label">Sonno <span class="badge-calc">media</span></div><div class="metric-value">${sleep.nights ? esc(fmtDuration(sleep.duration_avg_min)) : "—"}</div><div class="metric-sub">${sleep.nights ? `a letto verso le ${esc(sleep.bedtime_avg)} · ${sleep.nights} ${sleep.nights === 1 ? "notte" : "notti"}` : "nessuna notte registrata"}</div></div>
     </div>
-    <p class="subtle">Le calorie sono stime teoriche dai pasti registrati, non misure.</p>
   </section>`;
 }
 
 export function render() {
   const pending = app.agenda.filter((i) => i.due && i.state === "pending").length;
-  return `<div class="dash">
-  <div class="dash-hero">${hero()}</div>
-  ${tiles()}
-  <section class="panel dash-agenda">
-    <div class="panel-head"><h3>${icon("clock")}La giornata${pending ? ` <span class="pill accent">${pending} da fare</span>` : ""}</h3><button class="btn small" data-quick-meal>${icon("plus", "sm")}Pasto</button></div>
-    ${timeline()}
-  </section>
+  return `<div class="dash" data-tab="${ui.tab}">
+  <div class="dash-top"><div class="dash-hero">${hero()}</div>${tiles()}</div>
   ${pantryNote()}
-  ${week()}
+  <div class="dash-main">
+    <div class="dash-tabs">${tabs([["day", "La giornata", "clock", pending || null], ["week", "La settimana", "chart-line"]], ui.tab, "Oggi")}</div>
+    <section class="panel dash-agenda">
+      <div class="panel-head"><h3>${icon("clock")}La giornata${pending ? ` <span class="pill accent">${pending} da fare</span>` : ""}</h3><div class="panel-actions"><span class="now-chip" title="Ora attuale">${icon("clock", "sm")}<span class="tl-now-time">${clock(new Date())}</span></span><button class="btn small" data-quick-meal>${icon("plus", "sm")}Pasto</button></div></div>
+      ${timeline()}
+    </section>
+    ${week()}
+  </div>
   </div>`;
 }
 
@@ -223,6 +228,7 @@ setInterval(positionNow, 15_000);
 window.addEventListener("resize", () => positionNow());
 
 export async function onClick(t) {
+  if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
   if (t.dataset.agenda) {
     const item = app.agenda.find((i) => i.id === t.dataset.agenda);
     if (item && item.state !== "done" && item.state !== "skipped") {

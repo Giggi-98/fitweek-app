@@ -31,9 +31,9 @@ test("conto alla rovescia in parole", () => {
 });
 
 test("distanza tra eventi proporzionale al tempo, con limiti", () => {
-  assert.equal(gapFor(0), 6);
-  assert.equal(gapFor(60), 18);
-  assert.equal(gapFor(600), 64);
+  assert.equal(gapFor(0), 4);
+  assert.equal(gapFor(60), 7);
+  assert.equal(gapFor(600), 28);
 });
 
 test("prossimo evento: il primo ancora aperto da adesso in poi", () => {

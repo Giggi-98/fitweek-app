@@ -89,6 +89,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   check('ritorno online: serie inviata', (await server('/api/v1/today')).active_session.sets.length === 2);
   check('ritorno online: pesata fusa con la modifica dell\'altro dispositivo', after.data.weights.some((w) => w.weight === 88.7) && after.data.inventory.some((x) => x.id === 'e2e-remote'), JSON.stringify(after.data.weights.slice(-1)));
   await page.click('.bottom-nav [data-view=shopping]');
+  await page.click('[data-tab=pantry]');
   await page.locator('#content', { hasText: 'Ceci' }).waitFor({ timeout: 5000 });
   check('la modifica remota compare nell\'app', true);
 
@@ -98,6 +99,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.click('[data-cancel-session]');
   await page.waitForSelector('#sync[data-state=ok]');
   await page.click('.topbar [data-view=settings]');
+  await page.click('[data-tab=data]');
   await page.click('[data-action=logout]');
   await page.waitForSelector('#server-field:not(.hidden)');
   check('uscita: token rimosso e revocato', (await page.evaluate(() => localStorage.getItem('fitweek.token.v1'))) === null && (await ctx.request.fetch(B + '/api/state', { headers })).status() === 401);

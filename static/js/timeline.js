@@ -6,7 +6,7 @@ export const toMinutes = (hhmm) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.s
 export const clock = (date) => `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
 
 /** Spazio verticale prima di un evento, proporzionale ai minuti dal precedente (con minimo e massimo). */
-export const gapFor = (minutes) => Math.round(Math.min(64, Math.max(6, minutes * 0.3)));
+export const gapFor = (minutes) => Math.round(Math.min(28, Math.max(4, minutes * 0.12)));
 
 /**
  * Posizione verticale del puntatore.
@@ -54,7 +54,8 @@ export function positionNow(root = document) {
   const y = pointerY(marks, nowMin);
   $(".tl-now", tl).style.top = `${y}px`;
   $(".tl-fill", tl).style.height = `${Math.max(0, y)}px`;
-  $(".tl-now-time", tl).textContent = clock(now);
+  const chip = $(".tl-now-time", root);
+  if (chip) chip.textContent = clock(now);
   rows.forEach((li) => li.classList.toggle("past", Number(li.dataset.min) < nowMin));
   const label = $("[data-next-label]", root);
   const next = rows.find((li) => li.dataset.open === "1" && Number(li.dataset.min) >= nowMin);

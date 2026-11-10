@@ -5,12 +5,12 @@ import { lineChart } from "../chart.js";
 import { DAYS, GYM, PROGRAM_WEEKS, ROUTINES } from "../constants.js";
 import { consistency, exerciseHistory, mondayOf, movingAverage } from "../stats.js";
 import { openSleepLog } from "../reminders.js";
-import { closeModal, dayOptions, empty, openModal, panel, stat, toast } from "../ui.js";
+import { closeModal, dayOptions, empty, openModal, panel, stat, tabs, toast } from "../ui.js";
 import { enqueue, flush } from "../workout/queue.js";
 import { icon } from "../icons.js";
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num, uid } from "../util.js";
 
-const ui = { exercise: null };
+const ui = { exercise: null, tab: "weight", list: "readings", loads: "trend" };
 const SCHEDULE = Object.fromEntries(DAYS.map((d, i) => [i, GYM[d]]).filter(([, r]) => r));
 
 const readings = () =>
@@ -29,25 +29,29 @@ function weeklyAverages() {
 
 const signed = (n, digits = 1) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtNum(Math.abs(n), digits)}`;
 
-function weightPanel() {
-  const arr = readings();
+function weightTiles(arr) {
+  const avg = movingAverage(arr);
+  const last = arr[arr.length - 1];
+  const nowAvg = avg[avg.length - 1];
+  const change = nowAvg.value - avg[0].value;
+  return `<div class="tiles three">
+      ${stat(`${icon("scale", "sm")}Ultima pesata`, `${fmtNum(last.weight)}<small> kg</small>`, esc(fmtDate(last.date)))}
+      ${stat(`${icon("chart-line", "sm")}Media 7 giorni`, `${fmtNum(nowAvg.value)}<small> kg</small>`, `su ${nowAvg.n} ${nowAvg.n === 1 ? "pesata" : "pesate"}`, { calc: true })}
+      ${stat(`${icon("trending-up", "sm")}Dall'inizio`, arr.length > 1 ? `${signed(change)}<small> kg</small>` : "—", arr.length > 1 ? `media, dal ${esc(fmtDate(arr[0].date))}` : "serve una seconda pesata", { calc: true })}
+    </div>`;
+}
+
+function weightPanel(arr) {
   if (!arr.length) return empty("Ancora nessuna pesata", "Inserisci il primo peso per vedere l'andamento.");
   const avg = movingAverage(arr);
   const withAvg = arr.length >= 3; // con una o due pesate la media coincide con i punti: non aggiunge nulla
   const last = arr[arr.length - 1];
-  const nowAvg = avg[avg.length - 1];
-  const change = nowAvg.value - avg[0].value;
-  return `<div class="metrics three">
-      ${stat("Ultima pesata", `${fmtNum(last.weight)}<small> kg</small>`, esc(fmtDate(last.date)))}
-      ${stat("Media 7 gg", `${fmtNum(nowAvg.value)}<small> kg</small>`, `su ${nowAvg.n} ${nowAvg.n === 1 ? "pesata" : "pesate"}`, { calc: true })}
-      ${stat("Dall'inizio", arr.length > 1 ? `${signed(change)}<small> kg</small>` : "—", arr.length > 1 ? `media, dal ${esc(fmtDate(arr[0].date))}` : "serve una seconda pesata", { calc: true })}
-    </div>
-    ${lineChart({
+  return `${lineChart({
       points: arr.map((a) => ({ date: a.date, value: num(a.weight), tip: a.note || "" })),
       overlay: withAvg ? { name: "media 7 gg", points: avg } : null,
       dots: withAvg ? "raw" : "series",
       unit: "kg",
-      label: `Peso da ${fmtNum(arr[0].weight)} a ${fmtNum(last.weight)} kg in ${arr.length} pesate. Valori nella tabella sotto.`,
+      label: `Peso da ${fmtNum(arr[0].weight)} a ${fmtNum(last.weight)} kg in ${arr.length} pesate. Valori nella tabella accanto.`,
       legend: withAvg ? [["raw", "Pesata"], ["line", 'Media mobile 7 giorni <span class="badge-calc">calcolata</span>']] : [],
     })}
     <p class="subtle">Le oscillazioni da un giorno all'altro sono normali (acqua, sale, orario): guarda la media.</p>`;
@@ -61,28 +65,36 @@ const eveningClock = (v) => {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
 
-function sleepPanel() {
+function sleepTab() {
+  const add = `<button class="btn small" data-add-sleep>${icon("plus", "sm")}Notte</button>`;
   const nights = app.sleep.items;
-  if (!nights.length) return empty("Nessuna notte registrata", "Aggiungi quando sei andato a letto e quando ti sei svegliato: bastano orari indicativi.");
+  if (!nights.length) return panel(`${icon("moon")}Sonno`, empty("Nessuna notte registrata", "Aggiungi quando sei andato a letto e quando ti sei svegliato: bastano orari indicativi."), add);
   const sum = app.sleep.summary;
   const values = nights.map((n) => eveningMinutes(n.bed_time));
   const lo = Math.floor(Math.min(...values) / 60) * 60;
   const hi = Math.max(lo + 120, Math.ceil(Math.max(...values) / 60) * 60);
   const ticks = [];
   for (let v = lo; v <= hi; v += hi - lo > 240 ? 120 : 60) ticks.push(v);
-  return `<div class="metrics three">
-      ${stat("Durata media", esc(fmtDuration(sum.duration_avg_min)), `${sum.nights} ${sum.nights === 1 ? "notte" : "notti"}`, { calc: true })}
-      ${stat("A letto in media", esc(sum.bedtime_avg), "ultimi 60 giorni", { calc: true })}
-      ${stat("Ultima notte", esc(fmtDuration(nights[nights.length - 1].duration_min)), esc(fmtDate(nights[nights.length - 1].date)))}
+  const last = nights[nights.length - 1];
+  return `<div class="tiles three">
+      ${stat(`${icon("clock", "sm")}Durata media`, esc(fmtDuration(sum.duration_avg_min)), `${sum.nights} ${sum.nights === 1 ? "notte" : "notti"}`, { calc: true })}
+      ${stat(`${icon("moon", "sm")}A letto in media`, esc(sum.bedtime_avg), "ultimi 60 giorni", { calc: true })}
+      ${stat(`${icon("bed-double", "sm")}Ultima notte`, esc(fmtDuration(last.duration_min)), esc(fmtDate(last.date)))}
     </div>
-    ${nights.length > 1
-      ? lineChart({
-          points: nights.map((n, i) => ({ date: n.date, value: values[i], tip: `sveglia ${n.wake_time} · ${fmtDuration(n.duration_min)}` })),
-          ticks, format: eveningClock, area: false, // un orario non è una quantità: niente area sotto la linea
-          label: `Orario in cui sei andato a letto in ${nights.length} notti, in media alle ${sum.bedtime_avg}. Valori nell'elenco sotto.`,
-        }) + '<p class="subtle">Orario in cui sei andato a letto, notte per notte.</p>'
-      : ""}
-    <div class="table-scroll"><table><thead><tr><th>Risveglio</th><th>A letto</th><th>Sveglia</th><th>Durata</th></tr></thead><tbody>${[...nights].reverse().slice(0, 7).map((n) => `<tr class="clickable" role="button" tabindex="0" data-edit-sleep="${esc(n.date)}" aria-label="Modifica la notte del ${esc(fmtDate(n.date))}"><td>${esc(fmtDate(n.date))}</td><td>${esc(n.bed_time)}</td><td>${esc(n.wake_time)}</td><td>${esc(fmtDuration(n.duration_min))}</td></tr>`).join("")}</tbody></table></div>`;
+    <div class="split wide-left">${panel(
+      `${icon("moon")}Orario in cui vai a letto`,
+      nights.length > 1
+        ? lineChart({
+            points: nights.map((n, i) => ({ date: n.date, value: values[i], tip: `sveglia ${n.wake_time} · ${fmtDuration(n.duration_min)}` })),
+            ticks, format: eveningClock, area: false, // un orario non è una quantità: niente area sotto la linea
+            label: `Orario in cui sei andato a letto in ${nights.length} notti, in media alle ${sum.bedtime_avg}. Valori nell'elenco accanto.`,
+          })
+        : empty("Serve una seconda notte", "Il grafico compare con almeno due notti registrate."),
+      add,
+    )}${panel(
+      `${icon("list-checks")}Ultime notti`,
+      `<div class="table-scroll"><table><thead><tr><th>Risveglio</th><th>A letto</th><th>Sveglia</th><th>Durata</th></tr></thead><tbody>${[...nights].reverse().slice(0, 7).map((n) => `<tr class="clickable" role="button" tabindex="0" data-edit-sleep="${esc(n.date)}" aria-label="Modifica la notte del ${esc(fmtDate(n.date))}"><td>${esc(fmtDate(n.date))}</td><td>${esc(n.bed_time)}</td><td>${esc(n.wake_time)}</td><td>${esc(fmtDuration(n.duration_min))}</td></tr>`).join("")}</tbody></table></div>`,
+    )}</div>`;
 }
 
 function consistencyPanel() {
@@ -126,7 +138,7 @@ function exercisePanel() {
         })
       : '<p class="subtle">Il grafico dell\'andamento compare dalla seconda seduta.</p>'}
     <p class="subtle">Serie più pesante di ogni seduta. Il carico sale quando completi le ripetizioni con buona tecnica.</p>
-    <div class="table-scroll"><table><thead><tr><th>Seduta</th><th>Serie più pesante</th><th>Volume <span class="badge-calc">calc.</span></th></tr></thead><tbody>${[...hist].reverse().slice(0, 8).map((h) => `<tr><td>${esc(fmtDate(h.date))}<small>W${esc(h.week)} · ${h.sets} serie</small></td><td>${fmtNum(h.kg)} kg × ${esc(h.reps ?? "—")}</td><td>${fmtNum(h.volume, 0)} kg</td></tr>`).join("")}</tbody></table></div>`;
+    <div class="table-scroll"><table><thead><tr><th>Seduta</th><th>Serie più pesante</th><th>Volume <span class="badge-calc">calc.</span></th></tr></thead><tbody>${[...hist].reverse().slice(0, 4).map((h) => `<tr><td>${esc(fmtDate(h.date))}<small>W${esc(h.week)} · ${h.sets} serie</small></td><td>${fmtNum(h.kg)} kg × ${esc(h.reps ?? "—")}</td><td>${fmtNum(h.volume, 0)} kg</td></tr>`).join("")}</tbody></table></div>`;
 }
 
 function loadsTable() {
@@ -146,31 +158,53 @@ function loadsTable() {
     : empty("Nessun carico registrato", "I confronti compaiono dopo le prime sedute.");
 }
 
-export function render() {
-  const sessions = app.sessions.filter((s) => s.status === "done");
+function weightTab() {
+  const arr = readings();
   const weigh = [...app.state.weights].sort((a, b) => b.date.localeCompare(a.date));
   const weekly = weeklyAverages();
-  return (
-    `<div class="twocol"><div class="stack">${panel(`${icon("scale")}Andamento del peso`, weightPanel())}${panel(
-      `${icon("pencil")}Pesate`,
-      `<details class="free"><summary>${icon("plus", "sm")}Registra peso e girovita</summary><form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label for="w-date">Giorno</label><select id="w-date" name="date">${dayOptions()}</select></div><div class="field"><label for="w-kg">Peso (kg)</label><input id="w-kg" type="number" name="weight" min="20" max="500" step="0.1" required inputmode="decimal" placeholder="es. 89,4"></div><div class="field"><label for="w-waist">Girovita (cm) · facoltativo</label><input id="w-waist" type="number" name="waist" min="20" max="250" step="0.1" inputmode="decimal"></div><div class="field"><label for="w-note">Nota · facoltativa</label><input id="w-note" name="note" maxlength="500" placeholder="es. mattina a digiuno"></div></div><button class="btn primary" type="submit">${icon("scale", "sm")}Registra misurazione</button></form></details>
-      ${weigh.length ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0, 20).map((a) => `<tr class="clickable" role="button" tabindex="0" data-edit-weight="${esc(a.id)}" aria-label="Modifica pesata del ${esc(fmtDate(a.date))}"><td>${esc(fmtDate(a.date))}</td><td>${fmtNum(a.weight)} kg</td><td>${a.waist ? fmtNum(a.waist) + " cm" : "—"}</td><td><button type="button" class="icon-btn" data-del-weight="${esc(a.id)}" aria-label="Elimina misurazione">${icon("trash-2", "sm")}</button></td></tr>`).join("")}</tbody></table></div>` : ""}`,
-    )}${panel(
-      `${icon("chart-line")}Medie settimanali <span class="badge-calc">calcolate</span>`,
-      weekly.length ? `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Media</th><th>Pesate</th></tr></thead><tbody>${weekly.slice(0, 12).map((w) => `<tr><td>${esc(fmtDate(w.week))}</td><td>${fmtNum(w.avg)} kg</td><td>${w.n}</td></tr>`).join("")}</tbody></table></div>` : empty("Nessuna media", "Servono alcune pesate."),
-    )}</div><div class="stack">${panel(`${icon("list-checks")}Costanza`, consistencyPanel())}${panel(`${icon("moon")}Sonno`, sleepPanel(), `<button class="btn small" data-add-sleep>${icon("plus", "sm")}Notte</button>`)}${panel(`${icon("trending-up")}Carichi per esercizio`, exercisePanel())}${panel(`${icon("dumbbell")}Carichi recenti`, loadsTable())}${panel(
-      `${icon("calendar")}Storico allenamenti`,
-      sessions.length
-        ? sessions
-            .map((s) => {
-              const names = Object.fromEntries((app.state.routines[s.routine] || []).map((e) => [e.id, e.name]));
-              const done = s.sets.filter((x) => x.completed);
-              return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(names[x.exercise_id] || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
-            })
-            .join("")
-        : empty("Nessun allenamento registrato", "Inizia dalla schermata Palestra."),
-    )}</div></div>`
+  return `${arr.length ? weightTiles(arr) : ""}
+  <div class="split wide-left">${panel(`${icon("scale")}Andamento del peso`, weightPanel(arr), "", "chart-panel")}
+  ${panel(
+    `${icon("pencil")}Pesate`,
+    `${tabs([["readings", "Misurazioni", null, weigh.length], ["weekly", "Medie settimanali"]], ui.list, "Elenco", "list")}
+    ${ui.list === "weekly"
+      ? weekly.length
+        ? `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Media <span class="badge-calc">calc.</span></th><th>Pesate</th></tr></thead><tbody>${weekly.slice(0, 8).map((w) => `<tr><td>${esc(fmtDate(w.week))}</td><td>${fmtNum(w.avg)} kg</td><td>${w.n}</td></tr>`).join("")}</tbody></table></div>`
+        : empty("Nessuna media", "Servono alcune pesate.")
+      : weigh.length
+        ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0, 7).map((a) => `<tr class="clickable" role="button" tabindex="0" data-edit-weight="${esc(a.id)}" aria-label="Modifica pesata del ${esc(fmtDate(a.date))}"><td>${esc(fmtDate(a.date))}</td><td>${fmtNum(a.weight)} kg</td><td>${a.waist ? fmtNum(a.waist) + " cm" : "—"}</td><td class="cell-action"><button type="button" class="icon-btn" data-del-weight="${esc(a.id)}" aria-label="Elimina misurazione">${icon("trash-2", "sm")}</button></td></tr>`).join("")}</tbody></table></div>${weigh.length > 7 ? `<p class="subtle">Ultime 7 di ${weigh.length} misurazioni.</p>` : ""}`
+        : empty("Ancora nessuna pesata", "Registra la prima qui sotto.")}
+    <details class="free"><summary>${icon("plus", "sm")}Registra peso e girovita</summary><form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label for="w-date">Giorno</label><select id="w-date" name="date">${dayOptions()}</select></div><div class="field"><label for="w-kg">Peso (kg)</label><input id="w-kg" type="number" name="weight" min="20" max="500" step="0.1" required inputmode="decimal" placeholder="es. 89,4"></div><div class="field"><label for="w-waist">Girovita (cm) · facoltativo</label><input id="w-waist" type="number" name="waist" min="20" max="250" step="0.1" inputmode="decimal"></div><div class="field"><label for="w-note">Nota · facoltativa</label><input id="w-note" name="note" maxlength="500" placeholder="es. mattina a digiuno"></div></div><button class="btn primary" type="submit">${icon("scale", "sm")}Registra misurazione</button></form></details>`,
+  )}</div>`;
+}
+
+function historyPanel() {
+  const sessions = app.sessions.filter((s) => s.status === "done");
+  return panel(
+    `${icon("calendar")}Storico allenamenti`,
+    sessions.length
+      ? sessions
+          .map((s) => {
+            const names = Object.fromEntries((app.state.routines[s.routine] || []).map((e) => [e.id, e.name]));
+            const done = s.sets.filter((x) => x.completed);
+            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(names[x.exercise_id] || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
+          })
+          .join("")
+      : empty("Nessun allenamento registrato", "Inizia dalla schermata Palestra."),
   );
+}
+
+const trainingTab = () =>
+  `<div class="split"><div class="stack">${panel(`${icon("list-checks")}Costanza`, consistencyPanel())}${historyPanel()}</div>
+  ${panel(
+    `${icon("trending-up")}Carichi`,
+    `${tabs([["trend", "Per esercizio"], ["recent", "Ultimi carichi"]], ui.loads, "Carichi", "loads")}${ui.loads === "recent" ? loadsTable() : exercisePanel()}`,
+    "", "", "ex-panel",
+  )}</div>`;
+
+export function render() {
+  const body = ui.tab === "training" ? trainingTab() : ui.tab === "sleep" ? sleepTab() : weightTab();
+  return `${tabs([["weight", "Peso", "scale"], ["training", "Allenamento", "dumbbell"], ["sleep", "Sonno", "moon"]], ui.tab, "Progressi")}${body}`;
 }
 
 // ---- modifica successiva -------------------------------------------------------------------
@@ -272,6 +306,9 @@ function editSession(s) {
 }
 
 export async function onClick(t) {
+  if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
+  if (t.dataset.list) return (ui.list = t.dataset.list), true;
+  if (t.dataset.loads) return (ui.loads = t.dataset.loads), true;
   if (t.matches("[data-add-sleep]")) return openSleepLog({ date: app.today.date }), false;
   if (t.dataset.editSleep) return openSleepLog({ date: t.dataset.editSleep }), false;
   if (t.dataset.editWeight) {

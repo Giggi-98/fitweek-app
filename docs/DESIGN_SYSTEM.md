@@ -1,12 +1,26 @@
 # Design system
 
-## Stato attuale: v2 "sportivo premium" (1.5.0, 2026-11-09; grafici aggiornati in 1.7.0, viste uniformate in 1.8.0)
+## Stato attuale: v3 "sportivo premium, a schede" (1.10.0, 2026-11-11)
+
+Stessa identità della v2 (token, colori, icone, movimento: vedi sotto), nuova impaginazione. Obiettivi: niente elementi sovrapposti, meno scorrimento, spazio usato fino in fondo su schermi larghi.
+
+- **Schede orizzontali** (`tabs()` in `static/js/ui.js`, classi `.tabs`/`.tab`): sono la navigazione interna di ogni vista. In alto la forma è "sottolineata"; dentro un pannello o una barra la stessa struttura diventa una pillola (scelte secondarie). Ogni vista tiene la scheda attiva nel proprio stato `ui`.
+  - Oggi: su telefono `La giornata | La settimana` (su schermo ≥ 1200 px i due pannelli stanno affiancati e le schede spariscono).
+  - Palestra: `Giorno A | B | C` + settimane + avvio in un'unica barra.
+  - Pasti: `Diario | Piano | Abituali`; il diario ha la **striscia dei 7 giorni** (`.day-tabs`: giorno, data, kcal stimate) e mostra un giorno alla volta con il riepilogo accanto; gli abituali hanno una scheda per momento del giorno; il piano è una griglia 7 colonne su schermo largo, un giorno alla volta su telefono.
+  - Spesa: `Lista | Dispensa | Spese`. Progressi: `Peso | Allenamento | Sonno`. Impostazioni: `Generale | Promemoria | App Android | Dati e accesso`.
+- **Niente sovrapposizioni**: rimossi i bagliori decorativi dentro le schede, la pillola dell'ora sopra gli orari della linea del tempo e la riga che attraversava gli eventi. L'ora attuale sta nell'intestazione del pannello (`.now-chip`), il puntatore è solo un punto sul binario. Su desktop l'intestazione di pagina non è più fissa. Le etichette di riferimento dei grafici (budget, riferimento kcal) stanno in legenda, non sopra le colonne.
+- **Impaginazione**: `.split` (due colonne da 900 px, `.wide-left` per grafico + elenco, altezze allineate), `.tiles` in testa, pannelli con azione nell'intestazione (`.panel-actions`). Oggi su desktop occupa l'altezza della finestra senza scorrere. Elenchi lunghi in più colonne (`.shop-groups`, `.rem-list`, `.tpl-list`, `.ex-preview`) invece che in una colonna da scorrere; le tabelle mostrano le ultime righe.
+- **Grafici** (`static/js/chart.js`): il grafico a linea è disegnato alla **larghezza reale** del contenitore (`mountCharts()` dopo ogni render + `ResizeObserver`), quindi testi a 12 px e punti a 9 px su ogni schermo, non ingranditi con la pagina. Date intermedie sull'asse del tempo quando c'è spazio. Colonne (`.wk-chart`): valore sopra ogni colonna, linea di riferimento tratteggiata spiegata in legenda, giorni di palestra come badge A/B/C (pieno = fatto).
+- **Tipografia**: Inter variabile; titoli di vista 24/32 px, titolo della seduta 36/44 px (era 52/64), numeri sempre tabellari, `text-wrap: balance` sui titoli.
+
+## Stato v2 "sportivo premium" (1.5.0, 2026-11-09; grafici aggiornati in 1.7.0, viste uniformate in 1.8.0)
 
 Scelta dell'utente: direzione "sportivo premium". Implementazione:
 - **Token** (`static/css/tokens.css`): fondo quasi nero con bagliori radiali, superfici a strati, accento lime elettrico `#c8ff47` (chiaro: `#3d7a00`), stati success/warning/danger, tema chiaro con passi propri. Font **Inter variable** incluso in `static/fonts/` (OFL), nessun CDN.
 - **Icone** Lucide (ISC) incluse in `static/js/icons.js`: `icon(nome, classe)` → SVG inline `currentColor`. Per aggiungerne una, copiare il contenuto interno del file SVG di `lucide-static` (mai il commento di licenza).
 - **Grafici** (skill dataviz): una serie → un colore (`--chart-1`), validato con `validate_palette.js` per banda di luminosità e contrasto in entrambi i temi (in scuro il lime UI era fuori banda, quindi i grafici usano `#5fa82a`). Barre ≤ 24 px con angoli 4 px solo in cima, linea 2 px, punti ≥ 8 px con anello di superficie, griglia hairline, tooltip su hover/tocco (mirino sul grafico del peso), valori anche in tabella.
-- **Grafici 1.7** (`static/js/chart.js`): asse del tempo reale, tacche pulite (`niceTicks`), tela 420 px perché su telefono punti e testi restino leggibili. Due serie = legenda sempre presente: le pesate sono punti neutri (`--color-text-muted`), la media mobile calcolata è la linea `--chart-1`. La griglia della costanza usa solo `--chart-1` per "fatta"; "non fatta" è un contorno neutro, mai rosso.
+- **Grafici 1.7** (`static/js/chart.js`): asse del tempo reale, tacche pulite (`niceTicks`), (fino alla 1.9 su tela fissa di 420 px; dalla 1.10 a larghezza reale, vedi v3). Due serie = legenda sempre presente: le pesate sono punti neutri (`--color-text-muted`), la media mobile calcolata è la linea `--chart-1`. La griglia della costanza usa solo `--chart-1` per "fatta"; "non fatta" è un contorno neutro, mai rosso.
 - **Stili dinamici**: mai `style="…"` nell'HTML (CSP, D-017). Usare `data-pct-h`, `data-pct-w` o `data-vars="nome:valore"`.
 - **Struttura delle viste (1.8)**: il titolo e un sottotitolo breve stanno solo nell'intestazione; ogni vista apre con riquadri (`.tiles`, 2×2 su telefono) o con una barra d'azione (`.view-bar`), poi pannelli con icona nel titolo. I moduli d'inserimento stanno dentro `details.free` o in una finestra, mai sempre aperti. Niente emoji né simboli tipografici come icone: solo `icon()`.
 - **Linea del tempo** (`static/js/timeline.js`): binario con riempimento fino al puntatore, nodo pulsante solo sul prossimo evento, puntatore con l'ora in una pillola; i colori d'avviso servono solo per "da registrare".

@@ -3,11 +3,12 @@ import { request } from "../api.js";
 import { icon } from "../icons.js";
 import { dayNumber, mondayOf } from "../stats.js";
 import { app, persistState } from "../store.js";
-import { empty, openModal, panel, toast } from "../ui.js";
-import { $, esc, fmtDate, isoDate, money, num, uid } from "../util.js";
+import { empty, openModal, panel, tabs, toast } from "../ui.js";
+import { $, esc, fmtDate, fmtNum, isoDate, money, num, uid } from "../util.js";
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
 const WEEKS_SHOWN = 8;
+const ui = { tab: "list" };
 const parseAmount = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", "."), null));
 const thisWeek = () => mondayOf(app.today?.date || isoDate());
 const shortDate = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
@@ -38,50 +39,58 @@ function listPanel(g) {
   const row = (x) =>
     `<label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(x.qty)}${x.recurring ? " · ogni settimana" : ""}</span></span><span class="shopprice">${money(x.price)}</span><button type="button" class="icon-btn ${x.recurring ? "on" : ""}" data-recurring="${esc(x.id)}" aria-pressed="${Boolean(x.recurring)}" aria-label="${esc(x.name)}: compra ogni settimana" title="Compra ogni settimana">${icon("refresh-cw", "sm")}</button><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></label>`;
   const anyChecked = g.some((x) => x.checked);
+  const group = (cat) => {
+    const items = g.filter((x) => (x.category || "Altro") === cat);
+    return `<div class="shop-group"><div class="group-head"><span class="tiny-label">${esc(cat)}</span><span class="tiny-label num">${money(items.reduce((s, x) => s + num(x.price), 0))}</span></div>${items.map(row).join("")}</div>`;
+  };
   return panel(
     `${icon("shopping-cart")}Lista della spesa`,
-    `${categories.map((cat) => `<div class="tiny-label group-label">${esc(cat)}</div>${g.filter((x) => (x.category || "Altro") === cat).map(row).join("")}`).join("") || empty("Lista vuota", "Aggiungi i prodotti qui sotto.")}
+    `${categories.length ? `<div class="shop-groups">${categories.map(group).join("")}</div>` : empty("Lista vuota", "Aggiungi i prodotti qui sotto.")}
     ${anyChecked ? `<button type="button" class="btn primary full" data-arrived>${icon("package")}Spesa arrivata</button>` : ""}
-    <div class="button-row"><button class="btn small" data-copy-shopping>Copia lista</button>${anyChecked ? '<button class="btn small" data-clear-shopping>Deseleziona tutto</button>' : ""}</div>
     <details class="free"><summary>${icon("plus", "sm")}Aggiungi prodotto</summary>
-      <form id="shopping-form" class="stack"><div class="form-grid"><div class="field"><label for="sh-name">Prodotto</label><input id="sh-name" name="name" required maxlength="120" placeholder="es. Banane"></div><div class="field"><label for="sh-qty">Quantità</label><input id="sh-qty" name="qty" required maxlength="60" placeholder="es. 1 kg"></div><div class="field"><label for="sh-price">Prezzo stimato (€)</label><input id="sh-price" name="price" inputmode="decimal" placeholder="0,00"></div><div class="field"><label for="sh-cat">Categoria</label><select id="sh-cat" name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
+      <form id="shopping-form" class="stack"><div class="form-grid four"><div class="field"><label for="sh-name">Prodotto</label><input id="sh-name" name="name" required maxlength="120" placeholder="es. Banane"></div><div class="field"><label for="sh-qty">Quantità</label><input id="sh-qty" name="qty" required maxlength="60" placeholder="es. 1 kg"></div><div class="field"><label for="sh-price">Prezzo stimato (€)</label><input id="sh-price" name="price" inputmode="decimal" placeholder="0,00"></div><div class="field"><label for="sh-cat">Categoria</label><select id="sh-cat" name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
     </details>
     <p class="subtle">Prezzi stimati a mano: verifica disponibilità e totale su Esselunga.</p>`,
-    "", "", "shopping-list",
+    `<div class="panel-actions">${anyChecked ? '<button class="btn small" data-clear-shopping>Deseleziona tutto</button>' : ""}<button class="btn small" data-copy-shopping>Copia lista</button></div>`,
+    "", "shopping-list",
   );
 }
 
 /** Colonne delle ultime settimane rispetto al budget (linea di riferimento). Valori anche in elenco. */
 function spendPanel(budget) {
   const weeks = [...app.spend].slice(0, WEEKS_SHOWN).reverse();
+  const add = `<button class="btn small" data-spend="${thisWeek()}">${icon("plus", "sm")}Totale</button>`;
   if (!weeks.length) {
-    return panel(`${icon("chart-line")}Spese settimanali`, empty("Nessuna spesa registrata", "Quando arriva la spesa inserisci il totale pagato: qui vedrai l'andamento rispetto al budget."), `<button class="btn small" data-spend="${thisWeek()}">${icon("plus", "sm")}Totale</button>`);
+    return panel(`${icon("chart-line")}Spese settimanali`, empty("Nessuna spesa registrata", "Quando arriva la spesa inserisci il totale pagato: qui vedrai l'andamento rispetto al budget."), add);
   }
-  const max = Math.max(budget, ...weeks.map((w) => w.amount)) * 1.1;
+  const max = Math.max(budget, ...weeks.map((w) => w.amount)) * 1.12;
   const avg = weeks.reduce((s, w) => s + w.amount, 0) / weeks.length;
   const cols = weeks
     .map((w) => `<button type="button" class="wk-col ${w.amount > budget ? "over" : ""}" data-spend="${esc(w.week_start)}" aria-label="Settimana del ${esc(fmtDate(w.week_start))}: ${money(w.amount)}">
       <span class="wk-tip">${money(w.amount)}<small>${w.amount > budget ? "sopra il budget" : "nel budget"}</small></span>
-      <span class="wk-fill" data-pct-h="${Math.max(3, Math.round((w.amount / max) * 100))}"></span>
+      <span class="wk-stack" data-pct-h="${Math.max(3, Math.round((w.amount / max) * 100))}"><em class="wk-val">${fmtNum(w.amount, 0)} €</em><span class="wk-fill"></span></span>
     </button>`)
     .join("");
-  return panel(
+  return `<div class="split wide-left">${panel(
     `${icon("chart-line")}Spese settimanali`,
-    `<p class="cons-head"><strong>${money(avg)}</strong> in media a settimana <span class="badge-calc">calcolata</span></p>
-    <div class="wk-chart spend" data-vars="cols:${weeks.length}">${cols}${budget ? `<span class="wk-ref" data-vars="ref:${Math.round((budget / max) * 100)}%"><i>budget ${money(budget)}</i></span>` : ""}</div>
-    <div class="wk-days" data-vars="cols:${weeks.length}">${weeks.map((w) => `<span>${esc(shortDate(w.week_start))}</span>`).join("")}</div>
-    <p class="subtle">Tocca una colonna per correggere il totale di quella settimana.</p>`,
-    `<button class="btn small" data-spend="${thisWeek()}">${icon("plus", "sm")}Totale</button>`,
-  );
+    `<div class="chart-caption"><p class="cons-head"><strong>${money(avg)}</strong> in media a settimana <span class="badge-calc">calcolata</span></p>${budget ? `<span class="chart-legend"><span><i class="key ref"></i>budget ${money(budget)}</span><span><i class="key over"></i>sopra il budget</span></span>` : ""}</div>
+    <div class="wk-chart spend tall" data-vars="cols:${weeks.length}">${cols}${budget ? `<span class="wk-ref" data-vars="ref:${(budget / max).toFixed(3)}"></span>` : ""}</div>
+    <div class="wk-days" data-vars="cols:${weeks.length}">${weeks.map((w) => `<span>${esc(shortDate(w.week_start))}</span>`).join("")}</div>`,
+    add,
+  )}${panel(
+    `${icon("list-checks")}Settimana per settimana`,
+    `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Pagato</th><th>Rispetto al budget</th></tr></thead><tbody>${[...weeks].reverse().map((w) => `<tr class="clickable" role="button" tabindex="0" data-spend="${esc(w.week_start)}" aria-label="Correggi il totale del ${esc(fmtDate(w.week_start))}"><td>${esc(fmtDate(w.week_start))}</td><td>${money(w.amount)}</td><td>${budget ? `${w.amount > budget ? "+" : "−"}${money(Math.abs(w.amount - budget))}` : "—"}</td></tr>`).join("")}</tbody></table></div>
+    <p class="subtle">Tocca una riga o una colonna per correggere il totale.</p>`,
+  )}</div>`;
 }
 
 function pantryPanel() {
   const items = [...app.state.inventory].sort(byExpiry);
   return panel(
     `${icon("package")}Dispensa`,
-    `${items.length ? items.map((x) => `<div class="entry"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${expiryLabel(x.expiry)}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("") : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
+    `${items.length ? `<div class="card-grid">${items.map((x) => `<div class="mini-card"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${expiryLabel(x.expiry)}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("")}</div>` : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
     <details class="free"><summary>${icon("plus", "sm")}Aggiungi in dispensa</summary>
-      <form id="inventory-form" class="stack"><div class="field"><label for="in-name">Alimento</label><input id="in-name" name="name" required maxlength="120" placeholder="es. Riso"></div><div class="form-grid"><div class="field"><label for="in-qty">Quantità</label><input id="in-qty" name="qty" required maxlength="60" placeholder="es. 300 g"></div><div class="field"><label for="in-exp">Scadenza (facoltativa)</label><input id="in-exp" name="expiry" type="date"></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
+      <form id="inventory-form" class="stack"><div class="form-grid three"><div class="field"><label for="in-name">Alimento</label><input id="in-name" name="name" required maxlength="120" placeholder="es. Riso"></div><div class="field"><label for="in-qty">Quantità</label><input id="in-qty" name="qty" required maxlength="60" placeholder="es. 300 g"></div><div class="field"><label for="in-exp">Scadenza (facoltativa)</label><input id="in-exp" name="expiry" type="date"></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
     </details>
     <p class="subtle">Sottovuoto non significa senza scadenza: vale l'etichetta.</p>`,
   );
@@ -90,7 +99,8 @@ function pantryPanel() {
 export function render() {
   const g = app.state.groceries;
   const budget = num(app.state.profile.budget);
-  return `${tiles(g, budget)}<div class="twocol"><div class="stack">${listPanel(g)}</div><div class="stack">${spendPanel(budget)}${pantryPanel()}</div></div>`;
+  const body = ui.tab === "pantry" ? pantryPanel() : ui.tab === "spend" ? spendPanel(budget) : listPanel(g);
+  return `${tiles(g, budget)}${tabs([["list", "Lista", "shopping-cart", g.filter((x) => !x.checked).length], ["pantry", "Dispensa", "package", app.state.inventory.length], ["spend", "Spese", "chart-line"]], ui.tab, "Spesa e dispensa")}${body}`;
 }
 
 // ---- spesa reale ------------------------------------------------------------------------------
@@ -149,6 +159,7 @@ async function moveToPantry() {
 }
 
 export async function onClick(t) {
+  if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
   if (t.dataset.spend) return openSpend(t.dataset.spend), false;
   if (t.matches("[data-arrived]")) return openSpend(thisWeek(), { arrived: true }), false;
   if (t.dataset.recurring) {

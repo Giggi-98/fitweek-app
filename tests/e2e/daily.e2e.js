@@ -143,6 +143,7 @@ function romeMinuteAgo() {
 
   // 6. Pasti abituali: correggi Banana con valori da etichetta
   await page.click('[data-tab=templates]');
+  await page.click('[data-tpl-slot=pre_workout]');
   const form = page.locator('[data-tpl-form="t-banana"]');
   await form.locator('input[name=kcal]').fill('110');
   await form.locator('select[name=nutrition_source]').selectOption('label');
@@ -153,6 +154,7 @@ function romeMinuteAgo() {
 
   // 7. Impostazioni: promemoria
   await page.click('.topbar [data-view=settings]');
+  await page.click('[data-tab=reminders]');
   await page.waitForSelector('.rem-row');
   const row = page.locator('[data-rem-form="e2e-meal"]');
   await row.locator('input[name=time]').fill('07:30');

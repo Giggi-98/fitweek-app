@@ -3,6 +3,7 @@ import { request } from "./api.js";
 import { serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
 import { app, loadAll, refreshDaily, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, initModal, toast } from "./ui.js";
+import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
 import { $, $$, fmtDate, normalizeTime } from "./util.js";
@@ -35,6 +36,7 @@ function render() {
   $("#content").innerHTML = current().render();
   hydrateIcons($("#content"));
   applyDynamicStyles($("#content"));
+  mountCharts($("#content"));
   window.scrollTo({ top: y });
   current().afterRender?.();
 }

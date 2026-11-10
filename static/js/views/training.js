@@ -5,7 +5,7 @@ import { bump, confetti, haptic, pop, ring } from "../motion.js";
 import { standalone } from "../platform.js";
 import { bestLoads, isRecord } from "../stats.js";
 import { app, refreshWorkouts } from "../store.js";
-import { openModal, toast } from "../ui.js";
+import { openModal, tabs, toast } from "../ui.js";
 import { $, clamp, esc, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
@@ -129,45 +129,45 @@ function renderStart() {
   const exs = routineExercises(routine);
   const total = exs.reduce((n, ex) => n + plannedSets(ex, week), 0);
   const isToday = routine === t.routine;
+  const fact = (ic, label, value) => `<div class="fact">${icon(ic, "sm")}<span>${label}</span><strong>${value}</strong></div>`;
   return `
   ${legacyDraftBanner()}
-  <div class="train-start"><div class="train-col">
-  <section class="hero">
-    <span class="eyebrow">${isToday ? "Oggi" : "Seduta selezionata"} · settimana ${t.program_week} del programma</span>
-    <h2>Giorno ${esc(routine)}<span class="muted"> · W${week}</span></h2>
-    <p class="subtle">${esc(info?.focus || "")}</p>
-    <div class="metrics">
-      <div class="metric"><div class="metric-label">${icon("list-checks", "sm")}Esercizi</div><div class="metric-value">${exs.length}</div></div>
-      <div class="metric"><div class="metric-label">${icon("dumbbell", "sm")}Serie</div><div class="metric-value">${total}</div></div>
-      <div class="metric"><div class="metric-label">${icon("timer", "sm")}Cardio</div><div class="metric-value">${CARDIO_MIN}<small>′</small></div></div>
-      <div class="metric"><div class="metric-label">${icon("clock", "sm")}Ultima</div><div class="metric-value">${prev ? esc(fmtDate(prev.date).split(" ").slice(1).join(" ")) : "—"}</div></div>
+  <div class="train-start">
+  <section class="hero train-hero">
+    <div class="train-title">
+      <span class="eyebrow">${isToday ? "Oggi" : "Seduta selezionata"} · settimana ${t.program_week} del programma</span>
+      <h2>Giorno ${esc(routine)}<span class="muted"> · W${week}</span></h2>
+      <p class="subtle">${esc(info?.focus || "")}</p>
     </div>
-    ${doneToday ? `<div class="inline-note ok">${icon("circle-check")}<div>Giorno ${esc(routine)} già completato oggi (${doneToday.sets.filter((x) => x.completed).length} serie).</div></div>` : ""}
-    ${!t.routine && !ui.routine ? `<div class="inline-note">${icon("info")}<div>Oggi è giorno di riposo: puoi comunque recuperare una seduta saltata.</div></div>` : ""}
+    <div class="facts">
+      ${fact("list-checks", "Esercizi", exs.length)}
+      ${fact("dumbbell", "Serie", total)}
+      ${fact("timer", "Cardio", `${CARDIO_MIN}′`)}
+      ${fact("clock", "Ultima volta", prev ? esc(fmtDate(prev.date).split(" ").slice(1).join(" ")) : "—")}
+    </div>
   </section>
-  <div class="chooser">
-    <div class="segmented" role="group" aria-label="Giornata">${Object.keys(ROUTINES)
-      .map((r) => `<button class="chip ${r === routine ? "active" : ""}" data-pick-routine="${r}">Giorno ${r}<small>${ROUTINES[r].day.slice(0, 3)}</small></button>`)
-      .join("")}</div>
-    <div class="chips scroll" role="group" aria-label="Settimana">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => i + 1)
+  ${doneToday ? `<div class="inline-note ok">${icon("circle-check")}<div>Giorno ${esc(routine)} già completato oggi (${doneToday.sets.filter((x) => x.completed).length} serie).</div></div>` : ""}
+  ${!t.routine && !ui.routine ? `<div class="inline-note">${icon("info")}<div>Oggi è giorno di riposo: puoi comunque recuperare una seduta saltata.</div></div>` : ""}
+  <div class="train-bar">
+    ${tabs(Object.keys(ROUTINES).map((r) => [r, `Giorno ${r}`, null, ROUTINES[r].day.slice(0, 3)]), routine, "Giornata", "pick-routine")}
+    <div class="chips scroll week-chips" role="group" aria-label="Settimana">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => i + 1)
       .map((w) => `<button class="chip ${w === week ? "active" : ""} ${w === t.program_week ? "current" : ""}" data-pick-week="${w}">W${w}</button>`)
       .join("")}</div>
+    <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>
   </div>
-  <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>
-  </div><div class="train-col">
   <section class="panel">
     <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3>${standalone ? "" : `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a>`}</div>
     <div class="ex-preview">
     ${exs
       .map((ex, i) => {
         const p = setsOf(prev, ex.id).filter((x) => x.completed);
-        return `<div class="entry"><div class="entry-main"><span class="ex-idx">${i + 1}</span><div><div class="entry-title">${esc(ex.name)}</div><div class="entry-sub">${plannedSets(ex, week)} × ${esc(ex.reps)}${p.length ? ` · ultima ${esc(p.map(fmtSet).join(" · "))}` : ""}</div></div></div></div>`;
+        return `<div class="ex-line"><span class="ex-idx">${i + 1}</span><div class="ex-line-main"><div class="entry-title">${esc(ex.name)}</div><div class="entry-sub">${p.length ? `ultima ${esc(p.map(fmtSet).join(" · "))}` : "prima volta"}</div></div><span class="ex-plan">${plannedSets(ex, week)} × ${esc(ex.reps)}</span></div>`;
       })
       .join("")}
-      <div class="entry"><div class="entry-main"><span class="ex-idx">${icon("timer", "sm")}</span><div><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(week)} BPM, non un obiettivo personalizzato</div></div></div></div>
+      <div class="ex-line"><span class="ex-idx">${icon("timer", "sm")}</span><div class="ex-line-main"><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">riferimento PDF ${cardioBpm(week)} BPM, non un obiettivo personalizzato</div></div><span class="ex-plan">${CARDIO_MIN}′</span></div>
     </div>
   </section>
-  </div></div>`;
+  </div>`;
 }
 
 function setRow(session, ex, idx, prev, ed, planned, best) {
