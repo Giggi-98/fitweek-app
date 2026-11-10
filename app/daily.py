@@ -17,6 +17,7 @@ from .config import Settings
 from .db import connect, transaction
 from .schemas import FoodPut, IsoDate, MealItem, MealLogPut, MealTemplatePut, ReminderAck, ReminderPut
 from .security import check_origin
+from .tracking import sleep_rows, sleep_summary
 from .workouts import TZ, now_iso, today
 
 MEAL_ACTION = "log_meal"
@@ -40,7 +41,12 @@ def meal_totals(items: list[MealItem]) -> tuple[float | None, float | None, str 
     kcal = round(sum(i.kcal * i.qty for i in known), 1)
     protein = round(sum((i.protein_g or 0) * i.qty for i in known), 1)
     sources = {i.nutrition_source or "estimate" for i in known}
-    source = "estimate" if "estimate" in sources else ("label" if sources == {"label"} else "manual")
+    if "estimate" in sources:
+        source = "estimate"
+    elif sources == {"label"}:
+        source = "label"
+    else:
+        source = "off" if sources <= {"label", "off"} else "manual"
     return kcal, protein, source
 
 
@@ -144,6 +150,10 @@ def weekly_summary(c: sqlite3.Connection, week_start: date) -> dict:
                          for s in sessions if s["date"] == iso],
         })
     weights = [w["weight"] for w in blob.get("weights", []) if first <= w.get("date", "") <= last]
+    nights = sleep_rows(c, first, last)
+    sleep_by_day = {n["date"]: n for n in nights}
+    for x in out_days:
+        x["sleep"] = sleep_by_day.get(x["date"])
     logged_days = [x for x in out_days if x["kcal_estimate"] is not None]
     scheduled = [r for r in domain.SCHEDULE.values() if r in planned_by_routine]
     return {
@@ -163,7 +173,10 @@ def weekly_summary(c: sqlite3.Connection, week_start: date) -> dict:
             "sets_planned": sum(planned_by_routine[r] for r in scheduled),
             "weight_avg": round(sum(weights) / len(weights), 1) if weights else None,
             "weigh_ins": len(weights),
+            "sleep": sleep_summary(nights),
         },
+        # Riferimenti scelti dall'utente in Impostazioni (None = non impostati): solo confronto, mai prescrizione.
+        "targets": {"protein_g": blob["profile"].get("proteinTarget"), "kcal": blob["profile"].get("kcalTarget")},
         "estimate_note": "Calorie e proteine sono stime teoriche dai pasti registrati, non misure.",
     }
 

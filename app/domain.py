@@ -29,3 +29,23 @@ def planned_sets(sets_by_week: list[int], week: int) -> int:
     if not sets_by_week:
         return 0
     return sets_by_week[min(week, len(sets_by_week)) - 1]
+
+
+def _minutes(hhmm: str) -> int:
+    h, m = hhmm.split(":")
+    return int(h) * 60 + int(m)
+
+
+def sleep_minutes(bed_time: str, wake_time: str) -> int:
+    """Durata del sonno tra due orari HH:MM; se il risveglio è "prima" si intende il giorno dopo."""
+    return (_minutes(wake_time) - _minutes(bed_time)) % (24 * 60)
+
+
+def average_clock(times: list[str]) -> str | None:
+    """Media di orari serali/notturni. Gli orari sono contati da mezzogiorno, così 23:30 e 00:30
+    danno 00:00 (e non 12:00 come farebbe una media aritmetica semplice)."""
+    if not times:
+        return None
+    shifted = [(_minutes(t) - 12 * 60) % (24 * 60) for t in times]
+    avg = (round(sum(shifted) / len(shifted)) + 12 * 60) % (24 * 60)
+    return f"{avg // 60:02d}:{avg % 60:02d}"

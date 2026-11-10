@@ -31,4 +31,4 @@ export const SLOTS = {
 };
 // Collegamento tra i pasti del piano ricorrente (blob) e i tipi di pasto del diario.
 export const PLAN_KEY = { lunch: "lunch", pre_workout: "pre", snack: "pre", dinner: "dinner" };
-export const SOURCE_LABEL = { estimate: "stima", label: "etichetta", manual: "inserito" };
+export const SOURCE_LABEL = { estimate: "stima", label: "etichetta", manual: "inserito", off: "Open Food Facts" };

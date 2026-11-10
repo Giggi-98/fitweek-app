@@ -1,10 +1,10 @@
 // Impostazioni: profilo, programma, preferenze allenamento, tema, backup, sessione.
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
-import { app, loadAll, persistState } from "../store.js";
+import { app, loadAll, persistState, refreshDaily } from "../store.js";
 import { panel, toast } from "../ui.js";
 import { icon } from "../icons.js";
-import { esc, num, storage, uid } from "../util.js";
+import { TIME24, esc, num, storage, uid } from "../util.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
 
@@ -35,7 +35,7 @@ function remindersPanel() {
   const list = rem.items.filter((r) => r.weekday === rem.day);
   return panel(
     `${icon("bell")}Promemoria`,
-    `<p class="subtle">Un promemoria per ogni momento della giornata. Con l'app aperta compare un popup all'orario; le notifiche a schermo spento arriveranno con l'app per telefono.</p>
+    `<p class="subtle">Con l'app aperta compare un popup all'orario; con l'app Android arriva anche la notifica.</p>
     <div class="chips scroll" role="group" aria-label="Giorno">${DAYS.map((d, i) => `<button class="chip ${i === rem.day ? "active" : ""}" data-rem-day="${i}">${d.slice(0, 3)}</button>`).join("")}</div>
     ${list
       .map(
@@ -47,7 +47,7 @@ function remindersPanel() {
       </form>`,
       )
       .join("") || '<p class="subtle">Nessun promemoria in questo giorno.</p>'}
-    <details class="free"><summary>+ Aggiungi promemoria a ${esc(DAYS[rem.day].toLowerCase())}</summary>
+    <details class="free"><summary>${icon("plus", "sm")}Aggiungi promemoria a ${esc(DAYS[rem.day].toLowerCase())}</summary>
       <form id="rem-new" class="stack"><div class="form-grid">
         <div class="field"><label for="rn-time">Orario</label><input id="rn-time" class="time24" name="time" inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" required value="12:00"></div>
         <div class="field"><label for="rn-type">Tipo</label><select id="rn-type" name="type">${Object.entries(REMINDER_TYPES).map(([k, v]) => `<option value="${k}">${v[2]}</option>`).join("")}</select></div>
@@ -75,9 +75,9 @@ function androidPanel() {
     return panel(
       `${icon("smartphone")}App Android`,
       `<div class="summary-list">
-        <div class="summary-row"><i>🔔</i><div><strong>Notifiche: ${esc(PERM[st.permission] || st.permission)}</strong><small>${st.permission === "denied" ? "Abilitale da Impostazioni del telefono → App → FitWeek → Notifiche." : "Arrivano anche ad app chiusa."}</small></div></div>
-        <div class="summary-row"><i>⏰</i><div><strong>Orari esatti: ${st.exact === "granted" ? "consentiti ✓" : st.exact === "n/d" ? "non necessari" : "non consentiti"}</strong><small>Senza, Android può ritardare un promemoria di qualche minuto.</small></div></div>
-        <div class="summary-row"><i>📅</i><div><strong>${st.scheduled} notifiche programmate</strong><small>Prossimi 14 giorni${st.lastSync ? ` · aggiornate alle ${st.lastSync.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}. Si riallineano a ogni apertura.</small></div></div>
+        <div class="summary-row"><i>${icon("bell", "sm")}</i><div><strong>Notifiche: ${esc(PERM[st.permission] || st.permission)}</strong><small>${st.permission === "denied" ? "Abilitale da Impostazioni del telefono → App → FitWeek → Notifiche." : "Arrivano anche ad app chiusa."}</small></div></div>
+        <div class="summary-row"><i>${icon("clock", "sm")}</i><div><strong>Orari esatti: ${st.exact === "granted" ? "consentiti ✓" : st.exact === "n/d" ? "non necessari" : "non consentiti"}</strong><small>Senza, Android può ritardare un promemoria di qualche minuto.</small></div></div>
+        <div class="summary-row"><i>${icon("calendar", "sm")}</i><div><strong>${st.scheduled} notifiche programmate</strong><small>Prossimi 14 giorni${st.lastSync ? ` · aggiornate alle ${st.lastSync.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}. Si riallineano a ogni apertura.</small></div></div>
       </div>
       ${st.error ? `<div class="inline-note warn">Errore: ${esc(st.error)}</div>` : ""}
       <div class="button-row"><button class="btn" data-native="test">Notifica di prova</button><button class="btn" data-native="sync">Riprogramma</button>${st.exact !== "granted" && st.exact !== "n/d" ? '<button class="btn" data-native="exact">Consenti orari esatti</button>' : ""}</div>
@@ -96,7 +96,7 @@ function androidPanel() {
   return panel(
     `${icon("smartphone")}App Android`,
     `<p class="subtle">L'app mostra FitWeek a schermo intero e invia le <strong>notifiche dei promemoria anche ad app chiusa</strong>. Versione ${esc(i.version)} · ${mb(i.size)}.</p>
-    <a class="btn primary full" href="/api/v1/app/android/download" download>↓ Scarica APK</a>
+    <a class="btn primary full" href="/api/v1/app/android/download" download>${icon("download")}Scarica APK</a>
     <ol class="steps">
       <li>Scarica e apri il file. Il browser avvisa che è un'app esterna al Play Store: conferma <em>Scarica comunque</em>.</li>
       <li>Alla richiesta, consenti al browser di <em>installare app sconosciute</em>, poi <em>Installa</em>.</li>
@@ -135,7 +135,7 @@ export function render() {
     `<div class="twocol"><div class="stack">${androidPanel()}${remindersPanel()}${panel(
       `${icon("calendar")}Programma`,
       `<form id="program-form" class="stack"><div class="field"><label for="prog-week">Settimana attuale</label><select id="prog-week" name="week">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => opt(i + 1, app.today.program_week, `Settimana ${i + 1}`)).join("")}</select></div><p class="subtle">La settimana avanza da sola ogni lunedì (inizio programma: ${esc(p.startDate)}). Cambiarla qui sposta la data di inizio.</p><button class="btn" type="submit">Aggiorna settimana</button></form>
-      <div class="spacer12"></div><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda originale (PDF) ↗</a>`,
+      <div class="spacer12"></div><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda originale (PDF)${icon("arrow-right", "sm")}</a>`,
     )}${panel(
       `${icon("timer")}Allenamento`,
       `<form id="prefs-form" class="stack"><div class="form-grid"><div class="field"><label for="rest">Recupero predefinito</label><select id="rest" name="restSeconds">${[60, 75, 90, 120, 150, 180].map((s) => opt(s, pr.restSeconds, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} min`)).join("")}</select></div><div class="field"><label for="kgstep">Incremento peso (+/−)</label><select id="kgstep" name="kgStep">${[0.5, 1, 1.25, 2, 2.5, 5].map((s) => opt(s, pr.kgStep, `${String(s).replace(".", ",")} kg`)).join("")}</select></div></div><label class="check"><input type="checkbox" name="sound" ${pr.sound ? "checked" : ""}> Suono a fine recupero (oltre alla vibrazione)</label><button class="btn" type="submit">Salva preferenze</button></form><p class="subtle">Preferenze salvate su questo dispositivo.</p>`,
@@ -144,16 +144,16 @@ export function render() {
       `<div class="chips" role="group" aria-label="Tema">${[["auto", "Automatico"], ["light", "Chiaro"], ["dark", "Scuro"]].map(([v, l]) => `<button class="chip ${theme === v ? "active" : ""}" data-theme-set="${v}">${l}</button>`).join("")}</div>`,
     )}${panel(
       `${icon("user")}Profilo`,
-      `<form id="profile-form" class="stack"><div class="form-grid"><div class="field"><label for="pf-name">Nome (facoltativo)</label><input id="pf-name" name="name" maxlength="100" value="${esc(p.name)}"></div><div class="field"><label for="pf-age">Età</label><input id="pf-age" name="age" type="number" min="0" max="120" value="${esc(p.age)}"></div><div class="field"><label for="pf-h">Altezza (cm)</label><input id="pf-h" name="height" type="number" min="0" max="260" value="${esc(p.height)}"></div><div class="field"><label for="pf-w">Peso iniziale (kg)</label><input id="pf-w" name="startingWeight" type="number" min="0" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label for="pf-b">Budget spesa settimanale (€)</label><input id="pf-b" name="budget" type="number" min="0" max="100000" step="1" value="${esc(p.budget)}"></div></div><div class="field"><label for="pf-n">La tua routine</label><textarea id="pf-n" name="notes" rows="4" maxlength="5000">${esc(p.notes)}</textarea></div><button class="btn primary" type="submit">Salva profilo</button></form>`,
+      `<form id="profile-form" class="stack"><div class="form-grid two"><div class="field span2"><label for="pf-name">Nome (facoltativo)</label><input id="pf-name" name="name" maxlength="100" value="${esc(p.name)}"></div><div class="field"><label for="pf-age">Età</label><input id="pf-age" name="age" type="number" min="0" max="120" value="${esc(p.age)}"></div><div class="field"><label for="pf-h">Altezza (cm)</label><input id="pf-h" name="height" type="number" min="0" max="260" value="${esc(p.height)}"></div><div class="field"><label for="pf-w">Peso iniziale (kg)</label><input id="pf-w" name="startingWeight" type="number" min="0" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label for="pf-b">Budget spesa settimanale (€)</label><input id="pf-b" name="budget" type="number" min="0" max="100000" step="1" value="${esc(p.budget)}"></div><div class="field"><label for="pf-prot">Riferimento proteine (g al giorno)</label><input id="pf-prot" name="proteinTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.proteinTarget ?? "")}"></div><div class="field"><label for="pf-kcal">Riferimento calorie (kcal al giorno)</label><input id="pf-kcal" name="kcalTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.kcalTarget ?? "")}"></div></div><p class="subtle">I riferimenti li scegli tu: l'app non li calcola né li consiglia, mostra solo quanto manca nella giornata.</p><div class="field"><label for="pf-n">La tua routine</label><textarea id="pf-n" name="notes" rows="4" maxlength="5000">${esc(p.notes)}</textarea></div><button class="btn primary" type="submit">Salva profilo</button></form>`,
     )}</div><div class="stack">${panel(
       `${icon("download")}Backup`,
-      `<p class="subtle">Il server fa un backup automatico ogni notte. Qui puoi scaricare una copia completa (pasti, spesa, pesate e allenamenti) in JSON.</p><a class="btn primary" href="/api/backup" download>↓ Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
+      `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia completa in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
     )}${panel(
       `${icon("log-out")}Sessione`,
       `<p class="subtle">Esci da questo dispositivo, oppure da tutti (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
     )}${panel(
       `${icon("info")}Privacy`,
-      `<div class="summary-list"><div class="summary-row"><i>◈</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker, nessun servizio esterno.</small></div></div><div class="summary-row"><i>🔒</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">FitWeek 1.6 · uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
+      `<div class="summary-list"><div class="summary-row"><i>${icon("package", "sm")}</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker.</small></div></div><div class="summary-row"><i>${icon("utensils", "sm")}</i><div><strong>Ricerca prodotti</strong><small>Quando cerchi un alimento, il solo testo cercato va a Open Food Facts. Nient'altro esce dal server.</small></div></div><div class="summary-row"><i>${icon("user", "sm")}</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">Uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
     )}</div></div>`
   );
 }
@@ -195,7 +195,7 @@ export async function onClick(t) {
     } catch {
       return toast("File non leggibile"), false;
     }
-    if (!/^fitweek-backup-v[123]$/.test(obj?.format || "")) return toast("Non è un backup FitWeek"), false;
+    if (!/^fitweek-backup-v[1234]$/.test(obj?.format || "")) return toast("Non è un backup FitWeek"), false;
     if (!confirm("Il ripristino sostituisce tutti i dati attuali (il server ne conserva una copia). Continuare?")) return false;
     try {
       const out = await request("/api/v1/restore", { method: "POST", body: obj });
@@ -209,17 +209,6 @@ export async function onClick(t) {
   return false;
 }
 
-const TIME24 = /^([01]\d|2[0-3]):[0-5]\d$/;
-/** Campo orario: aggiunge da solo i ":" mentre scrivi (es. 0730 → 07:30). */
-function normalizeTime(v) {
-  const digits = v.replace(/\D/g, "").slice(0, 4);
-  return digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
-}
-export function onInput(t) {
-  if (!t.classList.contains("time24")) return;
-  const v = normalizeTime(t.value);
-  if (v !== t.value) t.value = v;
-}
 
 export async function onChange(t) {
   const form = t.closest("[data-rem-form]");
@@ -231,6 +220,12 @@ export async function onChange(t) {
   await saveReminder(base.id, base, { time: f.time, title: f.title.trim(), enabled: f.enabled === "on" });
   return true;
 }
+
+/** Campo vuoto o zero = nessun riferimento. */
+const optTarget = (v) => {
+  const n = num(String(v ?? "").replace(",", "."), 0);
+  return n > 0 ? n : null;
+};
 
 export async function onSubmit(form, data) {
   if (form.dataset.remForm) return onChange(form.querySelector("input"));
@@ -262,8 +257,12 @@ export async function onSubmit(form, data) {
     Object.assign(app.state.profile, {
       name: data.name.trim(), age: num(data.age), height: num(data.height),
       startingWeight: num(data.startingWeight), budget: num(data.budget), notes: data.notes || "",
+      proteinTarget: optTarget(data.proteinTarget), kcalTarget: optTarget(data.kcalTarget),
     });
-    if (await persistState()) toast("Profilo aggiornato");
+    if (await persistState()) {
+      await refreshDaily().catch(() => {}); // i riferimenti compaiono subito in Oggi
+      toast("Profilo aggiornato");
+    }
     return true;
   }
   return false;

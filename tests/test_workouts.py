@@ -93,7 +93,7 @@ def test_backup_v2_and_restore_roundtrip(auth_client):
     new_session(auth_client)
     auth_client.put(f"/api/v1/workout-sessions/{SID}/sets/a1/1", json={"kg": 40, "reps": 10})
     backup = auth_client.get("/api/backup").json()
-    assert backup["format"] == "fitweek-backup-v3" and backup["workout_sessions"][0]["sets"][0]["kg"] == 40
+    assert backup["format"] == "fitweek-backup-v4" and backup["workout_sessions"][0]["sets"][0]["kg"] == 40
     auth_client.delete(f"/api/v1/workout-sessions/{SID}")
     r = auth_client.post("/api/v1/restore", json=backup)
     assert r.status_code == 200 and r.json()["sessions"] == 1

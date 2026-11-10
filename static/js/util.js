@@ -59,3 +59,12 @@ export const storage = {
     }
   },
 };
+
+export const TIME24 = /^([01]\d|2[0-3]):[0-5]\d$/;
+/** Campo orario 24 ore: aggiunge da solo i ":" mentre scrivi (es. 0730 → 07:30). */
+export function normalizeTime(v) {
+  const digits = String(v).replace(/\D/g, "").slice(0, 4);
+  return digits.length > 2 ? `${digits.slice(0, 2)}:${digits.slice(2)}` : digits;
+}
+/** Minuti → "7 h 30". */
+export const fmtDuration = (min) => `${Math.floor(min / 60)} h${min % 60 ? ` ${String(Math.round(min % 60)).padStart(2, "0")}` : ""}`;

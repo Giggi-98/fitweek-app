@@ -12,9 +12,10 @@ const W = 420, H = 210, L = 40, R = 12, T = 12, B = 28;
  * @param overlay serie calcolata facoltativa {name, points: [{date, value}]} disegnata come linea
  * @param dots    "series" (punti = la serie, uniti da una linea) | "raw" (punti neutri, la linea è l'overlay)
  */
-export function lineChart({ points, overlay = null, unit = "", label = "", dots = "series", legend = [] }) {
+export function lineChart({ points, overlay = null, unit = "", label = "", dots = "series", legend = [], ticks: fixedTicks = null, format = null, area: withArea = true }) {
+  const show = (v) => (format ? format(v) : `${fmtNum(v)} ${unit}`.trim());
   const all = [...points, ...(overlay?.points || [])].map((p) => p.value);
-  const ticks = niceTicks(Math.min(...all), Math.max(...all));
+  const ticks = fixedTicks || niceTicks(Math.min(...all), Math.max(...all));
   const lo = ticks[0], hi = ticks[ticks.length - 1];
   const d0 = dayNumber(points[0].date);
   const span = Math.max(1, dayNumber(points[points.length - 1].date) - d0);
@@ -23,18 +24,18 @@ export function lineChart({ points, overlay = null, unit = "", label = "", dots 
   const path = (pts) => pts.map((p) => `${x(p.date).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
   const linePts = overlay ? overlay.points : points;
   const line = path(linePts);
-  const area = linePts.length > 1 && dots === "series"
+  const area = withArea && linePts.length > 1 && dots === "series"
     ? `<path class="area" d="M${x(linePts[0].date).toFixed(1)},${H - B} L${line.replaceAll(" ", " L")} L${x(linePts[linePts.length - 1].date).toFixed(1)},${H - B} Z"/>`
     : "";
   const avgAt = new Map((overlay?.points || []).map((p) => [p.date, p.value]));
   const tips = points.map((p) => ({
-    x: x(p.date) / W, y: y(p.value), d: fmtDate(p.date), v: `${fmtNum(p.value)} ${unit}`.trim(),
-    extra: [p.tip, avgAt.has(p.date) && overlay ? `${overlay.name} ${fmtNum(avgAt.get(p.date))} ${unit}`.trim() : ""].filter(Boolean).join(" · "),
+    x: x(p.date) / W, y: y(p.value), d: fmtDate(p.date), v: show(p.value),
+    extra: [p.tip, avgAt.has(p.date) && overlay ? `${overlay.name} ${show(avgAt.get(p.date))}` : ""].filter(Boolean).join(" · "),
   }));
   const first = points[0], last = points[points.length - 1];
   return `<div class="chart-wrap" data-points="${esc(JSON.stringify(tips))}" data-w="${W}">
     <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(label)}">
-      ${ticks.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${esc(fmtNum(v))}</text>`).join("")}
+      ${ticks.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${esc(format ? format(v) : fmtNum(v))}</text>`).join("")}
       ${area}
       ${linePts.length > 1 ? `<polyline class="line" pathLength="1" points="${line}"/>` : ""}
       ${points.map((p) => `<circle class="dot ${dots === "raw" ? "raw" : ""}" cx="${x(p.date).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="5"/>`).join("")}

@@ -118,3 +118,17 @@ foods(id PK, category, name, kcal, protein_g, nutrition_source, note, use_count,
       -- indice unico su lower(name) per i piatti attivi
 ```
 kcal/protein_g delle voci sono per porzione; il pasto memorizza i totali calcolati (qty × porzione, escluse le voci `takeaway`).
+
+## Stato dopo 1.8 (schema 7, 2026-11-10)
+
+```sql
+sleep_logs(date PK,            -- giorno del RISVEGLIO
+           bed_time 'HH:MM', wake_time 'HH:MM', source DEFAULT 'manual', note, updated_at, deleted_at)
+exercise_notes(exercise_id PK, note, updated_at)        -- nota che resta tra una seduta e l'altra
+grocery_spend(week_start PK,   -- lunedì della settimana
+              amount REAL CHECK(amount >= 0), note, updated_at)
+```
+La durata del sonno non è memorizzata: si calcola dagli orari (se la sveglia è "prima" dell'ora di letto si intende il giorno dopo). L'orario medio di letto è una media circolare contata da mezzogiorno (23:30 e 00:30 → 00:00).
+
+Blob: `profile.proteinTarget`, `profile.kcalTarget` (numeri facoltativi scelti dall'utente), `groceries[].recurring` (resta in lista dopo "Spesa arrivata").
+`set_logs.rir`: 0–3 = ripetizioni di riserva, 4 = "4 o più".

@@ -1,4 +1,4 @@
-import { $, esc, num } from "./util.js";
+import { $, esc, fmtDate, isoDate, num } from "./util.js";
 
 export function toast(message, { action, onAction, timeout = 4000 } = {}) {
   const node = $("#toast");
@@ -21,8 +21,6 @@ export function toast(message, { action, onAction, timeout = 4000 } = {}) {
 // I parametri title/desc sono testo dell'app (costanti); i dati utente vanno passati già escapati.
 export const panel = (title, body, action = "", cls = "", id = "") =>
   `<section class="panel ${cls}"${id ? ` id="${id}"` : ""}><div class="panel-head"><h3>${title}</h3>${action}</div>${body}</section>`;
-export const sectionTitle = (title, desc, right = "") =>
-  `<div class="intro"><div><h2>${title}</h2>${desc ? `<p>${desc}</p>` : ""}</div>${right}</div>`;
 export const stat = (label, value, sub, { calc = false } = {}) =>
   `<div class="metric"><div class="metric-label">${label}${calc ? ' <span class="badge-calc" title="Valore calcolato">calcolato</span>' : ""}</div><div class="metric-value">${value}</div><div class="metric-sub">${sub}</div></div>`;
 export const empty = (title, text) => `<div class="data-empty"><strong>${title}</strong>${text}</div>`;
@@ -39,6 +37,20 @@ export function applyDynamicStyles(root) {
       if (name && value) el.style.setProperty(`--${name.trim()}`, value.trim());
     }
   });
+}
+
+/** <option> degli ultimi `n` giorni (Oggi, Ieri, poi la data); `selected` è sempre presente. */
+export function dayOptions(selected = isoDate(), n = 14) {
+  const days = [];
+  for (let k = 0; k < n; k++) {
+    const d = new Date();
+    d.setDate(d.getDate() - k);
+    days.push(isoDate(d));
+  }
+  if (!days.includes(selected)) days.push(selected);
+  return days
+    .map((iso, k) => `<option value="${iso}" ${iso === selected ? "selected" : ""}>${k === 0 ? "Oggi" : k === 1 ? "Ieri" : esc(fmtDate(iso))}</option>`)
+    .join("");
 }
 
 // ---- finestra modale (una alla volta) ------------------------------------------------------

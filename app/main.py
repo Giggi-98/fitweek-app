@@ -24,7 +24,7 @@ from .security import (
     check_origin,
     password_matches,
 )
-from . import daily
+from . import daily, foodsearch, tracking
 from .workouts import build_router, load_sessions, now_iso
 
 log = logging.getLogger("fitweek.http")
@@ -167,9 +167,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             for m in extra["meal_logs"]:
                 m["items"] = json.loads(m["items"]) if m.get("items") else []
             extra["foods"] = [dict(r) for r in c.execute("SELECT * FROM foods WHERE deleted_at IS NULL")]
+            extra["sleep_logs"] = [dict(r) for r in c.execute("SELECT * FROM sleep_logs WHERE deleted_at IS NULL")]
+            extra["exercise_notes"] = [dict(r) for r in c.execute("SELECT * FROM exercise_notes")]
+            extra["grocery_spend"] = [dict(r) for r in c.execute("SELECT * FROM grocery_spend")]
         stamp = time.strftime("%Y%m%d")
         return JSONResponse(
-            {"format": "fitweek-backup-v3", "version": version, "data": json.loads(blob),
+            {"format": "fitweek-backup-v4", "version": version, "data": json.loads(blob),
              "workout_sessions": sessions_, **extra},
             headers={"Content-Disposition": f'attachment; filename="fitweek-backup-{stamp}.json"'},
         )
@@ -233,6 +236,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                   " use_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
                                   (f.id, f.category, f.name, f.kcal, f.protein_g, f.nutrition_source, f.note or "",
                                    f.use_count, now, now))
+                if body.sleep_logs is not None:
+                    c.execute("DELETE FROM sleep_logs")
+                    for s in body.sleep_logs:
+                        c.execute("INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, updated_at)"
+                                  " VALUES (?,?,?,?,?,?)", (s.date, s.bed_time, s.wake_time, s.source, s.note, now))
+                if body.exercise_notes is not None:
+                    c.execute("DELETE FROM exercise_notes")
+                    for n in body.exercise_notes:
+                        c.execute("INSERT INTO exercise_notes VALUES (?,?,?)", (n.exercise_id, n.note, now))
+                if body.grocery_spend is not None:
+                    c.execute("DELETE FROM grocery_spend")
+                    for g in body.grocery_spend:
+                        c.execute("INSERT INTO grocery_spend VALUES (?,?,?,?)", (g.week_start, g.amount, g.note, now))
                 if body.reminders is not None:
                     c.execute("DELETE FROM reminder_acks")
                     c.execute("DELETE FROM reminders")
@@ -269,6 +285,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     app.include_router(build_router(settings, require_session))
     app.include_router(daily.build_router(settings, require_session))
+    app.include_router(tracking.build_router(settings, require_session))
+    app.include_router(foodsearch.build_router(settings, require_session))
 
     @app.get("/api/original-pdf", dependencies=[Depends(require_session)])
     def original_pdf():

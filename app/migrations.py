@@ -315,6 +315,36 @@ def _m006_meal_items_and_foods(c: sqlite3.Connection) -> None:
     )
 
 
+def _m007_sleep_notes_spend(c: sqlite3.Connection) -> None:
+    """Sonno (per giorno di risveglio), note per esercizio, spesa reale settimanale. Solo aggiunte."""
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS sleep_logs (
+            date TEXT PRIMARY KEY,
+            bed_time TEXT NOT NULL,
+            wake_time TEXT NOT NULL,
+            source TEXT NOT NULL DEFAULT 'manual',
+            note TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS exercise_notes (
+            exercise_id TEXT PRIMARY KEY,
+            note TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS grocery_spend (
+            week_start TEXT PRIMARY KEY,
+            amount REAL NOT NULL CHECK(amount >= 0),
+            note TEXT NOT NULL DEFAULT '',
+            updated_at TEXT NOT NULL
+        )"""
+    )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -322,6 +352,7 @@ MIGRATIONS: list[Migration] = [
     (4, "workout_tables", _m004_workout_tables),
     (5, "meals_and_reminders", _m005_meals_and_reminders),
     (6, "meal_items_and_foods", _m006_meal_items_and_foods),
+    (7, "sleep_notes_spend", _m007_sleep_notes_spend),
 ]
 
 

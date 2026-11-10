@@ -18,7 +18,7 @@ fi
 docker build -q -t fitweek:test . >/dev/null
 trap 'docker rm -f "$NAME" >/dev/null 2>&1 || true' EXIT
 failed=0
-for test in tests/e2e/*.e2e.js; do
+for test in tests/e2e/${E2E_ONLY:-*}.e2e.js; do   # E2E_ONLY=native per un solo file
   echo "== $test"
   docker rm -f "$NAME" >/dev/null 2>&1 || true   # container nuovo per ogni file: test indipendenti
   APK_MOUNT=(); [[ -f mobile/dist/fitweek.apk ]] && APK_MOUNT=(-v "$PWD/mobile/dist:/app/downloads:ro")

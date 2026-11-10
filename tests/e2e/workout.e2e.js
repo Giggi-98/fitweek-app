@@ -155,6 +155,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
 
   // Progressi
   await page.click('.bottom-nav [data-view=progress]');
+  await page.click('details:has(#weight-form) summary');
   await page.fill('#w-kg', '89.4');
   await page.click('#weight-form button');
   await page.waitForSelector('.chart');

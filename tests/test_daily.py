@@ -123,7 +123,7 @@ def test_backup_v3_roundtrip_includes_meals_and_reminders(auth_client):
     auth_client.put("/api/v1/reminders/r0-1300-meal", json={"weekday": 0, "time": "13:15", "kind": "meal",
                                                             "slot": "lunch", "title": "Pranzo", "action": "log_meal"})
     b = auth_client.get("/api/backup").json()
-    assert b["format"] == "fitweek-backup-v3" and len(b["meal_logs"]) == 1 and b["reminders"]
+    assert b["format"] == "fitweek-backup-v4" and len(b["meal_logs"]) == 1 and b["reminders"]
     auth_client.delete("/api/v1/meal-logs/a")
     assert auth_client.post("/api/v1/restore", json=b).status_code == 200
     assert len(auth_client.get(f"/api/v1/meal-logs?from={MON}&to={MON}").json()["items"]) == 1

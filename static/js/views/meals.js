@@ -5,7 +5,7 @@ import { icon } from "../icons.js";
 import { openComposer } from "../composer.js";
 import { guessSlot } from "../reminders.js";
 import { app, persistState, refreshDaily } from "../store.js";
-import { empty, panel, sectionTitle, toast } from "../ui.js";
+import { empty, panel, toast } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
 import { enqueue, flush } from "../workout/queue.js";
 
@@ -53,7 +53,6 @@ function diary() {
   }
   const today = isoDate();
   return `<div class="week-nav"><button class="icon-btn" data-week-shift="-1" aria-label="Settimana precedente">${icon("chevron-left")}</button><strong>${esc(fmtDate(days[0]))} – ${esc(fmtDate(days[6]))}</strong><button class="icon-btn" data-week-shift="1" ${ui.weekOffset >= 0 ? "disabled" : ""} aria-label="Settimana successiva">${icon("chevron-right")}</button></div>
-  <p class="subtle">Le calorie sono <strong>stime teoriche</strong> (pasti abituali o valori inseriti da te), non misure né obiettivi.</p>
   <div class="day-grid">${days
     .filter((d) => d <= today)
     .reverse()
@@ -72,7 +71,7 @@ function diary() {
 }
 
 function plan() {
-  return `<div class="inline-note">Piano ricorrente: è il "come previsto" proposto nei promemoria. Lun–ven pranzo al lavoro e secondo per cena.</div>
+  return `<p class="subtle">È il "come previsto" proposto nei promemoria.</p>
   <div class="grid3">${DAYS.map((day) => {
     const m = app.state.meals[day] || {};
     return `<section class="meal-card"><h3>${esc(day)} ${GYM[day] ? `<span class="pill accent">Palestra ${GYM[day]}</span>` : ""}</h3>${PLAN_SLOTS.map(
@@ -85,7 +84,7 @@ function plan() {
 
 function templates() {
   const bySlot = Object.keys(SLOTS).map((slot) => [slot, app.templates.filter((t) => t.slot === slot)]);
-  return `<p class="subtle">I pasti abituali compaiono come scelte rapide nei promemoria. I valori iniziali sono <strong>stime generiche</strong>: se hai l'etichetta, correggili e scegli la fonte "etichetta".</p>
+  return `<p class="subtle">Scelte rapide nei promemoria. I valori iniziali sono stime generiche: con l'etichetta in mano, correggili.</p>
   ${bySlot
     .map(([slot, items]) =>
       panel(
@@ -97,14 +96,14 @@ function templates() {
     )
     .join("")}
   ${panel(
-    "Nuovo pasto abituale",
-    `<form id="tpl-new" class="stack"><div class="form-grid"><div class="field"><label for="tn-name">Nome</label><input id="tn-name" name="name" required maxlength="120" placeholder="es. Mandorle (30 g)"></div><div class="field"><label for="tn-slot">Momento</label><select id="tn-slot" name="slot">${Object.entries(SLOTS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div><div class="field"><label for="tn-kcal">Calorie (facoltativo)</label><input id="tn-kcal" name="kcal" inputmode="numeric"></div><div class="field"><label for="tn-prot">Proteine g (facoltativo)</label><input id="tn-prot" name="protein_g" inputmode="numeric"></div><div class="field"><label for="tn-src">Fonte dei valori</label><select id="tn-src" name="nutrition_source">${Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">+ Aggiungi</button></form>`,
+    `${icon("plus")}Nuovo pasto abituale`,
+    `<form id="tpl-new" class="stack"><div class="form-grid"><div class="field"><label for="tn-name">Nome</label><input id="tn-name" name="name" required maxlength="120" placeholder="es. Mandorle (30 g)"></div><div class="field"><label for="tn-slot">Momento</label><select id="tn-slot" name="slot">${Object.entries(SLOTS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div><div class="field"><label for="tn-kcal">Calorie (facoltativo)</label><input id="tn-kcal" name="kcal" inputmode="numeric"></div><div class="field"><label for="tn-prot">Proteine g (facoltativo)</label><input id="tn-prot" name="protein_g" inputmode="numeric"></div><div class="field"><label for="tn-src">Fonte dei valori</label><select id="tn-src" name="nutrition_source">${Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>`,
   )}`;
 }
 
 export function render() {
   const body = ui.tab === "plan" ? plan() : ui.tab === "templates" ? templates() : diary();
-  return sectionTitle("Cosa hai mangiato", "Un tocco per registrare; le calorie teoriche le calcola l'app.", `<button class="btn primary" data-add-log="${isoDate()}">${icon("plus", "sm")}Pasto</button>`) + tabs() + body;
+  return `<div class="view-bar">${tabs()}<button class="btn primary" data-add-log="${isoDate()}">${icon("plus", "sm")}Pasto</button></div>${body}`;
 }
 
 const optNum = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", ".")));

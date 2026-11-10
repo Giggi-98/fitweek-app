@@ -10,7 +10,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 | M2 | Fondamenta frontend, design system, allenamento mobile | ✅ 2026-11-09 (parziali: RIR/RPE UI, note per esercizio, grafici → M3) |
 | M3 | Dashboard "Oggi" e progressi | 🔄 progressi fatti in 1.7.0 (2026-11-10); restano misure aggiuntive e confronto settimane |
 | M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
-| M5 | Spesa, dispensa, budget | ⬜ |
+| M5 | Spesa, dispensa, budget | 🔄 spesa reale settimanale e articoli ricorrenti in 1.8.0; restano lista generata dal piano e prezzi reali per articolo |
 | M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 (accesso fuori casa: serve VPN) |
 | M7 | Rifinitura: redesign v2 ✅ (1.5.0); accessibilità, performance, schede multiple ⬜ |
 | M8 | Assistente AI opzionale e integrazioni | ⬜ |
@@ -119,7 +119,23 @@ Richiesta utente: registrare primo, salsa, secondo e contorno della mensa e sceg
 Fatto: editor del vassoio con categorie del menu della mensa, quantità a passi di ½, "porto a casa" (secondo per cena, escluso dal pranzo e proposto dal popup della cena insieme al pane), totale live, scelta pasto e giorno; catalogo piatti che impara; modifica di pasti, pesate e sedute passate. Layout web a tutta larghezza.
 Da fare: inserimento del menu del giorno (foto o testo) per precompilare il catalogo della giornata — solo con decisione esplicita, nessun servizio esterno.
 
-## M4c — Stime nutrizionali personali (proposta)
+## 1.8.0 (2026-11-10) — funzioni potenziate e schermate uniformate
+
+Richiesta utente: potenziare le funzioni, rendere coerente l'aspetto, agenda "col puntatore live in base all'ora", API pubbliche dove utili, pasti inseriti a mano da ritrovare la volta dopo, sonno "nel calderone", riferimenti di proteine e calorie.
+
+Fatto:
+- **Oggi**: linea del tempo verticale con eventi distanziati in proporzione all'orario, puntatore "adesso" che scorre (aggiornato ogni 15 s), conto alla rovescia al prossimo evento, azione sull'evento successivo; riquadri 2×2 con calorie e proteine rispetto ai riferimenti scelti dall'utente, sonno e peso (un tocco per registrare); avviso degli alimenti in scadenza.
+- **Sonno**: registrazione di ora di letto e sveglia, durata calcolata, media settimanale in Oggi, pannello in Progressi con grafico dell'orario di letto.
+- **Pasti**: ricerca nel catalogo mentre si scrive, ricerca prodotti su Open Food Facts con porzione in grammi (D-018), pasti recenti riselezionabili con un tocco, "scrivi tu" che entra nel catalogo con i suoi valori.
+- **Palestra**: RIR facoltativo dopo il ✓, nota per esercizio che resta tra le sedute, proposta "+ passo di carico" quando l'ultima volta tutte le serie hanno raggiunto il massimo delle ripetizioni (precompila soltanto: la scheda non cambia).
+- **Spesa**: totale reale pagato per settimana con storico rispetto al budget, flusso "Spesa arrivata" (spuntati in dispensa, i ricorrenti restano in lista), articoli "ogni settimana".
+- **Aspetto**: stesse intestazioni, riquadri e pulsanti in tutte le viste; moduli lunghi a comparsa; icone al posto di emoji e simboli; meno testo esplicativo.
+- Schema 7 (solo tabelle nuove), backup v4.
+
+Verificato: 72 pytest, 20 test JS, 89 controlli e2e (telefono e desktop, Open Food Facts simulato nei test; la chiamata reale è stata provata a mano dal container). Non verificato: telefono reale; qualità dei dati di Open Food Facts per i prodotti Esselunga.
+Non fatto: importazione del sonno dall'orologio (D-019), prezzi reali per articolo, lista della spesa generata dal piano, grafico del girovita, confronto tra settimane.
+
+## M4c — Stime nutrizionali personali (in parte coperta da D-018)
 Sostituire le stime generiche con quelle dei prodotti reali (etichette Esselunga, secondi del lavoro se hanno etichetta). Nessun database esterno senza decisione esplicita.
 
 ## M5 — Spesa, dispensa, budget

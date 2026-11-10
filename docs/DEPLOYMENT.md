@@ -11,7 +11,7 @@
 | Volume | **esterno** `fitweek_data` → `/data` (DB `/data/fitweek.sqlite`, uid 10001; backup pre-migrazione in `/data/backups`). Il vecchio `fitweek-app_fitweek_data` (stato al 2026-11-09, versione 4) è conservato come copia: rimuoverlo solo con autorizzazione |
 | Healthcheck | `GET http://127.0.0.1:8080/api/health` ogni 30 s (definito in compose) |
 | Restart | `unless-stopped` |
-| Config | `.env` (non versionato): `APP_PASSWORD`, `SESSION_SECRET`, `COOKIE_SECURE`, `DB_PATH` |
+| Config | `.env` (non versionato): `APP_PASSWORD`, `SESSION_SECRET`, `COOKIE_SECURE`, `DB_PATH`, `FOOD_SEARCH` (`on` predefinito; `off` spegne la ricerca su Open Food Facts) |
 | TZ container | `Europe/Rome` |
 | Backup automatico | timer systemd `fitweek-backup.timer` ogni giorno alle 03:30 → `/opt/backups/fitweek/fitweek-auto-*.sqlite` (14 conservati) |
 
@@ -58,3 +58,6 @@ Esposizione solo LAN. Per uso fuori casa: VPN (WireGuard/Tailscale) oppure rever
 - **Chiave di firma**: `/opt/fitweek-secrets/fitweek-release.jks` + `android-keystore.env` (600, root). Non è nei backup del DB: copiarla in un luogo sicuro. Se va persa, l'APK nuovo non si installa sopra quello vecchio (bisogna disinstallare, perdendo solo le preferenze locali dell'app; i dati sono sul server).
 - Versione APK = `APP_VERSION` (`app/__init__.py`), versionCode = MAJOR·10000 + MINOR·100 + PATCH.
 - Cambio indirizzo (es. VPN): ricompilare con il nuovo URL e reinstallare l'APK sopra il precedente.
+
+## Rete in uscita (dalla 1.8)
+Il container fa una sola chiamata verso l'esterno: `https://search.openfoodfacts.org` quando l'utente cerca un prodotto (D-018). Se la rete in uscita è bloccata l'app funziona ugualmente, senza i risultati online.

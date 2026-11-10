@@ -12,6 +12,9 @@ export const app = {
   weekly: null, // /api/v1/weekly-summary
   templates: [], // pasti abituali
   foods: [], // catalogo piatti (mensa e casa)
+  sleep: { items: [], summary: null }, // ultime 60 notti (/api/v1/sleep)
+  exNotes: {}, // note per esercizio: id → testo
+  spend: [], // spesa reale per settimana, più recenti prima
   view: "dashboard",
   render: () => {}, // impostata da main.js
   onUnauthorized: () => {}, // impostata da main.js
@@ -36,26 +39,32 @@ export function setPending(n) {
 }
 
 export async function loadAll() {
-  const [s, today, sessions] = await Promise.all([
+  const [s, today, sessions, notes, spend] = await Promise.all([
     request("/api/state"),
     request("/api/v1/today"),
     request("/api/v1/workout-sessions?limit=200"),
+    request("/api/v1/exercise-notes"),
+    request("/api/v1/grocery-spend"),
   ]);
   app.state = s.data;
   app.version = s.version;
   app.today = today;
   app.sessions = sessions.items;
+  app.exNotes = Object.fromEntries(notes.items.map((n) => [n.exercise_id, n.note]));
+  app.spend = spend.items;
   await refreshDaily();
 }
 
 /** Agenda di oggi, riepilogo settimanale e pasti abituali. */
 export async function refreshDaily() {
-  const [agenda, weekly, templates, foods] = await Promise.all([
+  const [agenda, weekly, templates, foods, sleep] = await Promise.all([
     request("/api/v1/agenda"),
     request("/api/v1/weekly-summary"),
     request("/api/v1/meal-templates"),
     request("/api/v1/foods"),
+    request("/api/v1/sleep"),
   ]);
+  app.sleep = sleep;
   app.agenda = agenda.items;
   app.weekly = weekly;
   app.templates = templates.items;

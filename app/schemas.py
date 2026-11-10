@@ -41,6 +41,9 @@ class Profile(Strict):
     startDate: IsoDate
     gymDays: list[Text(20)] = Field(default_factory=list, max_length=7)
     notes: Text(5000) = ""
+    # Riferimenti giornalieri scelti dall'utente (mai calcolati né prescritti dall'app).
+    proteinTarget: Optional[float] = Field(default=None, ge=0, le=500)
+    kcalTarget: Optional[float] = Field(default=None, ge=0, le=10_000)
 
 
 class Exercise(Strict):
@@ -89,6 +92,7 @@ class GroceryItem(Strict):
     price: float = Field(ge=0, le=10_000)
     checked: bool = False
     category: Text(40) = "Altro"
+    recurring: bool = False  # si compra ogni settimana: resta in lista dopo la consegna
 
 
 class InventoryItem(Strict):
@@ -159,7 +163,7 @@ class ProgramWeekPut(Strict):
 class BackupRestore(BaseModel):
     """Backup v1 (solo stato) o v2 (stato + sedute). Le sedute sono validate qui sotto."""
     model_config = ConfigDict(extra="ignore")
-    format: Literal["fitweek-backup-v1", "fitweek-backup-v2", "fitweek-backup-v3"]
+    format: Literal["fitweek-backup-v1", "fitweek-backup-v2", "fitweek-backup-v3", "fitweek-backup-v4"]
     data: AppState
     workout_sessions: list["BackupSession"] = Field(default_factory=list, max_length=10_000)
     # v3: assenti nei backup precedenti → None = non toccare le tabelle esistenti
@@ -167,6 +171,10 @@ class BackupRestore(BaseModel):
     meal_logs: Optional[list["BackupMealLog"]] = Field(default=None, max_length=50_000)
     reminders: Optional[list["BackupReminder"]] = Field(default=None, max_length=500)
     foods: Optional[list["BackupFood"]] = Field(default=None, max_length=5000)
+    # v4
+    sleep_logs: Optional[list["BackupSleep"]] = Field(default=None, max_length=20_000)
+    exercise_notes: Optional[list["BackupExerciseNote"]] = Field(default=None, max_length=1000)
+    grocery_spend: Optional[list["BackupGrocerySpend"]] = Field(default=None, max_length=2000)
 
 
 class BackupSet(Strict):
@@ -201,7 +209,7 @@ class BackupSession(Strict):
 
 # ---- API v1: pasti e promemoria (M4) -------------------------------------------------------
 MealSlot = Literal["lunch", "snack", "pre_workout", "dinner", "other"]
-NutritionSource = Literal["estimate", "label", "manual"]
+NutritionSource = Literal["estimate", "label", "manual", "off"]  # off = Open Food Facts
 HHMM = Annotated[str, StringConstraints(pattern=r"^([01]\d|2[0-3]):[0-5]\d$")]
 ReminderKind = Literal["meal", "workout", "weigh_in", "shopping", "sleep", "custom"]
 ReminderAction = Literal["log_meal", "start_workout", "log_weight", "open_shopping", "none"]
@@ -270,6 +278,22 @@ class ReminderAck(Strict):
     snooze_minutes: Optional[int] = Field(default=None, ge=1, le=240)
 
 
+class SleepPut(Strict):
+    bed_time: HHMM
+    wake_time: HHMM
+    source: Literal["manual", "health_connect"] = "manual"
+    note: Text(300) = ""
+
+
+class ExerciseNotePut(Strict):
+    note: Text(500)
+
+
+class GrocerySpendPut(Strict):
+    amount: float = Field(ge=0, le=10_000)
+    note: Text(200) = ""
+
+
 class _Stamps(BaseModel):
     model_config = ConfigDict(extra="ignore")  # tollera colonne aggiunte in futuro
 
@@ -296,6 +320,21 @@ class BackupFood(_Stamps, FoodPut):
 class BackupReminder(_Stamps, ReminderPut):
     model_config = ConfigDict(extra="ignore")
     id: Id
+
+
+class BackupSleep(_Stamps, SleepPut):
+    model_config = ConfigDict(extra="ignore")
+    date: IsoDate
+
+
+class BackupExerciseNote(_Stamps, ExerciseNotePut):
+    model_config = ConfigDict(extra="ignore")
+    exercise_id: Id
+
+
+class BackupGrocerySpend(_Stamps, GrocerySpendPut):
+    model_config = ConfigDict(extra="ignore")
+    week_start: IsoDate
 
 
 BackupRestore.model_rebuild()

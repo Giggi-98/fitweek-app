@@ -5,8 +5,8 @@
 import { request } from "./api.js";
 import { DAYS, PLAN_KEY, SLOTS, SOURCE_LABEL } from "./constants.js";
 import { app, persistState, refreshDaily } from "./store.js";
-import { closeModal, modalOpen, openModal, toast } from "./ui.js";
-import { $, esc, fmtNum, isoDate, num, uid } from "./util.js";
+import { closeModal, dayOptions, modalOpen, openModal, toast } from "./ui.js";
+import { $, TIME24, esc, fmtDuration, fmtNum, isoDate, normalizeTime, num, uid } from "./util.js";
 import { icon } from "./icons.js";
 import { haptic } from "./motion.js";
 import { enqueue, flush } from "./workout/queue.js";
@@ -76,6 +76,23 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
       /* offline */
     }
   }
+  // Pasti già registrati per questo momento negli ultimi 14 giorni: si riselezionano con un tocco.
+  let recent = [];
+  try {
+    const from = new Date(date + "T12:00:00");
+    from.setDate(from.getDate() - 14);
+    const logs = (await request(`/api/v1/meal-logs?from=${isoDate(from)}&to=${date}`)).items;
+    const seen = new Set(app.templates.map((t) => t.name.trim().toLowerCase()));
+    for (const m of logs.filter((x) => x.slot === slot && x.status === "eaten" && x.description).reverse()) {
+      const key = m.description.trim().toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      recent.push(m);
+    }
+    recent = recent.slice(0, 4);
+  } catch {
+    /* offline: restano piano e pasti abituali */
+  }
   const pane = app.foods.find((f) => f.id === "f-pane");
   const gymDay = Boolean(app.today?.routine);
   const dayName = DAYS[(new Date(date + "T12:00:00").getDay() + 6) % 7];
@@ -93,7 +110,8 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
       ${pane ? `<button type="button" class="btn ${gymDay ? "primary" : ""} full" data-m="home-pane">${icon("plus", "sm")}…con 2 pagnottine (~200 g)</button>` : ""}` : ""}
     <button type="button" class="btn ${home.length ? "" : "primary"} full" data-m="compose">${icon("utensils")}${slot === "lunch" ? "Componi il vassoio della mensa" : "Componi il piatto"}</button>
     ${planned ? `<button type="button" class="btn full" data-m="planned">${icon("check")}Come previsto: ${esc(planned)}</button>` : ""}
-    <div class="pick-list">${templates.map(chip).join("") || '<p class="subtle">Nessun pasto abituale per questo momento: aggiungili da Pasti → Abituali.</p>'}</div>
+    ${recent.length ? `<div class="pick-group"><span class="eyebrow">Recenti</span><div class="pick-list">${recent.map((m, k) => `<button type="button" class="pick" data-recent="${k}"><span>${esc(m.description)}</span><small>${m.kcal != null ? `${m.nutrition_source === "estimate" ? "~" : ""}${fmtNum(m.kcal, 0)} kcal · ${SOURCE_LABEL[m.nutrition_source] || "stima"}` : "senza valori"}</small></button>`).join("")}</div></div>` : ""}
+    ${templates.length ? `<div class="pick-group"><span class="eyebrow">Abituali</span><div class="pick-list">${templates.map(chip).join("")}</div></div>` : recent.length ? "" : '<p class="subtle">Nessun pasto abituale per questo momento: aggiungili da Pasti → Abituali.</p>'}
     <details class="free"><summary>${icon("pencil", "sm")}Altro / scrivi tu</summary>
       <div class="field"><label for="m-desc">Descrizione</label><input id="m-desc" maxlength="300" placeholder="es. piadina prosciutto e formaggio"></div>
       <div class="field"><label for="m-kcal">Calorie, se le conosci (facoltativo)</label><input id="m-kcal" inputmode="numeric" placeholder="es. 450"></div>
@@ -120,7 +138,13 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
       }
       const base = { date, slot, status: "eaten", description: "", note: "" };
       let body = null;
-      if (t.dataset.tpl) {
+      if (t.dataset.recent) {
+        // Stesso pasto di un giorno recente: stesse voci (o stessa descrizione e valori).
+        const m = recent[num(t.dataset.recent)];
+        body = m.items?.length
+          ? { ...base, items: m.items.map((i) => ({ ...i, takeaway: false })) }
+          : { ...base, description: m.description, ...(m.template_id ? { template_id: m.template_id } : {}), ...(m.kcal != null ? { kcal: m.kcal, protein_g: m.protein_g, nutrition_source: m.nutrition_source } : {}) };
+      } else if (t.dataset.tpl) {
         const tpl = app.templates.find((x) => x.id === t.dataset.tpl);
         body = { ...base, description: tpl.name, template_id: tpl.id };
       } else if (t.dataset.m === "planned") {
@@ -131,7 +155,9 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
         const desc = $("#m-desc").value.trim();
         const kcal = $("#m-kcal").value.trim();
         if (!desc) return toast("Scrivi cosa hai mangiato"), false;
-        body = { ...base, description: desc, ...(kcal ? { kcal: num(kcal.replace(",", ".")), nutrition_source: "manual" } : {}) };
+        // Salvato come voce: entra nel catalogo e la prossima volta si riseleziona con i suoi valori.
+        const value = kcal ? num(kcal.replace(",", ".")) : null;
+        body = { ...base, items: [{ name: desc.slice(0, 120), category: "altro", qty: 1, kcal: value, protein_g: null, nutrition_source: value == null ? null : "manual", takeaway: false }] };
       } else if (t.dataset.m === "skip") {
         body = { ...base, status: "skipped" };
       }
@@ -169,10 +195,63 @@ export function openWeighIn({ reminderId = null } = {}) {
   );
 }
 
+// ---- sonno -------------------------------------------------------------------------------
+/** Registra o modifica una notte. `date` è il giorno del risveglio. */
+export function openSleepLog({ date = todayIso() } = {}) {
+  const find = (d) => app.sleep.items.find((n) => n.date === d);
+  const last = app.sleep.items[app.sleep.items.length - 1];
+  const existing = find(date);
+  const start = existing || { bed_time: last?.bed_time || "00:00", wake_time: last?.wake_time || "07:30" };
+  const duration = () => {
+    const bed = normalizeTime($("#sl-bed").value), wake = normalizeTime($("#sl-wake").value);
+    if (!TIME24.test(bed) || !TIME24.test(wake)) return null;
+    const mins = (h) => num(h.slice(0, 2)) * 60 + num(h.slice(3));
+    return (mins(wake) - mins(bed) + 1440) % 1440;
+  };
+  openModal(
+    `<div class="modal-ic">${icon("moon")}</div>
+    <h2 id="modal-title">Sonno</h2>
+    <p class="subtle">Orari indicativi vanno benissimo: serve a vedere l'andamento, non a dare un voto.</p>
+    <div class="field"><label for="sl-date">Risveglio di</label><select id="sl-date">${dayOptions(date, 7)}</select></div>
+    <div class="form-grid two">
+      <div class="field"><label for="sl-bed">A letto alle</label><input id="sl-bed" class="time24" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${esc(start.bed_time)}"></div>
+      <div class="field"><label for="sl-wake">Sveglia alle</label><input id="sl-wake" class="time24" inputmode="numeric" maxlength="5" placeholder="HH:MM" value="${esc(start.wake_time)}"></div>
+    </div>
+    <div class="tray-total"><span>Durata</span><strong id="sl-dur">—</strong><small>calcolata dagli orari</small></div>
+    <button type="button" class="btn primary xl full" data-m="save">${icon("check")}Salva</button>
+    <div class="modal-secondary">${existing ? '<button type="button" data-m="delete">Elimina</button>' : ""}<button type="button" data-m="close">Annulla</button></div>`,
+    async (t) => {
+      if (t.dataset.m === "close") return true;
+      const day = $("#sl-date").value;
+      const path = `/api/v1/sleep/${day}`;
+      if (t.dataset.m === "delete") {
+        enqueue("DELETE", path, undefined, `sleep:${day}`);
+        toast("Notte eliminata");
+      } else if (t.dataset.m === "save") {
+        if (duration() == null) return toast("Orari non validi: usa il formato 24 ore, es. 23:45"), false;
+        enqueue("PUT", path, { bed_time: normalizeTime($("#sl-bed").value), wake_time: normalizeTime($("#sl-wake").value) }, `sleep:${day}`);
+        haptic(12);
+        toast("Sonno registrato");
+      } else return false;
+      afterChange();
+      return true;
+    },
+  );
+  const paint = () => ($("#sl-dur").textContent = duration() == null ? "—" : fmtDuration(duration()));
+  // Ascolto sui due campi (non sul contenitore, che viene riusato dalle altre finestre).
+  for (const id of ["#sl-bed", "#sl-wake"]) $(id).addEventListener("input", paint);
+  $("#sl-date").addEventListener("change", () => {
+    const n = find($("#sl-date").value);
+    if (n) [$("#sl-bed").value, $("#sl-wake").value] = [n.bed_time, n.wake_time];
+    paint();
+  });
+  paint();
+}
+
 // ---- altri promemoria --------------------------------------------------------------------
 function openSimple(item) {
   const actions = {
-    start_workout: ["▶ Vai all'allenamento", "#training"],
+    start_workout: ["Vai all'allenamento", "#training"],
     open_shopping: ["Apri la spesa", "#shopping"],
   };
   const [label, hash] = actions[item.action] || ["Ok, fatto", null];

@@ -80,3 +80,26 @@ Slot pasto: `lunch, snack, pre_workout, dinner, other`. Backup: `fitweek-backup-
 |---|---|---|
 | GET | `/api/v1/app/android` | `{available, version, version_code, size, sha256, built_at, server_url, app_id}` |
 | GET | `/api/v1/app/android/download` | APK (`application/vnd.android.package-archive`), 404 se non compilato |
+
+## API 1.8 (2026-11-10)
+
+Tutte sotto `/api/v1`, con autenticazione; le scritture hanno il controllo `Origin`.
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/sleep?from=&to=` | Notti registrate (default: ultimi 60 giorni) → `{items: [{date, bed_time, wake_time, duration_min, source, note}], summary: {nights, duration_avg_min, bedtime_avg}}`. `date` è il giorno del risveglio. |
+| PUT | `/sleep/{date}` | `{bed_time "HH:MM", wake_time "HH:MM", source?: manual\|health_connect, note?}` → upsert. |
+| DELETE | `/sleep/{date}` | Eliminazione logica. |
+| GET | `/exercise-notes` | `{items: [{exercise_id, note, updated_at}]}` (solo note non vuote). |
+| PUT | `/exercise-notes/{exercise_id}` | `{note}`; nota vuota = rimossa dall'elenco. |
+| GET | `/grocery-spend?limit=` | Spesa reale per settimana, più recenti prima → `{items: [{week_start, amount, note}]}`. |
+| PUT | `/grocery-spend/{date}` | `{amount, note?}`; qualsiasi giorno viene riportato al lunedì della sua settimana. |
+| DELETE | `/grocery-spend/{week_start}` | Rimuove il totale di quella settimana. |
+| GET | `/food-search?q=` | Ricerca prodotti su Open Food Facts (D-018) → `{enabled, source, items: [{code, name, brand, kcal_100g, protein_100g, serving_g}]}`. 3–60 caratteri; cache in memoria; 429 oltre 10 ricerche al minuto; 502 se il servizio non risponde; `enabled: false` con `FOOD_SEARCH=off`. |
+
+Modifiche a endpoint esistenti:
+- `GET /weekly-summary`: `days[].sleep` (notte con risveglio in quel giorno o `null`), `totals.sleep`, `targets: {protein_g, kcal}` (riferimenti scelti dall'utente nel profilo, `null` se assenti).
+- `PUT /workout-sessions/{id}/sets/...`: `rir` (0–4, dove 4 = "4 o più") ora è usato dall'interfaccia; va rimandato a ogni modifica della serie, altrimenti viene azzerato.
+- `GET /api/backup` → `fitweek-backup-v4` (aggiunge `sleep_logs`, `exercise_notes`, `grocery_spend`); il ripristino accetta v1–v4 e non tocca le tabelle assenti dal file.
+- Blob (`/api/state`): `profile.proteinTarget`, `profile.kcalTarget` (facoltativi), `groceries[].recurring`.
+- `nutrition_source` ammette anche `off` (valore da Open Food Facts).

@@ -51,8 +51,8 @@ function romeMinuteAgo() {
   await page.screenshot({ path: `${SHOTS}/m4-1-popup.png` });
   await page.click('#modal [data-m=planned]'); // "Come previsto: Banana" eredita la stima del pasto abituale
   await page.waitForSelector('#modal', { state: 'hidden' });
-  await page.waitForSelector('.agenda li.done', { timeout: 8000 });
-  check('promemoria completato dal pasto registrato', (await page.locator('.agenda li.done').count()) === 1);
+  await page.waitForSelector('.tl-item.done', { timeout: 8000 });
+  check('promemoria completato dal pasto registrato', (await page.locator('.tl-item.done').count()) === 1);
   const weekly = await page.textContent('.wk-chart');
   check('settimana: calorie teoriche del giorno', /105/.test(weekly), weekly.replace(/\s+/g, ' ').slice(0, 80));
   await page.screenshot({ path: `${SHOTS}/m4-2-dashboard.png`, fullPage: true });
@@ -185,7 +185,7 @@ function romeMinuteAgo() {
 
   // 8. Backup v3
   const backup = await api('/api/backup');
-  check('backup v3 con pasti e promemoria', backup.format === 'fitweek-backup-v3' && backup.meal_logs.length >= 2 && backup.reminders.length > 30);
+  check('backup v4 con pasti e promemoria', backup.format === 'fitweek-backup-v4' && backup.meal_logs.length >= 2 && backup.reminders.length > 30);
 
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();

@@ -4,7 +4,7 @@ import { icon } from "../icons.js";
 import { bump, confetti, haptic, pop, ring } from "../motion.js";
 import { bestLoads, isRecord } from "../stats.js";
 import { app, refreshWorkouts } from "../store.js";
-import { toast } from "../ui.js";
+import { openModal, toast } from "../ui.js";
 import { $, clamp, esc, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
@@ -14,7 +14,8 @@ const LEGACY_DRAFTS_KEY = "fitweek.workoutDrafts.v1";
 
 // Selezione quando non c'è una seduta attiva.
 // justDone/justComplete: animazioni da eseguire una sola volta al prossimo render.
-const ui = { routine: null, week: null, summary: null, justDone: null, justComplete: null, open: new Set() };
+// rirFor: ultima serie segnata, per cui si può indicare lo sforzo (RIR) con un tocco facoltativo.
+const ui = { routine: null, week: null, summary: null, justDone: null, justComplete: null, rirFor: null, open: new Set() };
 
 // ---- dati derivati ------------------------------------------------------------------------
 const active = () => app.today?.active_session || null;
@@ -56,6 +57,34 @@ function progressOf(session) {
 }
 const volume = (session) =>
   session.sets.filter((s) => s.completed && s.kg != null && s.reps != null).reduce((v, s) => v + s.kg * s.reps, 0);
+
+const RIR_CHOICES = [[0, "0"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]];
+/** Dopo il ✓: "quante ne avevi ancora?". Un tocco se vuoi, altrimenti si ignora e sparisce alla serie dopo. */
+function rirStrip(session, ex) {
+  if (!ui.rirFor || ui.rirFor.ex !== ex.id) return "";
+  const own = logged(session, ex.id, ui.rirFor.idx);
+  if (!own?.completed) return "";
+  return `<div class="rir-strip" role="group" aria-label="Ripetizioni di riserva, serie ${ui.rirFor.idx}">
+    <span>Serie ${ui.rirFor.idx}: ne avevi ancora?</span>
+    <div>${RIR_CHOICES.map(([v, l]) => `<button type="button" class="chip ${own.rir === v ? "active" : ""}" data-rir="${v}" aria-pressed="${own.rir === v}">${l}</button>`).join("")}</div>
+  </div>`;
+}
+
+const repRange = (ex) => String(ex.reps).split(/[–-]/).map((x) => num(x.trim(), 0));
+/** La volta scorsa tutte le serie previste hanno raggiunto il massimo delle ripetizioni con lo stesso carico. */
+function completedTopRange(ex, prev, planned) {
+  const top = repRange(ex).pop();
+  if (!top || prev.length < planned || prev[0].kg == null) return false;
+  return prev.slice(0, planned).every((s) => s.kg === prev[0].kg && (s.reps ?? 0) >= top);
+}
+
+function exerciseExtras(session, ex, prev, planned, ed) {
+  const note = app.exNotes[ex.id];
+  const untouched = !setsOf(session, ex.id).length && !ed.bumped?.[ex.id];
+  const step = prefs().kgStep;
+  return `${untouched && completedTopRange(ex, prev, planned) ? `<div class="ex-hint">${icon("trending-up", "sm")}<span>L'ultima volta hai chiuso tutte le serie a ${repRange(ex).pop()} ripetizioni.</span><button type="button" class="btn small" data-bump-ex="${esc(ex.id)}">Prova +${esc(String(step).replace(".", ","))} kg</button></div>` : ""}
+  <button type="button" class="ex-note ${note ? "has" : ""}" data-note-ex="${esc(ex.id)}">${icon("notebook-pen", "sm")}<span>${note ? esc(note) : "Aggiungi una nota (sedile, presa, fastidi…)"}</span></button>`;
+}
 
 // ---- render -------------------------------------------------------------------------------
 export function render() {
@@ -196,9 +225,11 @@ function renderActive(session) {
         </div>
         ${open ? `
         ${prev.length ? `<div class="ex-last">Ultima volta${prevSession ? ` (${esc(fmtDate(prevSession.date))}, W${esc(prevSession.week)})` : ""}: ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
+        ${exerciseExtras(session, ex, prev, p, ed)}
         <div class="set-legend" aria-hidden="true"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
         ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, p, best)).join("")}
         <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">${icon("plus", "sm")}Serie extra</button>` : ""}
+        ${rirStrip(session, ex)}
       </section>`;
     })
     .join("")}
@@ -268,11 +299,11 @@ function rowValues(row) {
   return { kg: parseNum($("[data-field=kg]", row).value), reps: parseNum($("[data-field=reps]", row).value) };
 }
 
-function writeSet(session, exId, idx, values, completed) {
+function writeSet(session, exId, idx, values, completed, rir = logged(session, exId, idx)?.rir ?? null) {
   const rest = session.sets.filter((x) => !(x.exercise_id === exId && x.set_index === idx));
-  const item = { exercise_id: exId, set_index: idx, kg: values.kg, reps: values.reps, rir: null, completed, logged_at: new Date().toISOString() };
+  const item = { exercise_id: exId, set_index: idx, kg: values.kg, reps: values.reps, rir, completed, logged_at: new Date().toISOString() };
   session.sets = [...rest, item];
-  enqueue("PUT", setPath(session, exId, idx), { kg: values.kg, reps: values.reps, completed }, `set:${exId}:${idx}:${session.id}`);
+  enqueue("PUT", setPath(session, exId, idx), { kg: values.kg, reps: values.reps, rir, completed }, `set:${exId}:${idx}:${session.id}`);
 }
 
 function toggleSet(row) {
@@ -284,6 +315,7 @@ function toggleSet(row) {
     s.sets = s.sets.filter((x) => !(x.exercise_id === exId && x.set_index === idx));
     enqueue("DELETE", setPath(s, exId, idx), undefined, `set:${exId}:${idx}:${s.id}`);
     stopRest();
+    if (ui.rirFor?.ex === exId && ui.rirFor.idx === idx) ui.rirFor = null;
     return true;
   }
   const v = rowValues(row);
@@ -303,6 +335,7 @@ function toggleSet(row) {
   startRest();
   haptic(isRecord(bestLoads(app.sessions, s.id), exId, v.kg) ? [15, 40, 15, 40, 40] : 15);
   ui.justDone = `${exId}:${idx}`;
+  ui.rirFor = { ex: exId, idx };
   const ex = routineExercises(s.routine).find((e) => e.id === exId);
   if (ex && setsOf(s, exId).filter((x) => x.completed).length === plannedSets(ex, s.week)) {
     ui.justComplete = exId;
@@ -372,6 +405,28 @@ async function finish() {
   if (!pendingCount()) refreshWorkouts().catch(() => {});
 }
 
+function editExerciseNote(exId) {
+  const ex = Object.values(app.state.routines).flat().find((e) => e.id === exId);
+  openModal(
+    `<div class="modal-ic">${icon("notebook-pen")}</div>
+    <h2 id="modal-title">${esc(ex?.name || "Nota")}</h2>
+    <p class="subtle">Resta qui anche nelle prossime sedute.</p>
+    <div class="field"><label for="ex-note-text">Nota</label><textarea id="ex-note-text" rows="3" maxlength="500" autofocus placeholder="es. sedile 4, presa larga">${esc(app.exNotes[exId] || "")}</textarea></div>
+    <button type="button" class="btn primary xl full" data-m="save">${icon("check")}Salva</button>
+    <div class="modal-secondary"><button type="button" data-m="close">Annulla</button></div>`,
+    (t) => {
+      if (t.dataset.m === "close") return true;
+      if (t.dataset.m !== "save") return false;
+      const note = $("#ex-note-text").value.trim().slice(0, 500);
+      if (note) app.exNotes[exId] = note;
+      else delete app.exNotes[exId];
+      enqueue("PUT", `/api/v1/exercise-notes/${encodeURIComponent(exId)}`, { note }, `exnote:${exId}`);
+      app.render();
+      return true;
+    },
+  );
+}
+
 function importLegacyDraft(id) {
   const drafts = storage.get(LEGACY_DRAFTS_KEY, {});
   const d = drafts[id];
@@ -415,6 +470,29 @@ export async function onClick(t) {
       const next = card && document.getElementById(card.id)?.querySelector(".set-row:not(.done)");
       if (!next) document.querySelector(".ex-card.next")?.scrollIntoView({ behavior: "smooth", block: "start" });
     });
+    return true;
+  }
+  if (t.dataset.rir && ui.rirFor) {
+    const s = active();
+    const own = logged(s, ui.rirFor.ex, ui.rirFor.idx);
+    if (!own) return false;
+    const value = num(t.dataset.rir);
+    writeSet(s, ui.rirFor.ex, ui.rirFor.idx, { kg: own.kg, reps: own.reps }, true, own.rir === value ? null : value);
+    haptic(8);
+    return true;
+  }
+  if (t.dataset.noteEx) return editExerciseNote(t.dataset.noteEx), false;
+  if (t.dataset.bumpEx) {
+    // Proposta, non regola: precompila le serie con il carico dell'ultima volta + un passo.
+    const s = active();
+    const ex = routineExercises(s.routine).find((e) => e.id === t.dataset.bumpEx);
+    const prev = setsOf(lastDone(s.routine, s.id), ex.id).filter((x) => x.completed);
+    const ed = edits(s.id);
+    for (let idx = 1; idx <= plannedSets(ex, s.week); idx++) {
+      ed.values[`${ex.id}:${idx}`] = { kg: Math.round((prev[0].kg + prefs().kgStep) * 100) / 100, reps: repRange(ex)[0] };
+    }
+    ed.bumped = { ...ed.bumped, [ex.id]: true };
+    saveEdits(ed);
     return true;
   }
   if (t.dataset.toggleEx) {
@@ -502,6 +580,7 @@ export function todayStatus() {
 
 export const resetUi = () => {
   ui.summary = null;
+  ui.rirFor = null;
   ui.open.clear();
 };
 
