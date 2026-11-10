@@ -7,6 +7,7 @@ import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
+import { serverUrl, setToken, standalone } from "../platform.js";
 
 export const THEME_KEY = "fitweek.theme.v1";
 
@@ -92,6 +93,9 @@ function androidPanel() {
     return panel(`${icon("smartphone")}App Android`, '<p class="subtle">Caricamento…</p>', "", "", "android-panel");
   }
   const i = android.info;
+  const next = i.next
+    ? `<hr class="separator"><p class="subtle"><strong>Versione di prova ${esc(i.next.version)}</strong> · ${mb(i.next.size)}: app autonoma, si apre anche senza rete e invia i dati al ritorno. Si installa accanto a quella attuale, senza sostituirla.</p><a class="btn full" href="/api/v1/app/android/download?channel=next" download>${icon("download")}Scarica la versione di prova</a>`
+    : "";
   if (!i.available) return panel(`${icon("smartphone")}App Android`, '<p class="subtle">L\'APK non è ancora stato compilato sul server (scripts/build-apk.sh).</p>', "", "", "android-panel");
   return panel(
     `${icon("smartphone")}App Android`,
@@ -104,7 +108,7 @@ function androidPanel() {
       <li>Impostazioni → App → FitWeek → Batteria → <em>Senza restrizioni</em>; se richiesto consenti <em>Sveglie e promemoria</em>.</li>
     </ol>
     <p class="subtle">L'app si collega a ${esc(i.server_url || "")}: funziona sulla Wi-Fi di casa o con la VPN. Le notifiche arrivano ovunque.</p>
-    <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(i.sha256 || "")}</p></details>`,
+    <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(i.sha256 || "")}</p></details>${next}`,
     "", "", "android-panel",
   );
 }
@@ -135,7 +139,7 @@ export function render() {
     `<div class="twocol"><div class="stack">${androidPanel()}${remindersPanel()}${panel(
       `${icon("calendar")}Programma`,
       `<form id="program-form" class="stack"><div class="field"><label for="prog-week">Settimana attuale</label><select id="prog-week" name="week">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => opt(i + 1, app.today.program_week, `Settimana ${i + 1}`)).join("")}</select></div><p class="subtle">La settimana avanza da sola ogni lunedì (inizio programma: ${esc(p.startDate)}). Cambiarla qui sposta la data di inizio.</p><button class="btn" type="submit">Aggiorna settimana</button></form>
-      <div class="spacer12"></div><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda originale (PDF)${icon("arrow-right", "sm")}</a>`,
+      ${standalone ? "" : `<div class="spacer12"></div><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda originale (PDF)${icon("arrow-right", "sm")}</a>`}`,
     )}${panel(
       `${icon("timer")}Allenamento`,
       `<form id="prefs-form" class="stack"><div class="form-grid"><div class="field"><label for="rest">Recupero predefinito</label><select id="rest" name="restSeconds">${[60, 75, 90, 120, 150, 180].map((s) => opt(s, pr.restSeconds, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} min`)).join("")}</select></div><div class="field"><label for="kgstep">Incremento peso (+/−)</label><select id="kgstep" name="kgStep">${[0.5, 1, 1.25, 2, 2.5, 5].map((s) => opt(s, pr.kgStep, `${String(s).replace(".", ",")} kg`)).join("")}</select></div></div><label class="check"><input type="checkbox" name="sound" ${pr.sound ? "checked" : ""}> Suono a fine recupero (oltre alla vibrazione)</label><button class="btn" type="submit">Salva preferenze</button></form><p class="subtle">Preferenze salvate su questo dispositivo.</p>`,
@@ -147,7 +151,9 @@ export function render() {
       `<form id="profile-form" class="stack"><div class="form-grid two"><div class="field span2"><label for="pf-name">Nome (facoltativo)</label><input id="pf-name" name="name" maxlength="100" value="${esc(p.name)}"></div><div class="field"><label for="pf-age">Età</label><input id="pf-age" name="age" type="number" min="0" max="120" value="${esc(p.age)}"></div><div class="field"><label for="pf-h">Altezza (cm)</label><input id="pf-h" name="height" type="number" min="0" max="260" value="${esc(p.height)}"></div><div class="field"><label for="pf-w">Peso iniziale (kg)</label><input id="pf-w" name="startingWeight" type="number" min="0" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label for="pf-b">Budget spesa settimanale (€)</label><input id="pf-b" name="budget" type="number" min="0" max="100000" step="1" value="${esc(p.budget)}"></div><div class="field"><label for="pf-prot">Riferimento proteine (g al giorno)</label><input id="pf-prot" name="proteinTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.proteinTarget ?? "")}"></div><div class="field"><label for="pf-kcal">Riferimento calorie (kcal al giorno)</label><input id="pf-kcal" name="kcalTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.kcalTarget ?? "")}"></div></div><p class="subtle">I riferimenti li scegli tu: l'app non li calcola né li consiglia, mostra solo quanto manca nella giornata.</p><div class="field"><label for="pf-n">La tua routine</label><textarea id="pf-n" name="notes" rows="4" maxlength="5000">${esc(p.notes)}</textarea></div><button class="btn primary" type="submit">Salva profilo</button></form>`,
     )}</div><div class="stack">${panel(
       `${icon("download")}Backup`,
-      `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia completa in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
+      standalone
+        ? `<p class="subtle">Backup automatico ogni notte sul server (${esc(serverUrl())}). Per scaricare o ripristinare una copia apri FitWeek dal browser.</p>`
+        : `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia completa in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
     )}${panel(
       `${icon("log-out")}Sessione`,
       `<p class="subtle">Esci da questo dispositivo, oppure da tutti (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
@@ -183,6 +189,7 @@ export async function onClick(t) {
     const all = t.dataset.action === "logout-all";
     if (all && !confirm("Uscire da tutti i dispositivi?")) return false;
     await request(all ? "/api/logout-all" : "/api/logout", { method: "POST" }).catch(() => {});
+    setToken(null);
     location.reload();
     return false;
   }

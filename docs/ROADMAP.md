@@ -11,7 +11,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 | M3 | Dashboard "Oggi" e progressi | 🔄 progressi fatti in 1.7.0 (2026-11-10); restano misure aggiuntive e confronto settimane |
 | M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
 | M5 | Spesa, dispensa, budget | 🔄 spesa reale settimanale e articoli ricorrenti in 1.8.0; restano lista generata dal piano e prezzi reali per articolo |
-| M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 (accesso fuori casa: serve VPN) |
+| M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 · app autonoma con copia locale e coda in prova dalla 1.9.0 (D-021) |
 | M7 | Rifinitura: redesign v2 ✅ (1.5.0); accessibilità, performance, schede multiple ⬜ |
 | M8 | Assistente AI opzionale e integrazioni | ⬜ |
 
@@ -159,6 +159,16 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.9.0 (2026-11-10) — app Android autonoma, tappa 1 di 2
+
+Richiesta utente: app che funziona da sola e sincronizza con il server nei due sensi, poi un modello IA sul telefono (Google AI Edge) per leggere il menu della mensa.
+
+Tappa 1, fatta: vedi D-021. APK di prova `mobile/dist/fitweek-next.apk` (canale `next`), scaricabile da Impostazioni → App Android nella webapp.
+Verificato: 78 pytest, 29 test JS, 103 controlli e2e, compreso un percorso completo "accesso → serie e pesata senza rete → riavvio senza rete → modifica da un altro dispositivo → ritorno online e fusione". Non verificato: l'APK su un telefono vero.
+Prova richiesta all'utente (S25 Ultra): installazione accanto all'app attuale, accesso, una serie e una pesata in modalità aereo, chiusura e riapertura dell'app, ritorno in Wi-Fi, notifica di prova.
+
+Tappa 2, da fare dopo la conferma della tappa 1: plugin nativo con LiteRT-LM (Gemma scaricato dall'utente) e funzione "menu della mensa" con proposte da confermare; modulo spento di default (regola 7).
 
 ## M7 — Rifinitura
 Accessibilità completa, performance, schede multiple / nuovo programma dopo le 8 settimane, sonno (registrazione leggera, opzionale).

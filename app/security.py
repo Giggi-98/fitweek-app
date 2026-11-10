@@ -101,11 +101,21 @@ class SessionManager:
             c.execute("DELETE FROM sessions WHERE created_at < ?", (limit,))
 
 
+def request_token(request: Request) -> str:
+    """Token di sessione: cookie (webapp) oppure `Authorization: Bearer` (app Android autonoma)."""
+    header = request.headers.get("authorization", "")
+    if header[:7].lower() == "bearer ":
+        return header[7:].strip()
+    return request.cookies.get(COOKIE_NAME, "")
+
+
 def check_origin(request: Request) -> None:
     """Le scritture provenienti da un browser devono avere Origin uguale all'host servito."""
     origin = request.headers.get("origin")
     if not origin:
         return
+    if origin.rstrip("/") in getattr(request.app.state, "app_origins", ()):
+        return  # app Android autonoma (pagine nell'APK): origine fissa e dichiarata in configurazione
     parsed = urlparse(origin)
     if parsed.scheme not in ("http", "https") or parsed.netloc != request.headers.get("host", ""):
         raise HTTPException(status_code=403, detail="Origin non autorizzata")

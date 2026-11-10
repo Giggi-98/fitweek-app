@@ -4,8 +4,9 @@ import logging
 import sqlite3
 import time
 
-from fastapi import Depends, FastAPI, HTTPException, Request
+from fastapi import Depends, FastAPI, HTTPException, Query, Request
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -23,6 +24,7 @@ from .security import (
     SessionManager,
     check_origin,
     password_matches,
+    request_token,
 )
 from . import daily, foodsearch, tracking
 from .workouts import build_router, load_sessions, now_iso
@@ -41,6 +43,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     limiter = LoginRateLimiter(settings.login_max_failures, settings.login_window_s)
 
     app = FastAPI(title="FitWeek", version=APP_VERSION, docs_url=None, redoc_url=None, openapi_url=None)
+
+    app.state.app_origins = settings.app_origins
+    # CORS solo per l'app autonoma: niente cookie (allow_credentials resta falso), autenticazione con token.
+    app.add_middleware(CORSMiddleware, allow_origins=list(settings.app_origins), allow_methods=["*"],
+                       allow_headers=["Authorization", "Content-Type"], max_age=600)
 
     # ---- middleware e gestione errori ---------------------------------------------------
     @app.middleware("http")
@@ -78,7 +85,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- dipendenze ---------------------------------------------------------------------
     def require_session(request: Request) -> str:
-        sid = sessions.session_id(request.cookies.get(COOKIE_NAME, ""))
+        sid = sessions.session_id(request_token(request))
         if not sid:
             raise HTTPException(status_code=401, detail="Accesso richiesto")
         return sid
@@ -103,6 +110,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             raise HTTPException(status_code=401, detail="Password errata")
         limiter.reset(key)
         token = sessions.create(request.headers.get("user-agent", ""))
+        if body.client == "app":
+            return {"ok": True, "token": token, "max_age_s": settings.session_max_age_s}
         response = JSONResponse({"ok": True})
         response.set_cookie(
             COOKIE_NAME, token, httponly=True, samesite="lax", secure=settings.cookie_secure,
@@ -112,7 +121,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.post("/api/logout", dependencies=[Depends(check_origin)])
     def logout(request: Request):
-        sid = sessions.session_id(request.cookies.get(COOKIE_NAME, ""))
+        sid = sessions.session_id(request_token(request))
         if sid:
             sessions.revoke(sid)
         response = JSONResponse({"ok": True})
@@ -258,8 +267,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         return {"ok": True, "version": version + 1, "sessions": len(sessions_in)}
 
     # ---- app Android ----------------------------------------------------------------------
-    def apk_meta() -> dict | None:
-        apk, meta = settings.downloads_dir / "fitweek.apk", settings.downloads_dir / "fitweek-apk.json"
+    def apk_meta(channel: str = "stable") -> dict | None:
+        stem = "fitweek" if channel == "stable" else "fitweek-next"  # next = versione di prova, appId diverso
+        apk, meta = settings.downloads_dir / f"{stem}.apk", settings.downloads_dir / f"{stem}-apk.json"
         if not apk.is_file() or not meta.is_file():
             return None
         try:
@@ -270,17 +280,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.get("/api/v1/app/android", dependencies=[Depends(require_session)])
     def android_info():
         meta = apk_meta()
-        return {"available": meta is not None, **(meta or {})}
+        return {"available": meta is not None, **(meta or {}), "next": apk_meta("next")}
 
     @app.get("/api/v1/app/android/download", dependencies=[Depends(require_session)])
-    def android_download():
-        meta = apk_meta()
+    def android_download(channel: str = Query(default="stable", pattern="^(stable|next)$")):
+        meta = apk_meta(channel)
         if not meta:
             raise HTTPException(status_code=404, detail="APK non ancora compilato")
+        stem = "fitweek" if channel == "stable" else "fitweek-next"
         return FileResponse(
-            settings.downloads_dir / "fitweek.apk",
+            settings.downloads_dir / f"{stem}.apk",
             media_type="application/vnd.android.package-archive",
-            filename=f"fitweek-{meta.get('version', 'app')}.apk",
+            filename=f"{stem}-{meta.get('version', 'app')}.apk",
         )
 
     app.include_router(build_router(settings, require_session))

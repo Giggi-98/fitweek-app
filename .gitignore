@@ -19,3 +19,5 @@ mobile/node_modules/
 mobile/dist/
 *.jks
 *.keystore
+# esportazioni della conversazione di Claude Code (/export)
+20??-??-??-*.txt

@@ -103,3 +103,10 @@ Modifiche a endpoint esistenti:
 - `GET /api/backup` → `fitweek-backup-v4` (aggiunge `sleep_logs`, `exercise_notes`, `grocery_spend`); il ripristino accetta v1–v4 e non tocca le tabelle assenti dal file.
 - Blob (`/api/state`): `profile.proteinTarget`, `profile.kcalTarget` (facoltativi), `groceries[].recurring`.
 - `nutrition_source` ammette anche `off` (valore da Open Food Facts).
+
+## API 1.9 (2026-11-10) — app autonoma
+
+- `POST /api/login` accetta `client: "web" | "app"` (predefinito `web`). Con `app` risponde `{ok, token, max_age_s}` senza cookie; con `web` imposta il cookie e non restituisce mai il token.
+- Tutte le rotte autenticate accettano il token sia dal cookie sia da `Authorization: Bearer <token>`; `POST /api/logout` revoca la sessione in entrambi i casi.
+- CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
+- `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.

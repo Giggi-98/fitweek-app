@@ -1,28 +1,41 @@
 #!/usr/bin/env bash
 # Eseguito DENTRO il container builder (vedi scripts/build-apk.sh). Non lanciarlo sull'host.
-# Input:  /src (mobile/ in sola lettura), /secrets (keystore + password), env APP_URL, APP_VERSION
-# Output: /out/fitweek.apk, /out/fitweek-apk.json
+# Input:  /src (mobile/ in sola lettura), /bundle (pagine dell'app, solo canale next), /secrets (keystore +
+#         password), env APP_URL, APP_VERSION, CHANNEL (stable|next)
+# Output: /out/fitweek.apk + fitweek-apk.json  (next: fitweek-next.apk + fitweek-next-apk.json)
 set -euo pipefail
 : "${APP_URL:?}" "${APP_VERSION:?}"
+CHANNEL="${CHANNEL:-stable}"
 APP_ID="app.fitweek.personal"
+APP_NAME="FitWeek"
+STEM="fitweek"
+if [[ "$CHANNEL" == next ]]; then
+  APP_ID="app.fitweek.personal.next"   # si installa accanto alla stable
+  APP_NAME="FitWeek β"
+  STEM="fitweek-next"
+fi
 
 rm -rf /work/app && mkdir -p /work/app && cp -r /src/package.json /src/package-lock.json /src/www /work/app/
 cd /work/app
 npm ci --no-audit --no-fund --loglevel=error
 
-# Pagina offline: il pulsante "Riprova" torna al server configurato.
-sed -i "s#window.FITWEEK_URL||'/'#'${APP_URL}'#" www/offline.html
+if [[ "$CHANNEL" == next ]]; then
+  # App autonoma: le pagine stanno nell'APK (origine http://localhost) e chiamano il server via rete.
+  rm -rf www && cp -r /bundle www
+  test -f www/index.html && test -f www/app-config.js
+  SERVER_JSON='"server": { "androidScheme": "http", "cleartext": true },'
+else
+  # Guscio: carica la webapp dal server; la pagina offline ha il pulsante "Riprova" verso quel server.
+  sed -i "s#window.FITWEEK_URL||'/'#'${APP_URL}'#" www/offline.html
+  SERVER_JSON="\"server\": { \"url\": \"${APP_URL}\", \"cleartext\": true, \"errorPath\": \"offline.html\" },"
+fi
 
 cat > capacitor.config.json <<JSON
 {
   "appId": "${APP_ID}",
-  "appName": "FitWeek",
+  "appName": "${APP_NAME}",
   "webDir": "www",
-  "server": {
-    "url": "${APP_URL}",
-    "cleartext": true,
-    "errorPath": "offline.html"
-  },
+  ${SERVER_JSON}
   "android": { "allowMixedContent": false },
   "plugins": {
     "LocalNotifications": { "smallIcon": "ic_stat_fitweek", "iconColor": "#3f7d1f" }
@@ -64,14 +77,14 @@ UNSIGNED=android/app/build/outputs/apk/release/app-release-unsigned.apk
 source /secrets/android-keystore.env
 zipalign -f -p 4 "$UNSIGNED" /work/aligned.apk
 apksigner sign --ks /secrets/fitweek-release.jks --ks-key-alias fitweek \
-  --ks-pass "pass:${KEYSTORE_PASSWORD}" --key-pass "pass:${KEYSTORE_PASSWORD}" --out /out/fitweek.apk /work/aligned.apk
+  --ks-pass "pass:${KEYSTORE_PASSWORD}" --key-pass "pass:${KEYSTORE_PASSWORD}" --out "/out/${STEM}.apk" /work/aligned.apk
 # verify segnala come WARNING i file META-INF non firmati dallo schema v1: normali, non li stampiamo.
-if ! verify_out=$(apksigner verify /out/fitweek.apk 2>&1); then echo "$verify_out" >&2; exit 1; fi
-rm -f /out/fitweek.apk.idsig
+if ! verify_out=$(apksigner verify "/out/${STEM}.apk" 2>&1); then echo "$verify_out" >&2; exit 1; fi
+rm -f "/out/${STEM}.apk.idsig"
 
-SHA=$(sha256sum /out/fitweek.apk | cut -d' ' -f1)
-SIZE=$(stat -c %s /out/fitweek.apk)
-cat > /out/fitweek-apk.json <<JSON
-{"version": "${APP_VERSION}", "version_code": ${CODE}, "server_url": "${APP_URL}", "size": ${SIZE}, "sha256": "${SHA}", "built_at": "$(date -Iseconds)", "app_id": "${APP_ID}"}
+SHA=$(sha256sum "/out/${STEM}.apk" | cut -d' ' -f1)
+SIZE=$(stat -c %s "/out/${STEM}.apk")
+cat > "/out/${STEM}-apk.json" <<JSON
+{"version": "${APP_VERSION}", "version_code": ${CODE}, "server_url": "${APP_URL}", "size": ${SIZE}, "sha256": "${SHA}", "built_at": "$(date -Iseconds)", "app_id": "${APP_ID}", "channel": "${CHANNEL}"}
 JSON
-aapt dump badging /out/fitweek.apk | grep -E "^(package|sdkVersion|targetSdkVersion|uses-permission)" || true
+aapt dump badging "/out/${STEM}.apk" | grep -E "^(package|sdkVersion|targetSdkVersion|uses-permission)" || true

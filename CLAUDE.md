@@ -21,7 +21,7 @@ Uomo, 28 anni, 166 cm, peso iniziale 90 kg, lavoro sedentario. Obiettivo: ricomp
 
 I dati corporei cambiano nel tempo: **mai sovrascrivere lo storico**, solo aggiungere misurazioni.
 
-## Stack reale (aggiornato con 1.8, 2026-11-10)
+## Stack reale (aggiornato con 1.9, 2026-11-10)
 
 - Backend: Python 3.12, FastAPI 0.128, uvicorn (`app.main:create_app --factory`), Pydantic, itsdangerous (firma ID sessione). Sessioni server-side revocabili, rate limit login, CSP senza `unsafe-inline` + header di sicurezza, log JSON.
 - DB: SQLite (WAL) `/data/fitweek.sqlite`. Migrazioni versionate in `app/migrations.py` con backup automatico pre-migrazione.
@@ -32,8 +32,9 @@ I dati corporei cambiano nel tempo: **mai sovrascrivere lo storico**, solo aggiu
   - Dati leggeri della routine (1.8, `app/tracking.py`): `sleep_logs` (per giorno di risveglio, durata calcolata), `exercise_notes`, `grocery_spend` (totale reale per settimana). Ricerca prodotti su Open Food Facts lato server (`app/foodsearch.py`, D-018, fonte `off`, `FOOD_SEARCH=off` per spegnerla): è l'UNICA chiamata verso l'esterno.
   - Altri domini (profilo con i riferimenti `proteinTarget`/`kcalTarget` scelti dall'utente, scheda `routines`, pasti, lista spesa, dispensa, pesate): ancora nel blob JSON `app_state` (`/api/state`, controllo 409), validato da `app/schemas.py`. Il campo `workouts` del blob è congelato (copiato in tabella dalla migrazione 4, non più scritto).
 - Frontend: ES modules nativi senza build né CDN (`static/js/`), CSS a token con tema chiaro/scuro (`static/css/`). Coda offline idempotente per le scritture di allenamento e pasti (errori 5xx/429 ritentati, solo i 4xx scartati con avviso), timer recupero basato su orario di fine. **Nessun attributo `style` nell'HTML generato** (lo vieta la CSP, c'è un test): le dimensioni dinamiche passano da `data-pct-h`/`data-pct-w`/`data-vars`, applicate da `applyDynamicStyles()` in `static/js/ui.js`. Progressi (1.7): calcoli puri in `static/js/stats.js` (media mobile 7 giorni, storia e record per esercizio, costanza), grafico a linea riusabile in `static/js/chart.js`. `static/js/reminders.js`: controlla l'agenda ogni minuto **con l'app aperta** e apre il popup giusto (`<dialog>`); nessuna notifica a schermo spento finché non c'è l'app nativa (D-013).
-- App Android (M6): shell Capacitor 6 in `mobile/` che carica la webapp da `server.url` (HTTP LAN, cleartext) e programma **notifiche locali** dei promemoria (prossimi 14 giorni, riallineate a ogni apertura/modifica) tramite `static/js/native.js` + `static/js/schedule.js` (funzione pura). Pagina offline inclusa nell'APK. Build in Docker con `scripts/build-apk.sh` → `mobile/dist/` (bind mount in sola lettura su `/app/downloads`), download dopo login da Impostazioni. Chiave di firma in `/opt/fitweek-secrets/` (mai nel repo; perderla = non poter aggiornare l'app installata).
-- Test: pytest (`tests/`, 72; con date ISO validate davvero, non solo nel formato) + test JS puri (`tests/js/*.test.mjs`, 20, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 89 controlli; `E2E_ONLY=nome` per un solo file; Open Food Facts simulato; indipendenti dal giorno della settimana, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
+- App Android autonoma (1.9, canale `next`, IN PROVA, D-021): le pagine di `static/` entrano nell'APK (`scripts/bundle-www.sh` + `scripts/build-apk.sh URL next`), l'app chiama il server con token `Bearer` (login `client: "app"`, CORS solo per `APP_ORIGINS`). `static/js/platform.js` (dove gira il frontend, indirizzo del server, token), `static/js/cache.js` (copia locale delle GET), `static/js/sync.js` (regole pure: fusione a tre vie dello stato, oggi e agenda senza rete). **Ogni modifica al frontend richiede di ricompilare l'APK `next`**. La webapp non cambia comportamento: `standalone` è falso e il token non le arriva mai.
+- App Android (M6, canale `stable`): shell Capacitor 6 in `mobile/` che carica la webapp da `server.url` (HTTP LAN, cleartext) e programma **notifiche locali** dei promemoria (prossimi 14 giorni, riallineate a ogni apertura/modifica) tramite `static/js/native.js` + `static/js/schedule.js` (funzione pura). Pagina offline inclusa nell'APK. Build in Docker con `scripts/build-apk.sh` → `mobile/dist/` (bind mount in sola lettura su `/app/downloads`), download dopo login da Impostazioni. Chiave di firma in `/opt/fitweek-secrets/` (mai nel repo; perderla = non poter aggiornare l'app installata).
+- Test: pytest (`tests/`, 78; con date ISO validate davvero, non solo nel formato) + test JS puri (`tests/js/*.test.mjs`, 29, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 103 controlli; l'app autonoma è provata con le pagine servite da un'altra origine; `E2E_ONLY=nome` per un solo file; Open Food Facts simulato; indipendenti dal giorno della settimana, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
 
 ## Struttura
 
@@ -51,13 +52,14 @@ app/config.py, db.py, logging_setup.py, seed.py
 static/index.html    shell; static/css/tokens.css (colori/spazi), app.css (componenti)
 static/js/main.js    avvio, routing hash, delega eventi alla vista attiva
 static/js/{api,store,ui,util,constants}.js
+static/js/{platform,cache,sync}.js  app autonoma: ambiente e token, copia locale, fusione e giorno senza rete
 static/js/stats.js   calcoli puri (medie, record, costanza, tacche); static/js/chart.js grafico a linea SVG
 static/js/timeline.js  linea del tempo di Oggi: calcoli puri + puntatore live
 static/js/views/     dashboard (riquadri, linea del tempo live, settimana), training (logger), meals (diario/piano/abituali), shopping, progress, settings (+ promemoria)
 static/js/reminders.js  motore promemoria in app + popup di inserimento rapido (pasto, pesata, altri)
 static/js/workout/   queue.js (coda offline), timer.js (recupero + preferenze)
 tests/               pytest; tests/e2e/ Playwright
-scripts/             backup.sh, restore.sh, check.sh, e2e.sh, deploy.sh, build-apk.sh (deploy-m1.sh: storico)
+scripts/             backup.sh, restore.sh, check.sh, e2e.sh, deploy.sh, build-apk.sh [URL] [stable|next], bundle-www.sh (deploy-m1.sh: storico)
 mobile/              progetto Capacitor: package.json (versioni esatte), www/offline.html, build/ (Dockerfile + build-inside.sh)
 static/js/native.js  integrazione Android (no-op nel browser); static/js/schedule.js calcolo notifiche
 resources/           scheda-originale.pdf
@@ -121,4 +123,4 @@ Repository dedicato in `/opt/fitweek-app` (branch `main`). `.env`, DB e backup s
 
 - Audit iniziale: `docs/AUDIT-2026-11-09.md`.
 - Milestone e avanzamento: `docs/ROADMAP.md`.
-- Problemi noti aperti: server raggiungibile solo in LAN (in palestra serve VPN, es. Tailscale; poi ricompilare l'APK con l'URL VPN); app non provata su un telefono reale; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche per i piatti della mensa; sonno solo a mano (importazione dall'orologio via Health Connect da valutare, D-019); prezzi reali per articolo e lista generata dal piano (M5); grafico del girovita e confronto tra settimane (M3); link video `b4` da verificare.
+- Problemi noti aperti: server raggiungibile solo in LAN (l'app autonoma lavora senza rete e invia al rientro; per sincronizzare fuori casa serve una VPN, l'indirizzo si cambia dalla schermata di accesso); nessun APK provato su un telefono reale, nemmeno quello autonomo; tappa 2 (modello IA sul telefono per il menu della mensa) da fare; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche per i piatti della mensa; sonno solo a mano (importazione dall'orologio via Health Connect da valutare, D-019); prezzi reali per articolo e lista generata dal piano (M5); grafico del girovita e confronto tra settimane (M3); link video `b4` da verificare.

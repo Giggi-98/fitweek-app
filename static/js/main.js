@@ -1,6 +1,7 @@
 // Avvio, routing (hash) e delega degli eventi verso la vista attiva.
 import { request } from "./api.js";
-import { app, loadAll, refreshDaily, refreshWorkouts } from "./store.js";
+import { serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
+import { app, loadAll, refreshDaily, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, initModal, toast } from "./ui.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
@@ -47,13 +48,21 @@ function hydrateIcons(root = document) {
 hydrateIcons();
 app.render = render;
 
-function showLogin() {
+function showLogin(message = "") {
   $("#boot")?.classList.add("hidden");
   $("#login").classList.remove("hidden");
   $("#shell").classList.add("hidden");
+  if (standalone) {
+    $("#server-field").classList.remove("hidden");
+    if (!$("#srv").value) $("#srv").value = serverUrl();
+  }
+  $("#login-error").textContent = message;
   $("#login input[name=password]")?.focus();
 }
-app.onUnauthorized = showLogin;
+app.onUnauthorized = () => {
+  setToken(null); // nell'app autonoma il token non è più valido: si rifà l'accesso
+  showLogin();
+};
 
 function route() {
   const name = location.hash.replace("#", "") || "dashboard";
@@ -83,10 +92,14 @@ function route() {
 
 let started = false;
 async function boot() {
+  if (standalone && !token()) return showLogin();
   try {
     await loadAll();
   } catch (e) {
-    if (e.status === 401) return showLogin();
+    if (e.status === 401) return app.onUnauthorized();
+    // App autonoma senza rete e senza una copia locale (primo avvio): si torna all'accesso, dove si può
+    // anche correggere l'indirizzo del server.
+    if (standalone) return showLogin(`Server non raggiungibile (${e.message}). Controlla la rete o l'indirizzo.`);
     $("#boot").textContent = `Impossibile caricare i dati (${e.message}). Riprova tra poco.`;
     return;
   }
@@ -128,6 +141,7 @@ document.addEventListener("click", async (e) => {
   if (e.target.closest("#rest-stop")) return stopRest();
   if (e.target.closest("#logout")) {
     await request("/api/logout", { method: "POST" }).catch(() => {});
+    setToken(null);
     return location.reload();
   }
   const target = e.target.closest("button, [data-action], [role=button]");
@@ -166,9 +180,14 @@ document.addEventListener("submit", async (e) => {
   const data = Object.fromEntries(new FormData(form));
   if (form.id === "login-form") {
     try {
-      await request("/api/login", { method: "POST", body: { password: data.password } });
+      if (standalone) {
+        if (!validServerUrl(data.server)) throw new Error("Indirizzo del server non valido (es. http://192.168.222.200:8088)");
+        setServerUrl(data.server);
+      }
+      const out = await request("/api/login", { method: "POST", body: { password: data.password, ...(standalone ? { client: "app" } : {}) } });
+      if (standalone) setToken(out.token);
       $("#login-error").textContent = "";
-      form.reset();
+      $("#pw").value = "";
       await boot();
     } catch (err) {
       $("#login-error").textContent = err.message;
@@ -186,6 +205,7 @@ document.addEventListener("submit", async (e) => {
 document.addEventListener("visibilitychange", async () => {
   if (document.visibilityState !== "visible" || !app.state) return;
   await flush();
+  await syncState();
   if (pendingCount()) return; // dati locali più recenti del server: non sovrascrivere
   try {
     await Promise.all([refreshWorkouts(), refreshDaily()]);
@@ -195,5 +215,9 @@ document.addEventListener("visibilitychange", async () => {
     /* offline: resta con i dati locali */
   }
 });
+
+// Al ritorno della rete partono anche le modifiche allo stato rimaste sul telefono.
+window.addEventListener("online", () => syncState());
+setInterval(() => app.state && syncState(), 20_000);
 
 boot();

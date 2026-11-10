@@ -2,6 +2,7 @@
 import { CARDIO_MIN, PROGRAM_WEEKS, ROUTINES, cardioBpm } from "../constants.js";
 import { icon } from "../icons.js";
 import { bump, confetti, haptic, pop, ring } from "../motion.js";
+import { standalone } from "../platform.js";
 import { bestLoads, isRecord } from "../stats.js";
 import { app, refreshWorkouts } from "../store.js";
 import { openModal, toast } from "../ui.js";
@@ -155,7 +156,7 @@ function renderStart() {
   <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>
   </div><div class="train-col">
   <section class="panel">
-    <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3><a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a></div>
+    <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3>${standalone ? "" : `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a>`}</div>
     <div class="ex-preview">
     ${exs
       .map((ex, i) => {

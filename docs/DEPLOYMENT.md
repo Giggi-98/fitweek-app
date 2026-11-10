@@ -11,7 +11,7 @@
 | Volume | **esterno** `fitweek_data` → `/data` (DB `/data/fitweek.sqlite`, uid 10001; backup pre-migrazione in `/data/backups`). Il vecchio `fitweek-app_fitweek_data` (stato al 2026-11-09, versione 4) è conservato come copia: rimuoverlo solo con autorizzazione |
 | Healthcheck | `GET http://127.0.0.1:8080/api/health` ogni 30 s (definito in compose) |
 | Restart | `unless-stopped` |
-| Config | `.env` (non versionato): `APP_PASSWORD`, `SESSION_SECRET`, `COOKIE_SECURE`, `DB_PATH`, `FOOD_SEARCH` (`on` predefinito; `off` spegne la ricerca su Open Food Facts) |
+| Config | `.env` (non versionato): `APP_PASSWORD`, `SESSION_SECRET`, `COOKIE_SECURE`, `DB_PATH`, `FOOD_SEARCH` (`on` predefinito; `off` spegne la ricerca su Open Food Facts), `APP_ORIGINS` (origini dell'app Android autonoma ammesse via CORS; il predefinito va bene) |
 | TZ container | `Europe/Rome` |
 | Backup automatico | timer systemd `fitweek-backup.timer` ogni giorno alle 03:30 → `/opt/backups/fitweek/fitweek-auto-*.sqlite` (14 conservati) |
 
@@ -61,3 +61,8 @@ Esposizione solo LAN. Per uso fuori casa: VPN (WireGuard/Tailscale) oppure rever
 
 ## Rete in uscita (dalla 1.8)
 Il container fa una sola chiamata verso l'esterno: `https://search.openfoodfacts.org` quando l'utente cerca un prodotto (D-018). Se la rete in uscita è bloccata l'app funziona ugualmente, senza i risultati online.
+
+## APK: due canali (dalla 1.9)
+- `scripts/build-apk.sh [URL] stable` → `mobile/dist/fitweek.apk`: guscio che carica la webapp dal server (D-016).
+- `scripts/build-apk.sh [URL] next` → `mobile/dist/fitweek-next.apk`: app autonoma con le pagine dentro (D-021), appId `app.fitweek.personal.next`, installabile accanto alla stable. Va ricompilata a ogni modifica del frontend, perché le pagine non arrivano più dal server.
+L'indirizzo del server si può cambiare dalla schermata di accesso dell'app (utile con una VPN), senza ricompilare.

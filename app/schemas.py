@@ -5,7 +5,7 @@ I modelli rifiutano campi sconosciuti: se il frontend aggiunge un campo, va aggi
 impediscono tipi errati (es. HTML al posto di un numero) e payload anomali.
 """
 from datetime import date as _date
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Literal, Optional
 
 from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
 
@@ -122,11 +122,11 @@ class StatePut(Strict):
 
 class LoginBody(Strict):
     password: Text(256)
+    # "app": l'app Android autonoma non può usare il cookie (origine diversa) e riceve il token nel corpo.
+    client: Literal["web", "app"] = "web"
 
 
 # ---- API v1: allenamenti -------------------------------------------------------------------
-from typing import Literal  # noqa: E402
-
 IsoDateTime = Annotated[str, StringConstraints(pattern=r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(:\d{2}(\.\d+)?)?([+-]\d{2}:\d{2}|Z)?$")]
 SessionStatus = Literal["in_progress", "done", "skipped"]
 

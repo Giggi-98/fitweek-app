@@ -146,7 +146,7 @@ def test_apk_download_requires_login_and_serves_file(tmp_path):
     c = _apk_client(tmp_path, True)
     assert c.get("/api/v1/app/android/download").status_code == 401
     c.post("/api/login", json={"password": PASSWORD})
-    assert c.get("/api/v1/app/android").json() == {"available": True, "version": "1.4.0", "size": 8}
+    assert c.get("/api/v1/app/android").json() == {"available": True, "version": "1.4.0", "size": 8, "next": None}
     r = c.get("/api/v1/app/android/download")
     assert r.status_code == 200 and r.headers["content-type"] == "application/vnd.android.package-archive"
     assert 'fitweek-1.4.0.apk' in r.headers["content-disposition"] and r.content.startswith(b"PK")
@@ -155,7 +155,7 @@ def test_apk_download_requires_login_and_serves_file(tmp_path):
 def test_apk_missing(tmp_path):
     c = _apk_client(tmp_path, False)
     c.post("/api/login", json={"password": PASSWORD})
-    assert c.get("/api/v1/app/android").json() == {"available": False}
+    assert c.get("/api/v1/app/android").json() == {"available": False, "next": None}
     assert c.get("/api/v1/app/android/download").status_code == 404
 
 

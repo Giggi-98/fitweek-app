@@ -22,6 +22,10 @@
         <h1>FitWeek</h1>
         <p>La tua settimana, sotto controllo.</p>
         <form id="login-form">
+          <div id="server-field" class="field hidden">
+            <label for="srv">Indirizzo del server</label>
+            <input id="srv" name="server" inputmode="url" autocapitalize="none" autocomplete="off" spellcheck="false" placeholder="http://192.168.222.200:8088" />
+          </div>
           <label for="pw">Password</label>
           <input id="pw" type="password" name="password" required autocomplete="current-password" />
           <button class="btn primary xl full" type="submit">Entra</button>
