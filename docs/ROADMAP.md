@@ -90,7 +90,7 @@ Accettazione: dati calcolati distinti visivamente dai registrati; grafici con al
 - Sicurezza: CSP senza `'unsafe-inline'` (D-017).
 - Test: e2e non più dipendenti dal giorno della settimana (2 controlli fallivano dal martedì alla domenica).
 
-Verificato: 62 pytest, 14 test JS, 68 controlli e2e su container usa-e-getta. Non verificato: telefono reale. Non ancora in produzione (deploy da autorizzare).
+Verificato: 62 pytest, 14 test JS, 68 controlli e2e su container usa-e-getta. Non verificato: telefono reale. In produzione dal 2026-11-10 (container healthy, schema 6 invariato).
 Restano per M3: misure aggiuntive oltre a peso e girovita, confronto tra settimane, grafico del girovita.
 
 ## M4 — Alimentazione, promemoria in app, riepilogo settimanale ✅
