@@ -42,3 +42,4 @@ Stack: Python 3.12, FastAPI, SQLite, frontend JavaScript senza build e senza CDN
 - Roadmap completa in `docs/ROADMAP.md`.
 # fitweek-app
 # fitweek-app
+# fitweek-app
