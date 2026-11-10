@@ -40,3 +40,4 @@ Stack: Python 3.12, FastAPI, SQLite, frontend JavaScript senza build e senza CDN
 - Nessun calcolo nutrizionale; le indicazioni sono orientative, non prescrizioni mediche.
 - Le frequenze cardiache della scheda sono riferimenti del PDF, non obiettivi personalizzati.
 - Roadmap completa in `docs/ROADMAP.md`.
+# fitweek-app
