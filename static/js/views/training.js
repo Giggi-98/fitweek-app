@@ -2,6 +2,7 @@
 import { CARDIO_MIN, PROGRAM_WEEKS, ROUTINES, cardioBpm } from "../constants.js";
 import { icon } from "../icons.js";
 import { bump, confetti, haptic, pop, ring } from "../motion.js";
+import { bestLoads, isRecord } from "../stats.js";
 import { app, refreshWorkouts } from "../store.js";
 import { toast } from "../ui.js";
 import { $, clamp, esc, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
@@ -139,14 +140,15 @@ function renderStart() {
   </div></div>`;
 }
 
-function setRow(session, ex, idx, prev, ed, planned) {
+function setRow(session, ex, idx, prev, ed, planned, best) {
   const own = logged(session, ex.id, idx);
   const done = own?.completed;
+  const record = done && isRecord(best, ex.id, own.kg);
   const v = suggestion(session, ex, idx, prev, ed);
   const extra = idx > planned;
   const just = ui.justDone === `${ex.id}:${idx}` ? "just-done" : "";
   return `<div class="set-row ${done ? "done" : ""} ${extra ? "extra" : ""} ${just}" data-ex="${esc(ex.id)}" data-idx="${idx}">
-    <span class="set-num" aria-label="Serie ${idx}">${idx}</span>
+    <span class="set-num ${record ? "pr" : ""}" aria-label="Serie ${idx}${record ? ", record di carico" : ""}"${record ? ' title="Record di carico"' : ""}>${record ? icon("trophy", "sm") : idx}</span>
     <div class="stepper"><button type="button" data-step="kg" data-dir="-1" aria-label="Meno peso">${icon("minus")}</button><input data-field="kg" type="text" inputmode="decimal" autocomplete="off" aria-label="Peso serie ${idx} ${esc(ex.name)}" placeholder="kg" value="${esc(v.kg == null ? "" : String(v.kg).replace(".", ","))}"><button type="button" data-step="kg" data-dir="1" aria-label="Più peso">${icon("plus")}</button></div>
     <div class="stepper"><button type="button" data-step="reps" data-dir="-1" aria-label="Meno ripetizioni">${icon("minus")}</button><input data-field="reps" type="text" inputmode="numeric" autocomplete="off" aria-label="Ripetizioni serie ${idx} ${esc(ex.name)}" placeholder="${esc(String(ex.reps).split(/[–-]/)[0])}" value="${esc(v.reps ?? "")}"><button type="button" data-step="reps" data-dir="1" aria-label="Più ripetizioni">${icon("plus")}</button></div>
     <button type="button" class="set-check" data-check aria-pressed="${done ? "true" : "false"}" aria-label="${done ? "Annulla serie" : "Serie fatta"} ${idx}">${icon("check")}</button>
@@ -159,6 +161,7 @@ function renderActive(session) {
   const exs = routineExercises(session.routine);
   const { planned, done } = progressOf(session);
   const info = ROUTINES[session.routine];
+  const best = bestLoads(app.sessions, session.id);
   const nextEx = exs.find((ex) => setsOf(session, ex.id).filter((s) => s.completed).length < plannedSets(ex, session.week));
   const html = `
   <section class="wk-header">
@@ -194,7 +197,7 @@ function renderActive(session) {
         ${open ? `
         ${prev.length ? `<div class="ex-last">Ultima volta${prevSession ? ` (${esc(fmtDate(prevSession.date))}, W${esc(prevSession.week)})` : ""}: ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
         <div class="set-legend" aria-hidden="true"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
-        ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, p)).join("")}
+        ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, p, best)).join("")}
         <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">${icon("plus", "sm")}Serie extra</button>` : ""}
       </section>`;
     })
@@ -219,6 +222,7 @@ function renderSummary(s) {
   const prev = lastDone(s.routine, s.id);
   const prevVol = prev ? volume(prev) : null;
   const diff = prevVol ? Math.round(((vol - prevVol) / prevVol) * 100) : null;
+  const records = recordsOf(s);
   return `<section class="hero finish">
     <div class="trophy">${icon("trophy")}</div>
     <div><span class="eyebrow">Seduta completata · ${esc(fmtDate(s.date))}</span><h2>Giorno ${esc(s.routine)} · W${esc(s.week)}</h2></div>
@@ -228,8 +232,20 @@ function renderSummary(s) {
       <div class="metric"><div class="metric-label">Volume <span class="badge-calc">calc.</span></div><div class="metric-value"><span data-count="${Math.round(vol)}">${fmtNum(vol, 0)}</span><small> kg</small></div></div>
     </div>
     <p class="subtle">${diff == null ? "Volume = Σ kg × ripetizioni." : `Volume ${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}.`} ${done < planned ? `${planned - done} serie non segnate: va bene, conta la costanza.` : "Tutte le serie fatte."}${s.cardio_min ? " Cardio ✓." : ""}</p>
+    ${records.length ? `<div class="record-note">${icon("trophy", "sm")}<span>${records.length === 1 ? "Record di carico" : `${records.length} record di carico`}: ${esc(records.map((r) => `${r.name} ${fmtNum(r.kg)} kg`).join(" · "))}</span></div>` : ""}
     <button class="btn primary xl full" data-close-summary>Fatto</button>
   </section>`;
+}
+
+/** Esercizi in cui la seduta ha superato il carico massimo precedente (uno per esercizio). */
+function recordsOf(session) {
+  const best = bestLoads(app.sessions, session.id);
+  return routineExercises(session.routine)
+    .map((ex) => {
+      const loads = setsOf(session, ex.id).filter((x) => x.completed && x.kg != null).map((x) => x.kg);
+      return { id: ex.id, name: ex.name, kg: loads.length ? Math.max(...loads) : null };
+    })
+    .filter((r) => isRecord(best, r.id, r.kg));
 }
 
 // ---- azioni -------------------------------------------------------------------------------
@@ -285,7 +301,7 @@ function toggleSet(row) {
   delete ed.values[`${exId}:${idx}`];
   saveEdits(ed);
   startRest();
-  haptic(15);
+  haptic(isRecord(bestLoads(app.sessions, s.id), exId, v.kg) ? [15, 40, 15, 40, 40] : 15);
   ui.justDone = `${exId}:${idx}`;
   const ex = routineExercises(s.routine).find((e) => e.id === exId);
   if (ex && setsOf(s, exId).filter((x) => x.completed).length === plannedSets(ex, s.week)) {

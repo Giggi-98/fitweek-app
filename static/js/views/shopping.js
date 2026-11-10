@@ -2,7 +2,17 @@
 import { app, persistState } from "../store.js";
 import { empty, panel, sectionTitle, stat, toast } from "../ui.js";
 import { icon } from "../icons.js";
-import { esc, money, num, uid } from "../util.js";
+import { dayNumber } from "../stats.js";
+import { esc, fmtDate, isoDate, money, num, uid } from "../util.js";
+
+/** Scadenza in parole, con evidenza (non allarme) per ciò che scade entro 3 giorni. */
+function expiryLabel(iso) {
+  if (!iso) return "";
+  const days = dayNumber(iso) - dayNumber(isoDate());
+  const when = days < 0 ? `scaduto il ${fmtDate(iso)}` : days === 0 ? "scade oggi" : days === 1 ? "scade domani" : days <= 3 ? `scade tra ${days} giorni` : `scade ${fmtDate(iso)}`;
+  return ` · <span class="${days <= 3 ? "pantry-soon" : ""}">${esc(when)}</span>`;
+}
+const byExpiry = (a, b) => (a.expiry || "9999").localeCompare(b.expiry || "9999");
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
 
@@ -20,7 +30,7 @@ export function render() {
     `<div class="metrics">${stat("Totale stimato", money(total), "prezzi da verificare su Esselunga")}${stat("Da prendere", money(remaining), "articoli non spuntati")}${stat("Budget", money(budget), "settimanale")}${stat("Dispensa", app.state.inventory.length, "alimenti censiti")}</div>
     <div class="twocol"><div class="stack">${panel(
       "Lista della spesa",
-      `<div class="bar ${total > budget ? "over" : ""}"><div style="width:${ratio}%"></div></div>
+      `<div class="bar ${total > budget ? "over" : ""}"><div data-pct-w="${ratio}"></div></div>
       <p class="subtle">${total > budget ? "<strong>Oltre il budget stimato.</strong>" : "Nel budget stimato (consegna esclusa)."} I prezzi sono stime inserite a mano, non quotazioni.</p>
       ${categories
         .map(
@@ -34,13 +44,13 @@ export function render() {
               .join("")}`,
         )
         .join("") || empty("Lista vuota", "Aggiungi i prodotti qui sotto.")}
-      <div class="button-row"><button class="btn small" data-copy-shopping>Copia lista</button><button class="btn small" data-clear-shopping>Deseleziona tutto</button></div>`,
+      <div class="button-row"><button class="btn small" data-copy-shopping>Copia lista</button><button class="btn small" data-clear-shopping>Deseleziona tutto</button>${g.some((x) => x.checked) ? `<button class="btn small" data-to-pantry>${icon("package", "sm")}Spuntati → dispensa</button>` : ""}</div>`,
     )}${panel(
       "Aggiungi alla spesa",
       `<form id="shopping-form" class="stack"><div class="form-grid"><div class="field"><label for="sh-name">Prodotto</label><input id="sh-name" name="name" required maxlength="120" placeholder="es. Banane"></div><div class="field"><label for="sh-qty">Quantità</label><input id="sh-qty" name="qty" required maxlength="60" placeholder="es. 1 kg"></div><div class="field"><label for="sh-price">Prezzo stimato (€)</label><input id="sh-price" name="price" type="number" min="0" step="0.01" value="0" inputmode="decimal"></div><div class="field"><label for="sh-cat">Categoria</label><select id="sh-cat" name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">+ Aggiungi prodotto</button></form>`,
     )}</div><div class="stack">${panel(
       "Dispensa",
-      `${app.state.inventory.length ? app.state.inventory.map((x) => `<div class="entry"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${x.expiry ? " · scade " + esc(x.expiry) : ""}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("") : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
+      `${app.state.inventory.length ? [...app.state.inventory].sort(byExpiry).map((x) => `<div class="entry"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${expiryLabel(x.expiry)}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("") : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
       <hr class="separator"><form id="inventory-form" class="stack"><div class="field"><label for="in-name">Alimento</label><input id="in-name" name="name" required maxlength="120" placeholder="es. Riso"></div><div class="form-grid"><div class="field"><label for="in-qty">Quantità</label><input id="in-qty" name="qty" required maxlength="60" placeholder="es. 300 g"></div><div class="field"><label for="in-exp">Scadenza (facoltativa)</label><input id="in-exp" name="expiry" type="date"></div></div><button class="btn primary" type="submit">+ Aggiungi in dispensa</button></form>`,
     )}${panel("Da ricordare", '<div class="inline-note">Nessuna integrazione con Esselunga: copia la lista e verifica prezzi, disponibilità e ordine minimo sul sito.</div><div class="inline-note warn"><strong>Conservazione:</strong> sottovuoto non significa conservabile senza limiti. Segui etichetta e temperatura.</div>')}</div></div>`
   );
@@ -60,6 +70,17 @@ export async function onClick(t) {
   if (t.matches("[data-clear-shopping]")) {
     app.state.groceries.forEach((x) => (x.checked = false));
     persistState();
+    return true;
+  }
+  if (t.matches("[data-to-pantry]")) {
+    // La spesa è arrivata: ciò che è spuntato entra in dispensa (senza doppioni) ed esce dalla lista.
+    const bought = app.state.groceries.filter((x) => x.checked);
+    const have = new Set(app.state.inventory.map((x) => x.name.trim().toLowerCase()));
+    for (const x of bought) {
+      if (!have.has(x.name.trim().toLowerCase())) app.state.inventory.push({ id: uid(), name: x.name, qty: x.qty, expiry: "" });
+    }
+    app.state.groceries = app.state.groceries.filter((x) => !x.checked);
+    if (await persistState()) toast(`${bought.length} ${bought.length === 1 ? "prodotto spostato" : "prodotti spostati"} in dispensa`);
     return true;
   }
   if (t.matches("[data-copy-shopping]")) {

@@ -116,7 +116,9 @@ def test_oversized_state_rejected(tmp_path):
 
 def test_security_headers(client):
     r = client.get("/")
-    assert "default-src 'self'" in r.headers["Content-Security-Policy"]
+    csp = r.headers["Content-Security-Policy"]
+    assert "default-src 'self'" in csp
+    assert "unsafe-inline" not in csp and "style-src 'self'" in csp
     assert r.headers["X-Content-Type-Options"] == "nosniff"
     assert r.headers["X-Frame-Options"] == "DENY"
     assert client.get("/api/health").headers["Cache-Control"] == "no-store"
@@ -155,3 +157,13 @@ def test_apk_missing(tmp_path):
     c.post("/api/login", json={"password": PASSWORD})
     assert c.get("/api/v1/app/android").json() == {"available": False}
     assert c.get("/api/v1/app/android/download").status_code == 404
+
+
+def test_frontend_has_no_inline_styles():
+    """La CSP vieta gli attributi style: il frontend deve usare classi o data-* (ui.js applyDynamicStyles)."""
+    from pathlib import Path
+
+    static = Path(__file__).resolve().parent.parent / "static"
+    offenders = [str(f.relative_to(static)) for f in [*static.rglob("*.js"), *static.rglob("*.html")]
+                 if 'style="' in f.read_text(encoding="utf-8") or "<style" in f.read_text(encoding="utf-8")]
+    assert offenders == []

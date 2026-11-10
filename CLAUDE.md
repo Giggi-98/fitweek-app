@@ -21,18 +21,18 @@ Uomo, 28 anni, 166 cm, peso iniziale 90 kg, lavoro sedentario. Obiettivo: ricomp
 
 I dati corporei cambiano nel tempo: **mai sovrascrivere lo storico**, solo aggiungere misurazioni.
 
-## Stack reale (aggiornato con M2, 2026-11-09)
+## Stack reale (aggiornato con 1.7, 2026-11-10)
 
-- Backend: Python 3.12, FastAPI 0.128, uvicorn (`app.main:create_app --factory`), Pydantic, itsdangerous (firma ID sessione). Sessioni server-side revocabili, rate limit login, CSP + header di sicurezza, log JSON.
+- Backend: Python 3.12, FastAPI 0.128, uvicorn (`app.main:create_app --factory`), Pydantic, itsdangerous (firma ID sessione). Sessioni server-side revocabili, rate limit login, CSP senza `unsafe-inline` + header di sicurezza, log JSON.
 - DB: SQLite (WAL) `/data/fitweek.sqlite`. Migrazioni versionate in `app/migrations.py` con backup automatico pre-migrazione.
   - Allenamenti: tabelle `workout_sessions` + `set_logs` (API `/api/v1/...`, scritture idempotenti per serie).
   - Pasti composti (1.6): `meal_logs.items` = vassoio di voci {name, category, qty, kcal/protein per porzione, source, takeaway}; i totali del pasto sono SEMPRE ricalcolati dal server dalle voci, escluse quelle "porto a casa" (il secondo della mensa, che si conta a cena: `/api/v1/takeaway`). Catalogo `foods` per categoria come il menu della mensa (Primi, Salse, Secondi, Contorni, Piatto unico, Frutta, Dessert, Pane, Altro), seminato con stime e che impara i piatti inseriti. Abitudine utente: dopo la palestra ~2 pagnottine (~200 g) con il secondo.
   - Tutto ciò che si registra è modificabile dopo (pasti dal diario → editor `static/js/composer.js`; pesate e sedute passate da Progressi), con ricalcolo immediato di totali, medie e volumi.
   - Pasti e giornata (M4): `meal_logs` (diario), `meal_templates` (pasti abituali con valori marcati `estimate|label|manual`), `reminders` (un promemoria per ogni evento della routine, modificabili) + `reminder_acks` (fatto/non oggi/posticipa). `/api/v1/agenda` segna da solo come fatti i promemoria quando il pasto/pesata/seduta viene registrato; `/api/v1/weekly-summary` dà calorie e proteine **teoriche** con la copertura dei dati.
   - Altri domini (profilo, scheda `routines`, pasti, spesa, dispensa, pesate): ancora nel blob JSON `app_state` (`/api/state`, controllo 409), validato da `app/schemas.py`. Il campo `workouts` del blob è congelato (copiato in tabella dalla migrazione 4, non più scritto).
-- Frontend: ES modules nativi senza build né CDN (`static/js/`), CSS a token con tema chiaro/scuro (`static/css/`). Coda offline idempotente per le scritture di allenamento e pasti, timer recupero basato su orario di fine. `static/js/reminders.js`: controlla l'agenda ogni minuto **con l'app aperta** e apre il popup giusto (`<dialog>`); nessuna notifica a schermo spento finché non c'è l'app nativa (D-013).
+- Frontend: ES modules nativi senza build né CDN (`static/js/`), CSS a token con tema chiaro/scuro (`static/css/`). Coda offline idempotente per le scritture di allenamento e pasti (errori 5xx/429 ritentati, solo i 4xx scartati con avviso), timer recupero basato su orario di fine. **Nessun attributo `style` nell'HTML generato** (lo vieta la CSP, c'è un test): le dimensioni dinamiche passano da `data-pct-h`/`data-pct-w`/`data-vars`, applicate da `applyDynamicStyles()` in `static/js/ui.js`. Progressi (1.7): calcoli puri in `static/js/stats.js` (media mobile 7 giorni, storia e record per esercizio, costanza), grafico a linea riusabile in `static/js/chart.js`. `static/js/reminders.js`: controlla l'agenda ogni minuto **con l'app aperta** e apre il popup giusto (`<dialog>`); nessuna notifica a schermo spento finché non c'è l'app nativa (D-013).
 - App Android (M6): shell Capacitor 6 in `mobile/` che carica la webapp da `server.url` (HTTP LAN, cleartext) e programma **notifiche locali** dei promemoria (prossimi 14 giorni, riallineate a ogni apertura/modifica) tramite `static/js/native.js` + `static/js/schedule.js` (funzione pura). Pagina offline inclusa nell'APK. Build in Docker con `scripts/build-apk.sh` → `mobile/dist/` (bind mount in sola lettura su `/app/downloads`), download dopo login da Impostazioni. Chiave di firma in `/opt/fitweek-secrets/` (mai nel repo; perderla = non poter aggiornare l'app installata).
-- Test: pytest (`tests/`, 61; con date ISO validate davvero, non solo nel formato) + test JS puri (`tests/js/*.test.mjs`, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 59 controlli, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
+- Test: pytest (`tests/`, 62; con date ISO validate davvero, non solo nel formato) + test JS puri (`tests/js/*.test.mjs`, 14, `node --test`) via `scripts/check.sh`; e2e Playwright (`tests/e2e/*.e2e.js`, 68 controlli, indipendenti dal giorno della settimana, incluso un bridge Capacitor simulato, viewport iPhone + desktop, un container nuovo per file) via `scripts/e2e.sh`. I test e2e disattivano i promemoria predefiniti per non dipendere dall'ora reale.
 
 ## Struttura
 
@@ -48,6 +48,7 @@ app/config.py, db.py, logging_setup.py, seed.py
 static/index.html    shell; static/css/tokens.css (colori/spazi), app.css (componenti)
 static/js/main.js    avvio, routing hash, delega eventi alla vista attiva
 static/js/{api,store,ui,util,constants}.js
+static/js/stats.js   calcoli puri (medie, record, costanza, tacche); static/js/chart.js grafico a linea SVG
 static/js/views/     dashboard (agenda + settimana), training (logger), meals (diario/piano/abituali), shopping, progress, settings (+ promemoria)
 static/js/reminders.js  motore promemoria in app + popup di inserimento rapido (pasto, pesata, altri)
 static/js/workout/   queue.js (coda offline), timer.js (recupero + preferenze)
@@ -116,4 +117,4 @@ Repository dedicato in `/opt/fitweek-app` (branch `main`). `.env`, DB e backup s
 
 - Audit iniziale: `docs/AUDIT-2026-11-09.md`.
 - Milestone e avanzamento: `docs/ROADMAP.md`.
-- Problemi noti aperti: server raggiungibile solo in LAN (in palestra serve VPN, es. Tailscale; poi ricompilare l'APK con l'URL VPN); app non provata su un telefono reale; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche; stili inline residui (CSP `style-src 'unsafe-inline'`); RIR/RPE senza UI; link video `b4` da verificare.
+- Problemi noti aperti: server raggiungibile solo in LAN (in palestra serve VPN, es. Tailscale; poi ricompilare l'APK con l'URL VPN); app non provata su un telefono reale; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche; RIR/RPE senza UI; note per singolo esercizio; spesa e dispensa ancora senza storico/budget reale (M5); link video `b4` da verificare.

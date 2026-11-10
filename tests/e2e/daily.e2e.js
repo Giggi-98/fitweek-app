@@ -36,6 +36,13 @@ function romeMinuteAgo() {
   const pick = ({ weekday: w, time: t, kind, slot, title, action }) => ({ weekday: w, time: t, kind, slot, title, action });
   for (const r of all.filter((x) => x.weekday === weekday)) await api(`/api/v1/reminders/${r.id}`, 'PUT', { ...pick(r), enabled: false });
 
+  // Il piano di oggi propone "Banana" in qualsiasi giorno della settimana giri il test
+  // (prima dipendeva dal piano predefinito del lunedì e falliva negli altri giorni).
+  const plan = await api('/api/state');
+  const dayName = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'][weekday];
+  plan.data.meals[dayName] = { ...plan.data.meals[dayName], pre: 'Banana' };
+  await api('/api/state', 'PUT', { version: plan.version, data: plan.data });
+
   // 1. Popup pasto → un tocco su un pasto abituale
   await addReminder('e2e-meal', { kind: 'meal', slot: 'pre_workout', action: 'log_meal', title: 'Spuntino pre-palestra' });
   await page.reload();

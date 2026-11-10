@@ -1,7 +1,7 @@
 // Avvio, routing (hash) e delega degli eventi verso la vista attiva.
 import { request } from "./api.js";
-import { app, loadAll, refreshWorkouts } from "./store.js";
-import { initModal, toast } from "./ui.js";
+import { app, loadAll, refreshDaily, refreshWorkouts } from "./store.js";
+import { applyDynamicStyles, initModal, toast } from "./ui.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
 import { $, $$, fmtDate } from "./util.js";
@@ -33,6 +33,7 @@ function render() {
   const y = window.scrollY;
   $("#content").innerHTML = current().render();
   hydrateIcons($("#content"));
+  applyDynamicStyles($("#content"));
   window.scrollTo({ top: y });
 }
 
@@ -182,7 +183,8 @@ document.addEventListener("visibilitychange", async () => {
   await flush();
   if (pendingCount()) return; // dati locali più recenti del server: non sovrascrivere
   try {
-    await refreshWorkouts();
+    await Promise.all([refreshWorkouts(), refreshDaily()]);
+    $("#page-eyebrow").textContent = VIEWS[app.view].eyebrow?.() || ""; // il giorno può essere cambiato
     if (app.view !== "training") render();
   } catch {
     /* offline: resta con i dati locali */

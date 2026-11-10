@@ -1,4 +1,4 @@
-import { $, esc } from "./util.js";
+import { $, esc, num } from "./util.js";
 
 export function toast(message, { action, onAction, timeout = 4000 } = {}) {
   const node = $("#toast");
@@ -28,12 +28,26 @@ export const stat = (label, value, sub, { calc = false } = {}) =>
 export const empty = (title, text) => `<div class="data-empty"><strong>${title}</strong>${text}</div>`;
 export const pill = (text, kind = "") => `<span class="pill ${kind}">${esc(text)}</span>`;
 
+/** La CSP vieta gli attributi style: dimensioni e variabili dinamiche viaggiano in data-* e
+ *  vengono applicate qui via CSSOM dopo ogni inserimento di HTML (data-pct-h/-w in %, data-vars "nome:valore;…"). */
+export function applyDynamicStyles(root) {
+  root.querySelectorAll("[data-pct-h]").forEach((el) => (el.style.height = `${num(el.dataset.pctH)}%`));
+  root.querySelectorAll("[data-pct-w]").forEach((el) => (el.style.width = `${num(el.dataset.pctW)}%`));
+  root.querySelectorAll("[data-vars]").forEach((el) => {
+    for (const pair of el.dataset.vars.split(";")) {
+      const [name, value] = pair.split(":");
+      if (name && value) el.style.setProperty(`--${name.trim()}`, value.trim());
+    }
+  });
+}
+
 // ---- finestra modale (una alla volta) ------------------------------------------------------
 let modalHandler = null;
 /** Apre la modale con `html`; `handler(target)` riceve i click e restituisce true per chiudere. */
 export function openModal(html, handler) {
   const dlg = $("#modal");
   $("#modal-body").innerHTML = html;
+  applyDynamicStyles($("#modal-body"));
   modalHandler = handler;
   if (!dlg.open) dlg.showModal();
   dlg.querySelector("[autofocus]")?.focus();

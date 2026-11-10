@@ -4,6 +4,7 @@
 import { request } from "../api.js";
 import { setPending, setSync, app } from "../store.js";
 import { toast } from "../ui.js";
+import { isTransient } from "../stats.js";
 import { storage } from "../util.js";
 
 const KEY = "fitweek.workoutQueue.v1";
@@ -35,6 +36,9 @@ export function flush() {
   return running;
 }
 
+let retrying = false;
+const MAX_TRIES = 6; // errori del server ripetuti: dopo ~90 s di tentativi l'operazione viene scartata con avviso
+
 async function drain() {
   while (ops.length) {
     const op = ops[0];
@@ -46,12 +50,26 @@ async function drain() {
         app.onUnauthorized();
         break;
       }
-      // 4xx/5xx non recuperabili: scarta per non bloccare la coda, ma avvisa.
-      toast(`Una modifica all'allenamento non è stata accettata (${e.message}).`, { timeout: 6000 });
+      // Errore passeggero del server (riavvio, DB occupato): la serie resta in coda e si ritenta.
+      if (isTransient(e.status) && (op.tries = (op.tries || 0) + 1) < MAX_TRIES) {
+        save();
+        retrying = true;
+        setSync("error");
+        break;
+      }
+      // Rifiuto definitivo (4xx) o troppi tentativi: scarta per non bloccare la coda, ma avvisa.
+      toast(`Una modifica non è stata accettata dal server (${e.message}).`, { timeout: 6000 });
       setSync("error");
+      ops.shift();
+      save();
+      continue;
     }
     ops.shift();
     save();
+    if (retrying) {
+      retrying = false;
+      setSync("ok"); // l'errore mostrato era solo il tentativo fallito, ora recuperato
+    }
   }
   setPending(ops.length);
 }

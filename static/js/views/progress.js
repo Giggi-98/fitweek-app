@@ -1,16 +1,16 @@
 // Progressi: peso e girovita (registrati), medie settimanali (calcolate), storico e carichi.
 import { request } from "../api.js";
 import { app, persistState, refreshDaily, refreshWorkouts } from "../store.js";
-import { closeModal, empty, openModal, panel, sectionTitle, toast } from "../ui.js";
+import { lineChart } from "../chart.js";
+import { DAYS, GYM, PROGRAM_WEEKS, ROUTINES } from "../constants.js";
+import { consistency, exerciseHistory, mondayOf, movingAverage } from "../stats.js";
+import { closeModal, empty, openModal, panel, sectionTitle, stat, toast } from "../ui.js";
 import { enqueue, flush } from "../workout/queue.js";
 import { icon } from "../icons.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
 
-const mondayOf = (iso) => {
-  const d = new Date(iso + "T12:00:00");
-  d.setDate(d.getDate() - ((d.getDay() + 6) % 7));
-  return isoDate(d);
-};
+const ui = { exercise: null };
+const SCHEDULE = Object.fromEntries(DAYS.map((d, i) => [i, GYM[d]]).filter(([, r]) => r));
 
 /** Ultimi n giorni come opzioni (evita il campo data nativo, che segue la lingua del browser). */
 function lastDays(n) {
@@ -21,6 +21,9 @@ function lastDays(n) {
     return `<option value="${iso}">${k === 0 ? "Oggi" : k === 1 ? "Ieri" : esc(fmtDate(iso))}</option>`;
   }).join("");
 }
+
+const readings = () =>
+  [...app.state.weights].filter((a) => num(a.weight) > 0).sort((a, b) => a.date.localeCompare(b.date));
 
 function weeklyAverages() {
   const groups = new Map();
@@ -33,81 +36,86 @@ function weeklyAverages() {
     .map(([week, vals]) => ({ week, avg: vals.reduce((a, b) => a + b, 0) / vals.length, n: vals.length }));
 }
 
-function chart() {
-  const arr = [...app.state.weights].filter((a) => num(a.weight) > 0).sort((a, b) => a.date.localeCompare(b.date));
+const signed = (n, digits = 1) => `${n > 0 ? "+" : n < 0 ? "−" : ""}${fmtNum(Math.abs(n), digits)}`;
+
+function weightPanel() {
+  const arr = readings();
   if (!arr.length) return empty("Ancora nessuna pesata", "Inserisci il primo peso per vedere l'andamento.");
-  const vals = arr.map((x) => num(x.weight));
-  // Asse con valori "puliti" (passo 1 kg), almeno 3 kg di ampiezza.
-  let lo = Math.floor(Math.min(...vals) - 0.5);
-  let hi = Math.ceil(Math.max(...vals) + 0.5);
-  if (hi - lo < 3) hi = lo + 3;
-  const W = 640, H = 230, L = 40, R = 14, T = 14, B = 30;
-  const x = (i) => L + (arr.length === 1 ? 0.5 : i / (arr.length - 1)) * (W - L - R);
-  const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-  const pts = arr.map((a, i) => [x(i), y(num(a.weight))]);
-  const line = pts.map(([px, py]) => `${px.toFixed(1)},${py.toFixed(1)}`).join(" ");
-  const area = `M${pts[0][0].toFixed(1)},${H - B} L${line.replaceAll(" ", " L")} L${pts[pts.length - 1][0].toFixed(1)},${H - B} Z`;
-  const step = hi - lo > 8 ? 2 : 1;
-  const ticks = [];
-  for (let v = lo; v <= hi; v += step) ticks.push(v);
-  const data = arr.map((a, i) => ({ x: pts[i][0] / W, y: pts[i][1], d: fmtDate(a.date), w: fmtNum(a.weight) }));
+  const avg = movingAverage(arr);
+  const withAvg = arr.length >= 3; // con una o due pesate la media coincide con i punti: non aggiunge nulla
   const last = arr[arr.length - 1];
-  return `<div class="chart-wrap" data-points="${esc(JSON.stringify(data))}" data-w="${W}">
-    <svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Peso da ${fmtNum(vals[0])} a ${fmtNum(vals[vals.length - 1])} kg in ${arr.length} pesate. Valori nella tabella sotto.">
-      ${ticks.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}"/><text class="axis" x="${L - 8}" y="${y(v) + 4}" text-anchor="end">${v}</text>`).join("")}
-      ${arr.length > 1 ? `<path class="area" d="${area}"/><polyline class="line" pathLength="1" points="${line}"/>` : ""}
-      ${pts.map(([px, py]) => `<circle class="dot" cx="${px}" cy="${py}" r="4"/>`).join("")}
-      <text class="axis" x="${L}" y="${H - 8}">${esc(fmtDate(arr[0].date))}</text>
-      <text class="axis" x="${W - R}" y="${H - 8}" text-anchor="end">${esc(fmtDate(last.date))}</text>
-      <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}"/>
-      <circle class="hot" r="5" cx="0" cy="0"/>
-    </svg>
-    <div class="chart-tip"></div>
-  </div>`;
+  const nowAvg = avg[avg.length - 1];
+  const change = nowAvg.value - avg[0].value;
+  return `<div class="metrics three">
+      ${stat("Ultima pesata", `${fmtNum(last.weight)}<small> kg</small>`, esc(fmtDate(last.date)))}
+      ${stat("Media 7 gg", `${fmtNum(nowAvg.value)}<small> kg</small>`, `su ${nowAvg.n} ${nowAvg.n === 1 ? "pesata" : "pesate"}`, { calc: true })}
+      ${stat("Dall'inizio", arr.length > 1 ? `${signed(change)}<small> kg</small>` : "—", arr.length > 1 ? `media, dal ${esc(fmtDate(arr[0].date))}` : "serve una seconda pesata", { calc: true })}
+    </div>
+    ${lineChart({
+      points: arr.map((a) => ({ date: a.date, value: num(a.weight), tip: a.note || "" })),
+      overlay: withAvg ? { name: "media 7 gg", points: avg } : null,
+      dots: withAvg ? "raw" : "series",
+      unit: "kg",
+      label: `Peso da ${fmtNum(arr[0].weight)} a ${fmtNum(last.weight)} kg in ${arr.length} pesate. Valori nella tabella sotto.`,
+      legend: withAvg ? [["raw", "Pesata"], ["line", 'Media mobile 7 giorni <span class="badge-calc">calcolata</span>']] : [],
+    })}
+    <p class="subtle">Le oscillazioni da un giorno all'altro sono normali (acqua, sale, orario): guarda la media.</p>`;
 }
 
-// Mirino: si aggancia alla pesata più vicina al puntatore (il valore è anche nella tabella).
-function crosshair(e) {
-  const wrap = e.target.closest?.(".chart-wrap[data-points]");
-  document.querySelectorAll(".chart-wrap.hover").forEach((w) => w !== wrap && w.classList.remove("hover"));
-  if (!wrap) return;
-  const pts = JSON.parse(wrap.dataset.points);
-  const box = wrap.getBoundingClientRect();
-  const rel = (e.clientX - box.left) / box.width;
-  const p = pts.reduce((a, b) => (Math.abs(b.x - rel) < Math.abs(a.x - rel) ? b : a));
-  const W = Number(wrap.dataset.w);
-  const svg = wrap.querySelector("svg");
-  const scale = box.width / W;
-  svg.querySelector(".cross").setAttribute("x1", p.x * W);
-  svg.querySelector(".cross").setAttribute("x2", p.x * W);
-  svg.querySelector(".hot").setAttribute("cx", p.x * W);
-  svg.querySelector(".hot").setAttribute("cy", p.y);
-  const tip = wrap.querySelector(".chart-tip");
-  tip.replaceChildren();
-  const strong = document.createElement("strong");
-  strong.textContent = `${p.w} kg`;
-  tip.append(strong, document.createTextNode(` · ${p.d}`));
-  tip.style.left = `${Math.min(Math.max(p.x * box.width, 60), box.width - 60)}px`;
-  tip.style.top = `${p.y * scale}px`;
-  wrap.classList.add("hover");
+function consistencyPanel() {
+  const weeks = app.today.program_weeks || PROGRAM_WEEKS;
+  const c = consistency(app.sessions, app.state.profile.startDate, app.today.date, weeks, SCHEDULE);
+  const LABEL = { done: "fatta", missed: "non fatta", today: "oggi", upcoming: "in programma" };
+  const cell = (x) =>
+    `<td class="${x.state}${x.week === app.today.program_week ? " current" : ""}" aria-label="Settimana ${x.week}, giorno ${esc(x.routine)}: ${LABEL[x.state]}" title="${esc(fmtDate(x.date))} · ${LABEL[x.state]}">${x.state === "done" ? icon("check", "sm") : ""}</td>`;
+  const routines = Object.values(SCHEDULE);
+  return `<p class="cons-head"><strong>${c.done}</strong> ${c.done === 1 ? "seduta fatta" : "sedute fatte"} su ${c.due} in programma finora</p>
+    <div class="table-scroll"><table class="cons"><thead><tr><th scope="col"><span class="sr-only">Giorno</span></th>${Array.from({ length: weeks }, (_, i) => `<th scope="col" class="${i + 1 === app.today.program_week ? "current" : ""}">W${i + 1}</th>`).join("")}</tr></thead>
+    <tbody>${routines.map((r) => `<tr><th scope="row">${esc(r)}<small>${esc(ROUTINES[r]?.day.slice(0, 3) || "")}</small></th>${c.cells.filter((x) => x.routine === r).map(cell).join("")}</tr>`).join("")}</tbody></table></div>
+    <p class="subtle">Una seduta recuperata in un altro giorno vale per la sua settimana. Conta la continuità nel tempo, non la settimana perfetta.</p>`;
 }
-document.addEventListener("pointermove", crosshair);
-document.addEventListener("pointerdown", crosshair); // tocco su telefono
+
+function exercisePanel() {
+  const all = Object.entries(app.state.routines).flatMap(([routine, exs]) => exs.map((ex) => ({ ...ex, routine })));
+  const withData = all.filter((ex) => exerciseHistory(app.sessions, ex.id).length);
+  if (!withData.length) return empty("Nessun carico registrato", "Il grafico compare dopo la prima seduta conclusa.");
+  const ex = withData.find((e) => e.id === ui.exercise) || withData[0];
+  const hist = exerciseHistory(app.sessions, ex.id);
+  const best = hist.reduce((a, b) => (b.kg > a.kg ? b : a));
+  const last = hist[hist.length - 1];
+  const options = Object.keys(app.state.routines)
+    .map((r) => {
+      const items = withData.filter((e) => e.routine === r);
+      return items.length ? `<optgroup label="Giorno ${esc(r)}">${items.map((e) => `<option value="${esc(e.id)}" ${e.id === ex.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</optgroup>` : "";
+    })
+    .join("");
+  return `<div class="field"><label for="ex-pick">Esercizio</label><select id="ex-pick" data-ex-pick>${options}</select></div>
+    <div class="metrics three">
+      ${stat("Ultima", `${fmtNum(last.kg)}<small> kg</small>`, `× ${esc(last.reps ?? "—")} rip. · ${esc(fmtDate(last.date))}`)}
+      ${stat("Carico massimo", `${fmtNum(best.kg)}<small> kg</small>`, esc(fmtDate(best.date)))}
+      ${stat("Dalla prima", hist.length > 1 ? `${signed(last.kg - hist[0].kg)}<small> kg</small>` : "—", `${hist.length} ${hist.length === 1 ? "seduta" : "sedute"}`, { calc: true })}
+    </div>
+    ${hist.length > 1
+      ? lineChart({
+          points: hist.map((h) => ({ date: h.date, value: h.kg, tip: `× ${h.reps ?? "—"} rip. · W${h.week}` })),
+          unit: "kg",
+          label: `${ex.name}: serie più pesante per seduta, da ${fmtNum(hist[0].kg)} a ${fmtNum(last.kg)} kg in ${hist.length} sedute. Valori nella tabella sotto.`,
+        })
+      : '<p class="subtle">Il grafico dell\'andamento compare dalla seconda seduta.</p>'}
+    <p class="subtle">Serie più pesante di ogni seduta. Il carico sale quando completi le ripetizioni con buona tecnica.</p>
+    <div class="table-scroll"><table><thead><tr><th>Seduta</th><th>Serie più pesante</th><th>Volume <span class="badge-calc">calc.</span></th></tr></thead><tbody>${[...hist].reverse().slice(0, 8).map((h) => `<tr><td>${esc(fmtDate(h.date))}<small>W${esc(h.week)} · ${h.sets} serie</small></td><td>${fmtNum(h.kg)} kg × ${esc(h.reps ?? "—")}</td><td>${fmtNum(h.volume, 0)} kg</td></tr>`).join("")}</tbody></table></div>`;
+}
 
 function loadsTable() {
-  const done = app.sessions.filter((s) => s.status === "done");
   const rows = [];
   for (const [routine, exs] of Object.entries(app.state.routines)) {
     for (const ex of exs) {
-      const hist = done
-        .filter((s) => s.routine === routine)
-        .map((s) => ({ s, sets: s.sets.filter((x) => x.exercise_id === ex.id && x.completed && x.kg != null) }))
-        .filter((h) => h.sets.length)
-        .slice(0, 2);
+      const hist = exerciseHistory(app.sessions, ex.id);
       if (!hist.length) continue;
-      const top = (h) => Math.max(...h.sets.map((x) => x.kg));
-      const delta = hist[1] ? top(hist[0]) - top(hist[1]) : null;
-      rows.push(`<tr><td>${esc(ex.name)}<small>Giorno ${esc(routine)}</small></td><td>${fmtNum(top(hist[0]))} kg<small>${esc(fmtDate(hist[0].s.date))}</small></td><td>${delta == null ? "—" : `${delta > 0 ? "+" : ""}${fmtNum(delta)} kg`}</td></tr>`);
+      const last = hist[hist.length - 1];
+      const prev = hist[hist.length - 2];
+      const delta = prev ? last.kg - prev.kg : null;
+      rows.push(`<tr><td>${esc(ex.name)}<small>Giorno ${esc(routine)}</small></td><td>${fmtNum(last.kg)} kg<small>${esc(fmtDate(last.date))}</small></td><td>${delta == null ? "—" : `${signed(delta)} kg`}</td></tr>`);
     }
   }
   return rows.length
@@ -121,14 +129,14 @@ export function render() {
   const weekly = weeklyAverages();
   return (
     sectionTitle("I numeri che contano.", "Valori registrati da te e medie calcolate, sempre distinti.") +
-    `<div class="twocol"><div class="stack">${panel(`${icon("scale")}Andamento del peso`, chart())}${panel(
+    `<div class="twocol"><div class="stack">${panel(`${icon("scale")}Andamento del peso`, weightPanel())}${panel(
       `${icon("pencil")}Registra peso e girovita`,
       `<form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label for="w-date">Giorno</label><select id="w-date" name="date">${lastDays(14)}</select></div><div class="field"><label for="w-kg">Peso (kg)</label><input id="w-kg" type="number" name="weight" min="20" max="500" step="0.1" required inputmode="decimal" placeholder="es. 89,4"></div><div class="field"><label for="w-waist">Girovita (cm) · facoltativo</label><input id="w-waist" type="number" name="waist" min="20" max="250" step="0.1" inputmode="decimal"></div><div class="field"><label for="w-note">Nota · facoltativa</label><input id="w-note" name="note" maxlength="500" placeholder="es. mattina a digiuno"></div></div><button class="btn primary" type="submit">${icon("scale", "sm")}Registra misurazione</button></form>
       ${weigh.length ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0, 20).map((a) => `<tr class="clickable" role="button" tabindex="0" data-edit-weight="${esc(a.id)}" aria-label="Modifica pesata del ${esc(fmtDate(a.date))}"><td>${esc(fmtDate(a.date))}</td><td>${fmtNum(a.weight)} kg</td><td>${a.waist ? fmtNum(a.waist) + " cm" : "—"}</td><td><button type="button" class="icon-btn" data-del-weight="${esc(a.id)}" aria-label="Elimina misurazione">${icon("trash-2", "sm")}</button></td></tr>`).join("")}</tbody></table></div>` : ""}`,
     )}${panel(
       `${icon("chart-line")}Medie settimanali <span class="badge-calc">calcolate</span>`,
-      weekly.length ? `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Media</th><th>Pesate</th></tr></thead><tbody>${weekly.slice(0, 12).map((w) => `<tr><td>${esc(fmtDate(w.week))}</td><td>${fmtNum(w.avg)} kg</td><td>${w.n}</td></tr>`).join("")}</tbody></table></div><p class="subtle">Le oscillazioni giornaliere sono normali: confronta le medie, non le singole pesate.</p>` : empty("Nessuna media", "Servono alcune pesate."),
-    )}</div><div class="stack">${panel(`${icon("dumbbell")}Carichi recenti`, loadsTable())}${panel(
+      weekly.length ? `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Media</th><th>Pesate</th></tr></thead><tbody>${weekly.slice(0, 12).map((w) => `<tr><td>${esc(fmtDate(w.week))}</td><td>${fmtNum(w.avg)} kg</td><td>${w.n}</td></tr>`).join("")}</tbody></table></div>` : empty("Nessuna media", "Servono alcune pesate."),
+    )}</div><div class="stack">${panel(`${icon("list-checks")}Costanza`, consistencyPanel())}${panel(`${icon("trending-up")}Carichi per esercizio`, exercisePanel())}${panel(`${icon("dumbbell")}Carichi recenti`, loadsTable())}${panel(
       `${icon("calendar")}Storico allenamenti`,
       sessions.length
         ? sessions
@@ -281,6 +289,12 @@ export async function onClick(t) {
     return true;
   }
   return false;
+}
+
+export function onChange(t) {
+  if (!t.matches("[data-ex-pick]")) return false;
+  ui.exercise = t.value;
+  return true;
 }
 
 export async function onSubmit(form, data) {

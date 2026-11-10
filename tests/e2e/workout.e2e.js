@@ -5,7 +5,7 @@ const PW = process.env.E2E_PASSWORD;
 const SHOTS = process.env.E2E_SHOTS || __dirname;
 const out = [];
 const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name}${extra ? ' — ' + extra : ''}`);
-const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: false });
+const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: true });
 
 (async () => {
   const browser = await chromium.launch();
@@ -32,6 +32,8 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await page.reload();
   await page.waitForSelector('#shell:not(.hidden)');
   check('login + dashboard', Boolean(await page.waitForSelector('.today-hero')));
+  const ringW = await page.evaluate(() => getComputedStyle(document.querySelector('.today-hero .ring')).width);
+  check('anello dimensionato senza stili inline', ringW === '104px', ringW);
   await shot(page, '1-dashboard-dark');
 
   // Palestra
@@ -128,6 +130,14 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   const pre = await page.locator('#ex-a1 .set-row').nth(0).locator('[data-field=kg]').inputValue();
   const last = await page.textContent('#ex-a1 .ex-last');
   check('nuova seduta precompilata dall\'ultima (anche dopo la modifica)', pre === '50' && /50×10/.test(last), `${pre} | ${last}`);
+  // Record di carico: 52,5 kg supera i 50 della seduta precedente → trofeo sulla serie
+  await page.locator('#ex-a1 .set-row').nth(0).locator('[data-step=kg][data-dir="1"]').click();
+  await page.locator('#ex-a1 .set-row').nth(0).locator('[data-check]').click();
+  check('record di carico segnalato sulla serie', (await page.locator('#ex-a1 .set-row .set-num.pr').count()) === 1);
+  await page.locator('#ex-a2 .set-row').nth(0).locator('[data-field=kg]').fill('20');
+  await page.locator('#ex-a2 .set-row').nth(0).locator('[data-field=reps]').fill('10');
+  await page.locator('#ex-a2 .set-row').nth(0).locator('[data-check]').click();
+  check('prima volta su un esercizio: nessun record', (await page.locator('#ex-a2 .set-row .set-num.pr').count()) === 0);
   page.once('dialog', (d) => d.accept());
   await page.click('[data-cancel-session]');
   await page.waitForSelector('[data-start]');
@@ -148,8 +158,27 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: fa
   await page.fill('#w-kg', '89.4');
   await page.click('#weight-form button');
   await page.waitForSelector('.chart');
-  check('pesata + grafico', await page.locator('.chart').isVisible());
+  check('pesata + grafico', await page.locator('.chart').first().isVisible());
   check('tabella carichi', (await page.locator('text=Lat machine').count()) > 0);
+  check('costanza: 2 sedute fatte nella griglia', (await page.locator('table.cons td.done').count()) === 2, String(await page.locator('table.cons td.done').count()));
+  check('carichi per esercizio: scelta e valori', (await page.locator('[data-ex-pick] option').count()) >= 2 && /50/.test(await page.textContent('#content .stack:nth-child(2) .metrics.three')));
+  await page.selectOption('[data-ex-pick]', 'b1');
+  check('cambio esercizio: carico della seduta B', /30/.test(await page.textContent('#content .stack:nth-child(2) .metrics.three')));
+  // Media mobile: con 3 pesate compare la linea calcolata con legenda
+  await page.evaluate(async () => {
+    const s = await fetch('/api/state').then((r) => r.json());
+    const day = (k) => { const d = new Date(); d.setDate(d.getDate() - k); return d.toISOString().slice(0, 10); };
+    s.data.weights.push({ id: 'e2e-w1', date: day(6), weight: 90.2, waist: null, note: '' }, { id: 'e2e-w2', date: day(3), weight: 89.8, waist: null, note: '' });
+    await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: s.version, data: s.data }) });
+  });
+  await page.reload();
+  await page.waitForSelector('.chart-legend');
+  check('peso: media mobile 7 giorni con legenda', /Media mobile 7 giorni/.test(await page.textContent('.chart-legend')) && (await page.locator('.chart .dot.raw').count()) === 3);
+  await page.locator('.chart-wrap').first().hover();
+  check('grafico: tooltip al passaggio', /kg/.test(await page.textContent('.chart-wrap.hover .chart-tip')));
+  await shot(page, '5b-progress-avg');
+  const csp = await page.evaluate(() => fetch('/').then((r) => r.headers.get('content-security-policy')));
+  check('CSP senza unsafe-inline', !/unsafe-inline/.test(csp) && /style-src 'self'/.test(csp), csp);
   await shot(page, '5-progress');
 
   // Impostazioni: settimana programma, tema chiaro

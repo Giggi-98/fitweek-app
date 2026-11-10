@@ -108,11 +108,11 @@ export function ring(value, { size = 96, stroke = 9, label = "", sub = "", cls =
   const r = (size - stroke) / 2;
   const c = 2 * Math.PI * r;
   const v = Math.max(0, Math.min(1, value || 0));
-  return `<div class="ring ${cls}" style="--size:${size}px">
+  return `<div class="ring ${cls}" data-vars="size:${size}px">
     <svg viewBox="0 0 ${size} ${size}" aria-hidden="true">
       <circle class="ring-track" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"/>
       <circle class="ring-value" cx="${size / 2}" cy="${size / 2}" r="${r}" stroke-width="${stroke}"
-        stroke-dasharray="${c.toFixed(2)}" style="--c:${c.toFixed(2)};--off:${(c * (1 - v)).toFixed(2)}" stroke-dashoffset="${(c * (1 - v)).toFixed(2)}"/>
+        stroke-dasharray="${c.toFixed(2)}" data-vars="c:${c.toFixed(2)};off:${(c * (1 - v)).toFixed(2)}" stroke-dashoffset="${(c * (1 - v)).toFixed(2)}"/>
     </svg>
     <div class="ring-label"><strong>${label}</strong>${sub ? `<small>${sub}</small>` : ""}</div>
   </div>`;

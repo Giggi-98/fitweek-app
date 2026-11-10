@@ -8,7 +8,7 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 |---|---|---|
 | M1 | Stabilizzazione, protezione dati, sicurezza | ✅ in produzione dal 2026-11-09 (resta: verifica manuale da telefono) |
 | M2 | Fondamenta frontend, design system, allenamento mobile | ✅ 2026-11-09 (parziali: RIR/RPE UI, note per esercizio, grafici → M3) |
-| M3 | Dashboard "Oggi" e progressi | ⬜ |
+| M3 | Dashboard "Oggi" e progressi | 🔄 progressi fatti in 1.7.0 (2026-11-10); restano misure aggiuntive e confronto settimane |
 | M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
 | M5 | Spesa, dispensa, budget | ⬜ |
 | M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 (accesso fuori casa: serve VPN) |
@@ -79,6 +79,19 @@ Parziale/rimandato: RIR/RPE (colonna presente, UI no), note per singolo esercizi
 ## M3 — Dashboard "Oggi" e progressi
 Obiettivo: la dashboard risponde a "cosa faccio adesso". Timeline del giorno basata sulla routine (lavoro, pre-gym, palestra, cena); CTA allenamento; trend peso con media mobile 7 gg (marcata "calcolata"); misure aggiuntive; grafici carichi per esercizio; confronto settimane; frequenza allenamenti.
 Accettazione: dati calcolati distinti visivamente dai registrati; grafici con alternativa tabellare.
+
+### 1.7.0 (2026-11-10) — fatto
+- Peso: grafico su asse temporale reale (prima i punti erano equidistanti anche con pesate irregolari), media mobile sui 7 giorni di calendario marcata "calcolata", riquadri ultima pesata / media / variazione dall'inizio.
+- Costanza: griglia settimane del programma × giorni A/B/C (fatta, non fatta, oggi, in programma), senza toni di rimprovero.
+- Carichi per esercizio: scelta dell'esercizio, serie più pesante per seduta (grafico dalla seconda seduta), carico massimo, volume calcolato in tabella.
+- Logger: trofeo sulla serie che supera il carico massimo precedente (la prima volta non è un record) e riepilogo dei record a fine seduta.
+- Affidabilità: la coda offline ritenta gli errori passeggeri del server (5xx, 429) invece di scartare la serie; al ritorno sull'app si aggiornano anche agenda e settimana; orario della palestra in dashboard letto dal promemoria.
+- Spesa: "Spuntati → dispensa", dispensa ordinata per scadenza con evidenza entro 3 giorni.
+- Sicurezza: CSP senza `'unsafe-inline'` (D-017).
+- Test: e2e non più dipendenti dal giorno della settimana (2 controlli fallivano dal martedì alla domenica).
+
+Verificato: 62 pytest, 14 test JS, 68 controlli e2e su container usa-e-getta. Non verificato: telefono reale. Non ancora in produzione (deploy da autorizzare).
+Restano per M3: misure aggiuntive oltre a peso e girovita, confronto tra settimane, grafico del girovita.
 
 ## M4 — Alimentazione, promemoria in app, riepilogo settimanale ✅
 

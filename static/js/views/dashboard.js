@@ -25,6 +25,9 @@ function nextGym() {
   return "—";
 }
 
+/** Orario della palestra dal promemoria di oggi (modificabile in Impostazioni), non scritto a mano. */
+const gymTime = () => app.agenda.find((i) => i.action === "start_workout")?.time || "";
+
 function hero() {
   const st = todayStatus();
   const w = app.weekly?.totals;
@@ -36,7 +39,7 @@ function hero() {
       <div class="today-top">
         ${ring(planned ? done / planned : 0, { size: 104, label: `<span data-count="${done}">${done}</span>`, sub: `/${planned} serie` })}
         <div class="today-text">
-          <span class="eyebrow">${st.kind === "active" ? "Allenamento in corso" : "Oggi palestra · 19:30"}</span>
+          <span class="eyebrow">${st.kind === "active" ? "Allenamento in corso" : `Oggi palestra${gymTime() ? ` · ${esc(gymTime())}` : ""}`}</span>
           <h2>Giorno ${esc(r)} · W${esc(st.week)}</h2>
           <p>${esc(ROUTINES[r]?.focus || "")}</p>
         </div>
@@ -109,7 +112,7 @@ function week() {
       const label = `${DAYS[i]}: ${d.kcal_estimate ? `circa ${fmtNum(d.kcal_estimate, 0)} kcal teoriche` : "nessun valore"}, ${d.meals_eaten} pasti su ${d.meals_expected}`;
       return `<button type="button" class="wk-col ${d.kcal_estimate ? "" : "empty"} ${d.date === today ? "today" : ""}" aria-label="${esc(label)}">
         <span class="wk-tip">${d.kcal_estimate ? `~${fmtNum(d.kcal_estimate, 0)} kcal` : "—"}<small>${d.meals_eaten}/${d.meals_expected} pasti${d.meals_without_values ? ` · ${d.meals_without_values} senza valori` : ""}</small></span>
-        <span class="wk-fill" style="height:${h}%"></span>
+        <span class="wk-fill" data-pct-h="${h}"></span>
       </button>`;
     })
     .join("");

@@ -14,10 +14,10 @@ from .db import connect
 
 COOKIE_NAME = "fitweek_session"
 
-# CSP: niente script inline né esterni. 'unsafe-inline' sugli stili resta finché app.js
-# genera attributi style="" (da rimuovere in M2 con il design system).
+# CSP: niente script né stili inline o esterni. Le dimensioni dinamiche (barre, anelli) passano da
+# attributi data-* applicati via CSSOM (static/js/ui.js applyDynamicStyles), che la CSP consente.
 CSP = (
-    "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "
+    "default-src 'self'; script-src 'self'; style-src 'self'; "
     "img-src 'self' data:; connect-src 'self'; font-src 'self'; object-src 'none'; "
     "base-uri 'none'; form-action 'self'; frame-ancestors 'none'"
 )
