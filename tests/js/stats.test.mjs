@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  bestLoads, consistency, exerciseHistory, isRecord, isTransient, mondayOf, movingAverage, niceTicks,
+  bestLoads, consistency, exerciseHistory, formatQty, isRecord, isTransient, mondayOf, movingAverage, niceTicks, parseQty, planProposal,
 } from "../../static/js/stats.js";
 
 const set = (exercise_id, kg, reps, completed = true) => ({ exercise_id, set_index: 1, kg, reps, completed });
@@ -93,4 +93,54 @@ test("tacche dell'asse: passi puliti che coprono i dati", () => {
 test("coda: errori passeggeri da ritentare, errori del client da scartare", () => {
   for (const s of [0, 408, 429, 500, 502, 503]) assert.equal(isTransient(s), true, String(s));
   for (const s of [400, 404, 409, 422]) assert.equal(isTransient(s), false, String(s));
+});
+
+test("quantità con unità: conversione in unità base e formattazione", () => {
+  assert.deepEqual(parseQty("1 kg"), { amount: 1000, unit: "g" });
+  assert.deepEqual(parseQty("2 × 500 g"), { amount: 1000, unit: "g" });
+  assert.deepEqual(parseQty("400–500 g"), { amount: 450, unit: "g" });
+  assert.deepEqual(parseQty("6"), { amount: 6, unit: "pz" });
+  assert.deepEqual(parseQty("2 scatolette"), { amount: 2, unit: "conf" });
+  assert.equal(formatQty(1000, "g"), "1 kg");
+  assert.equal(formatQty(1500, "g"), "1,5 kg");
+  assert.equal(formatQty(450, "g"), "450 g");
+  assert.equal(formatQty(6, "pz"), "6 pz");
+});
+
+test("proposta lista dal piano: fabbisogno − dispensa, nessun secondo lun–ven, nessun prezzo inventato", () => {
+  const meals = {
+    Lunedì: {
+      items: [
+        { name: "Pollo", amount: 200, unit: "g", category: "Proteine", slot: "dinner" }, // lun–ven cena: escluso!
+        { name: "Pasta", amount: 100, unit: "g", category: "Dispensa", slot: "lunch" }, // lun–ven pranzo in mensa: escluso!
+        { name: "Banane", amount: 200, unit: "g", category: "Spuntini", slot: "pre" },
+        { name: "Pane integrale", amount: 200, unit: "g", category: "Dispensa", slot: "dinner" },
+      ],
+    },
+    Sabato: {
+      items: [
+        { name: "Pollo", amount: 450, unit: "g", category: "Proteine", slot: "dinner" }, // weekend: incluso!
+        { name: "Banane", amount: 300, unit: "g", category: "Spuntini", slot: "pre" },
+      ],
+    },
+  };
+  const inventory = [
+    { name: "Banane", amount: 200, unit: "g", expiry: "2026-11-20" }, // copre 200 g dei 500 g richiesti
+    { name: "Pane integrale", amount: 500, unit: "g", expiry: "2026-11-20" }, // copre tutto il pane (200 g)
+    { name: "Pollo", amount: 500, unit: "g", expiry: "2026-11-01" }, // scaduto: ignorato!
+  ];
+  const { toBuy, covered } = planProposal(meals, inventory, { banane: 2.5 }, "2026-11-12");
+  // Nessun secondo dalle cene lun–ven: di Pollo servono solo i 450 g del sabato (non 650 g).
+  const pollo = toBuy.find((x) => x.name === "Pollo");
+  assert.ok(pollo);
+  assert.equal(pollo.amount, 450);
+  assert.equal(pollo.price, null); // mai inserito dall'utente → vuoto
+  // Banane: 500 g fabbisogno − 200 g dispensa = 300 g da comprare, con prezzo noto dell'utente
+  const banane = toBuy.find((x) => x.name === "Banane");
+  assert.equal(banane.amount, 300);
+  assert.equal(banane.inPantry, 200);
+  assert.equal(banane.price, 2.5);
+  // Pane integrale: interamente coperto dalla dispensa
+  assert.equal(toBuy.some((x) => x.name === "Pane integrale"), false);
+  assert.equal(covered.some((x) => x.name === "Pane integrale"), true);
 });

@@ -1,11 +1,11 @@
 // Impostazioni: profilo, programma, preferenze allenamento, tema, backup, sessione.
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
-import { app, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
+import { app, clearLocalState, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
 import { panel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
-import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
+import { clearQueue, dropRejected, rejected, retryRejected } from "../workout/queue.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
 import { serverUrl, setToken, standalone } from "../platform.js";
@@ -135,6 +135,39 @@ export function applyTheme(theme = storage.get(THEME_KEY, "auto")) {
   else document.documentElement.dataset.theme = theme;
 }
 
+const sess = { items: null };
+async function loadSessions() {
+  sess.items = (await request("/api/v1/sessions")).items;
+}
+function deviceLabel(ua = "") {
+  if (/Android/i.test(ua)) return "Android";
+  if (/iPhone|iPad/i.test(ua)) return "iPhone / iPad";
+  if (/Linux|Windows|Macintosh/i.test(ua)) return "Computer";
+  return ua ? ua.slice(0, 40) : "Dispositivo";
+}
+function sessionPanel() {
+  if (!sess.items) {
+    loadSessions()
+      .then(() => refreshPanel("session-panel", sessionPanel()))
+      .catch(() => {});
+  }
+  const when = (iso) => new Date(iso).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const list = sess.items?.length
+    ? `<div class="stack">${sess.items
+        .map(
+          (s) => `<div class="mini-card" data-session-row="${esc(s.id)}"><div><div class="entry-title">${esc(deviceLabel(s.user_agent))}${s.current ? ' <span class="pill accent">Questo dispositivo</span>' : ""}</div><div class="entry-sub">Attivo ${esc(when(s.last_seen_at || s.created_at))}</div></div>${s.current ? "" : `<button type="button" class="btn small danger" data-revoke-session="${esc(s.id)}">Revoca</button>`}</div>`,
+        )
+        .join("")}</div>`
+    : "";
+  return panel(
+    `${icon("log-out")}Sessione`,
+    `<p class="subtle">Esci da questo dispositivo, revoca un singolo accesso o esci da tutti (es. telefono perso).</p>
+    ${list}
+    <div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
+    "", "", "session-panel",
+  );
+}
+
 /** Modifiche che il server ha rifiutato: non si perdono, restano qui finché l'utente non decide. */
 function notSentPanel() {
   const ops = rejected();
@@ -179,10 +212,7 @@ export function render() {
       standalone
         ? `<p class="subtle">Backup automatico ogni notte sul server (${esc(serverUrl())}). Per scaricare o ripristinare una copia apri FitWeek dal browser.</p>`
         : `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia completa in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
-    )}${notSentPanel()}${panel(
-      `${icon("log-out")}Sessione`,
-      `<p class="subtle">Esci da questo dispositivo, oppure da tutti (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
-    )}${panel(
+    )}${notSentPanel()}${sessionPanel()}${panel(
       `${icon("info")}Privacy`,
       `<div class="summary-list"><div class="summary-row"><i>${icon("package", "sm")}</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker.</small></div></div><div class="summary-row"><i>${icon("utensils", "sm")}</i><div><strong>Ricerca prodotti</strong><small>Quando cerchi un alimento, il solo testo cercato va a Open Food Facts. Nient'altro esce dal server.</small></div></div><div class="summary-row"><i>${icon("user", "sm")}</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">Uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
     )}</div>`;
@@ -223,11 +253,23 @@ export async function onClick(t) {
     applyTheme(t.dataset.themeSet);
     return true;
   }
+  if (t.dataset.revokeSession) {
+    try {
+      await request(`/api/v1/sessions/${encodeURIComponent(t.dataset.revokeSession)}`, { method: "DELETE" });
+      await loadSessions();
+      toast("Accesso revocato");
+    } catch (e) {
+      toast("Non riuscito: " + e.message);
+    }
+    return true;
+  }
   if (t.dataset.action === "logout" || t.dataset.action === "logout-all") {
     const all = t.dataset.action === "logout-all";
     if (all && !confirm("Uscire da tutti i dispositivi?")) return false;
     await request(all ? "/api/logout-all" : "/api/logout", { method: "POST" }).catch(() => {});
-    setToken(null);
+    await setToken(null);
+    clearLocalState();
+    clearQueue();
     location.reload();
     return false;
   }

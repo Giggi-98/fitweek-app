@@ -2,7 +2,7 @@
 // Nell'app autonoma: indirizzo del server configurabile, token al posto del cookie, e le letture che
 // non raggiungono il server rispondono con l'ultima copia locale (segnalando che si è offline).
 import * as cache from "./cache.js";
-import { apiUrl, standalone, token } from "./platform.js";
+import { apiUrl, setToken, standalone, token } from "./platform.js";
 
 export class ApiError extends Error {
   constructor(message, status, field) {
@@ -91,6 +91,8 @@ export async function request(path, { method = "GET", body, fresh = false, timeo
     const data = await res.json().catch(() => ({}));
     throw new ApiError(data.detail || `HTTP ${res.status}`, res.status, data.errors?.[0]?.field);
   }
+  const renewed = res.headers?.get?.("X-Renewed-Token");
+  if (renewed && standalone) setToken(renewed);
   const data = await res.json();
   if (standalone && method === "GET") cache.put(path, data);
   setOffline(null);

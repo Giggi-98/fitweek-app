@@ -12,16 +12,38 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
 (async () => {
   const browser = await chromium.launch();
   const ctx = await browser.newContext({ ...devices['Pixel 7'], timezoneId: 'Europe/Rome', locale: 'it-IT', colorScheme: 'dark' });
+  // Simula il plugin nativo Android Keystore (SecureToken) nell'APK: il token vive nel Keystore e non in localStorage.
+  await ctx.addInitScript(() => {
+    window.__keystore = { token: sessionStorage.getItem('__e2e_ks_token') || null };
+    window.Capacitor = {
+      isNativePlatform: () => true,
+      Plugins: {
+        SecureToken: {
+          get: async () => ({ value: window.__keystore.token }),
+          set: async ({ value }) => {
+            window.__keystore.token = value || null;
+            if (value) sessionStorage.setItem('__e2e_ks_token', value);
+            else sessionStorage.removeItem('__e2e_ks_token');
+          },
+          clear: async () => {
+            window.__keystore.token = null;
+            sessionStorage.removeItem('__e2e_ks_token');
+          },
+        },
+      },
+    };
+  });
   const page = await ctx.newPage();
   global.__page = page;
   const errors = [];
   page.on('pageerror', (e) => errors.push('pageerror: ' + e.message));
   page.on('console', (m) => { if (m.type() === 'error' && !/Failed to load resource|net::ERR/.test(m.text())) errors.push(m.text()); });
 
-  // 1. Accesso: indirizzo del server precompilato, token al posto del cookie
+  // 1. Accesso: indirizzo del server precompilato, avviso HTTP visibile, token nel Keystore (mai in localStorage)
   await page.goto(APP);
   await page.waitForSelector('#server-field:not(.hidden)');
   check('accesso: indirizzo del server precompilato', (await page.inputValue('#srv')) === B, await page.inputValue('#srv'));
+  check('accesso: avviso HTTP quando l\'indirizzo è http://', await page.locator('#http-warning').isVisible());
   await page.fill('#srv', 'non un indirizzo');
   await page.fill('#pw', PW);
   await page.click('#login-form button');
@@ -31,8 +53,9 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.fill('#pw', PW);
   await page.click('#login-form button');
   await page.waitForSelector('#shell:not(.hidden)');
-  const token = await page.evaluate(() => JSON.parse(localStorage.getItem('fitweek.token.v1')));
-  check('accesso: token salvato, nessun cookie', typeof token === 'string' && token.length > 20 && (await ctx.cookies()).length === 0);
+  const token = await page.evaluate(() => window.__keystore.token);
+  const inLocalStorage = await page.evaluate(() => localStorage.getItem('fitweek.token.v1'));
+  check('accesso: token nel Keystore Android, localStorage non contiene il token, nessun cookie', typeof token === 'string' && token.length > 20 && inLocalStorage === null && (await ctx.cookies()).length === 0);
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Origin: APP };
   const server = async (path, method = 'GET', data) => (await ctx.request.fetch(B + path, { method, headers, data })).json();
 
@@ -106,7 +129,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.waitForSelector('#sync[data-state=ok]', { timeout: 30000 });
   check('server di nuovo raggiungibile: l\'app torna online da sola', true);
 
-  // 7. Uscita: il token viene revocato e rimosso
+  // 7. Uscita: il token viene revocato e rimosso, e la copia locale (cache) viene cancellata
   page.once('dialog', (d) => d.accept());
   await page.click('.bottom-nav [data-view=training]');
   await page.click('[data-cancel-session]');
@@ -115,7 +138,12 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.click('[data-tab=data]');
   await page.click('[data-action=logout]');
   await page.waitForSelector('#server-field:not(.hidden)');
-  check('uscita: token rimosso e revocato', (await page.evaluate(() => localStorage.getItem('fitweek.token.v1'))) === null && (await ctx.request.fetch(B + '/api/state', { headers })).status() === 401);
+  const afterLogout = await page.evaluate(() => ({
+    ks: window.__keystore.token,
+    lsToken: localStorage.getItem('fitweek.token.v1'),
+    cacheKeys: Object.keys(localStorage).filter((k) => k.startsWith('fitweek.cache.')),
+  }));
+  check('uscita: token rimosso dal Keystore, copia locale cancellata e sessione revocata', afterLogout.ks === null && afterLogout.lsToken === null && afterLogout.cacheKeys.length === 0 && (await ctx.request.fetch(B + '/api/state', { headers })).status() === 401);
 
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();

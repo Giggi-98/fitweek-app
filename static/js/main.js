@@ -1,8 +1,8 @@
 // Avvio, routing (hash) e delega degli eventi verso la vista attiva.
 import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
-import { serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
-import { app, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
+import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
+import { app, clearLocalState, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, initModal, toast } from "./ui.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
@@ -16,7 +16,7 @@ import * as progress from "./views/progress.js";
 import * as settings from "./views/settings.js";
 import * as shopping from "./views/shopping.js";
 import * as training from "./views/training.js";
-import { flush, pendingCount, startQueue } from "./workout/queue.js";
+import { clearQueue, flush, pendingCount, startQueue } from "./workout/queue.js";
 import { addRest, initRestTimer, stopRest } from "./workout/timer.js";
 
 settings.applyTheme();
@@ -51,6 +51,11 @@ function hydrateIcons(root = document) {
 hydrateIcons();
 app.render = render;
 
+function updateHttpWarning() {
+  const url = standalone ? ($("#srv")?.value || serverUrl()) : location.origin;
+  $("#http-warning")?.classList.toggle("hidden", !isHttpUrl(url));
+}
+
 function showLogin(message = "") {
   $("#boot")?.classList.add("hidden");
   $("#login").classList.remove("hidden");
@@ -59,6 +64,7 @@ function showLogin(message = "") {
     $("#server-field").classList.remove("hidden");
     if (!$("#srv").value) $("#srv").value = serverUrl();
   }
+  updateHttpWarning();
   $("#login-error").textContent = message;
   $("#login input[name=password]")?.focus();
 }
@@ -96,6 +102,7 @@ function route() {
 const OFFLINE_OFFER_MS = 2500;
 let started = false;
 async function boot() {
+  await initToken();
   if (standalone && !token()) return showLogin();
   // App autonoma con una copia locale: se il server tarda, si propone di lavorare offline invece di aspettare.
   const offer = standalone && cache.get("/api/state")
@@ -153,7 +160,9 @@ document.addEventListener("click", async (e) => {
   if (e.target.closest("#rest-stop")) return stopRest();
   if (e.target.closest("#logout")) {
     await request("/api/logout", { method: "POST" }).catch(() => {});
-    setToken(null);
+    await setToken(null);
+    clearLocalState();
+    clearQueue();
     return location.reload();
   }
   const target = e.target.closest("button, [data-action], [role=button]");
@@ -178,6 +187,7 @@ document.addEventListener("change", async (e) => {
   if (await current().onChange?.(e.target)) render();
 });
 document.addEventListener("input", (e) => {
+  if (e.target.id === "srv") updateHttpWarning();
   if (e.target.classList?.contains("time24")) {
     const v = normalizeTime(e.target.value);
     if (v !== e.target.value) e.target.value = v;
@@ -197,7 +207,7 @@ document.addEventListener("submit", async (e) => {
         setServerUrl(data.server);
       }
       const out = await request("/api/login", { method: "POST", body: { password: data.password, ...(standalone ? { client: "app" } : {}) } });
-      if (standalone) setToken(out.token);
+      if (standalone) await setToken(out.token);
       $("#login-error").textContent = "";
       $("#pw").value = "";
       await boot();

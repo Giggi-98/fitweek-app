@@ -47,7 +47,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.app_origins = settings.app_origins
     # CORS solo per l'app autonoma: niente cookie (allow_credentials resta falso), autenticazione con token.
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.app_origins), allow_methods=["*"],
-                       allow_headers=["Authorization", "Content-Type", "X-Edited-At"], max_age=600)
+                       allow_headers=["Authorization", "Content-Type", "X-Edited-At"],
+                       expose_headers=["X-Renewed-Token"], max_age=600)
 
     # ---- middleware e gestione errori ---------------------------------------------------
     @app.middleware("http")
@@ -55,6 +56,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         started = time.perf_counter()
         response = await call_next(request)
         response.headers.update(BASE_HEADERS)
+        renewed = getattr(request.state, "renewed_token", None)
+        if renewed:
+            if getattr(request.state, "used_bearer", False):
+                response.headers["X-Renewed-Token"] = renewed
+            else:
+                response.set_cookie(
+                    COOKIE_NAME, renewed, httponly=True, samesite="lax", secure=settings.cookie_secure,
+                    max_age=settings.session_max_age_s, path="/",
+                )
         if response.headers.get("content-type", "").startswith("text/html"):
             response.headers["Content-Security-Policy"] = CSP
             response.headers["Cache-Control"] = "no-cache"
@@ -85,9 +95,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # ---- dipendenze ---------------------------------------------------------------------
     def require_session(request: Request) -> str:
-        sid = sessions.session_id(request_token(request))
+        sid, renewed = sessions.verify(request_token(request))
         if not sid:
             raise HTTPException(status_code=401, detail="Accesso richiesto")
+        if renewed:
+            request.state.renewed_token = renewed
+            request.state.used_bearer = request.headers.get("authorization", "")[:7].lower() == "bearer "
         return sid
 
     def client_key(request: Request) -> str:
@@ -133,6 +146,19 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         sessions.revoke_all()
         response = JSONResponse({"ok": True})
         response.delete_cookie(COOKIE_NAME, path="/")
+        return response
+
+    @app.get("/api/v1/sessions")
+    def list_sessions(sid: str = Depends(require_session)):
+        return {"items": sessions.list_sessions(sid)}
+
+    @app.delete("/api/v1/sessions/{target_id}", dependencies=[Depends(check_origin)])
+    def revoke_session(target_id: str, sid: str = Depends(require_session)):
+        if not sessions.revoke(target_id):
+            raise HTTPException(status_code=404, detail="Sessione non trovata")
+        response = JSONResponse({"ok": True})
+        if target_id == sid:
+            response.delete_cookie(COOKIE_NAME, path="/")
         return response
 
     # ---- stato ----------------------------------------------------------------------------

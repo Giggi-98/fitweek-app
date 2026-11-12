@@ -79,17 +79,28 @@ class WeightReading(Strict):
     note: Text(500) = ""
 
 
+class PlanIngredient(Strict):
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
+    amount: float = Field(gt=0, le=100_000)
+    unit: Text(20) = "g"
+    category: Text(40) = "Altro"
+    slot: Literal["lunch", "pre", "dinner"] = "dinner"
+
+
 class MealDay(Strict):
     lunch: Text(1000) = ""
     pre: Text(1000) = ""
     dinner: Text(1000) = ""
+    items: list[PlanIngredient] = Field(default_factory=list, max_length=40)
 
 
 class GroceryItem(Strict):
     id: Id
     name: Text(120)
     qty: Text(60)
-    price: float = Field(ge=0, le=10_000)
+    amount: Optional[float] = Field(default=None, ge=0, le=100_000)
+    unit: Text(20) = ""
+    price: Optional[float] = Field(default=0, ge=0, le=10_000)
     checked: bool = False
     category: Text(40) = "Altro"
     recurring: bool = False  # si compra ogni settimana: resta in lista dopo la consegna
@@ -99,6 +110,8 @@ class InventoryItem(Strict):
     id: Id
     name: Text(120)
     qty: Text(60)
+    amount: Optional[float] = Field(default=None, ge=0, le=100_000)
+    unit: Text(20) = ""
     expiry: OptIsoDate = ""
 
 

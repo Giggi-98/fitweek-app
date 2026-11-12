@@ -51,6 +51,12 @@ export function enqueue(method, path, body, key = `${method} ${path}`) {
 
 export const pendingCount = () => ops.length;
 
+/** Pulisce la coda inviata (e gli scarti) all'uscita dall'account. */
+export function clearQueue() {
+  if (!ops.length) storage.remove(KEY);
+  storage.remove(REJECTED_KEY);
+}
+
 let running = null;
 /** Invia la coda; restituisce una promessa che si risolve quando la coda è vuota (o la rete manca).
  *  Chiamate concorrenti condividono lo stesso invio. */

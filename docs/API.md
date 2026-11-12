@@ -120,3 +120,12 @@ Le scritture che passano dalla coda offline dichiarano quando sono state fatte c
 - Senza intestazione, o con un valore non valido, vale l'orario del server (comportamento precedente).
 - CORS: l'intestazione è ammessa per le origini dell'app autonoma (`APP_ORIGINS`).
 - Non coperti: `PATCH`/`DELETE` delle sedute, promemoria, pasti abituali, catalogo, spesa settimanale (scritture fatte solo in linea).
+
+## API 1.10.2 (2026-11-12) — sessioni, rinnovo scorrevole e quantità con unità
+
+- `GET /api/v1/sessions`: restituisce l'elenco dei dispositivi attivi `{"items": [{"id", "created_at", "last_seen_at", "user_agent", "current"}]}` ordinato per `last_seen_at` decrescente.
+- `DELETE /api/v1/sessions/{id}` (con controllo `Origin`): revoca il singolo dispositivo indicato (`404` se inesistente); se coincide con la sessione corrente rimuove anche il cookie.
+- **Rinnovo scorrevole**: ogni richiesta autenticata aggiorna `last_seen_at` sul server (la scadenza di `SESSION_MAX_AGE_S` scorre in avanti a ogni uso); quando la firma del token ha più di 24 ore il server emette un nuovo token nell'intestazione `X-Renewed-Token` (esposta via CORS per l'app autonoma) o aggiorna il cookie `fitweek_session`.
+- Blob (`/api/state`):
+  - `groceries[]` e `inventory[]` accettano `amount` (numero ≥ 0, facoltativo) e `unit` (`g`, `kg`, `ml`, `l`, `pz`, `conf`, o stringa vuota), oltre a `qty` testuale; `groceries[].price` può essere `null` o `0` quando non inserito dall'utente.
+  - `meals[Giorno].items` contiene gli ingredienti strutturati del piano `[{name, amount, unit, category, slot}]` usati da `Genera dal piano` (`fabbisogno − dispensa`, escludendo i secondi delle cene lun–ven).

@@ -296,6 +296,12 @@ button.tile:active { transform: scale(0.98); }
 .tl-text { min-width: 0; }
 .tl-text strong { display: block; font-weight: 650; }
 .tl-text small { display: block; color: var(--color-text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.dash-hero { display: grid; gap: var(--space-3); grid-template-rows: 1fr; }
+.now-card { display: flex; align-items: center; gap: var(--space-3); width: 100%; min-height: 64px; padding: var(--space-3) var(--space-4); border-radius: var(--radius-md); border: 1px solid var(--color-border); background: var(--color-surface-2); color: inherit; text-align: left; }
+.now-card.due { border-color: var(--color-accent); box-shadow: 0 0 0 4px var(--color-accent-soft); }
+.now-ic { flex: none; display: grid; place-items: center; width: 40px; height: 40px; border-radius: var(--radius-md); background: var(--color-accent-soft); color: var(--color-accent); }
+.now-text { flex: 1; min-width: 0; display: grid; gap: 2px; }
+.now-text strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tl-cta { flex: none; padding: 6px 12px; border-radius: var(--radius-pill); background: var(--color-accent); color: var(--color-on-accent); font-size: var(--text-xs); font-weight: 750; }
 .tl-item.past .tl-time { color: var(--color-text-faint); }
 .tl-item.done .tl-node { background: var(--color-success-soft); color: var(--color-success); }

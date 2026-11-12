@@ -86,3 +86,55 @@ def test_migrations_are_idempotent(tmp_path):
     c = sqlite3.connect(db)
     assert c.execute("SELECT count(*) FROM schema_migrations").fetchone()[0] == len(MIGRATIONS)
     assert len(list((tmp_path / "backups").glob("*"))) == 1
+
+
+def test_migration_8_populates_quantities_and_offsite_backup_restores(tmp_path):
+    import subprocess
+    from pathlib import Path
+
+    db = tmp_path / "fitweek-test-20261112-120000.sqlite"
+    def strip_new_fields(s):
+        for g in s["groceries"]:
+            g.pop("amount", None)
+            g.pop("unit", None)
+        for d in s["meals"].values():
+            d.pop("items", None)
+        s["inventory"] = [{"id": "inv1", "name": "Riso", "qty": "1,5 kg", "expiry": ""}]
+
+    legacy_db(db, strip_new_fields)
+    run_migrations(db, tmp_path / "backups")
+    _, state = db_state(db)
+    assert state["groceries"][0]["amount"] == 1000 and state["groceries"][0]["unit"] == "g"
+    assert state["inventory"][0]["amount"] == 1500 and state["inventory"][0]["unit"] == "g"
+    assert len(state["meals"]["Lunedì"]["items"]) > 0
+
+    # Verifica backup-offsite.sh: cifratura + verifica + ripristino da copia cifrata
+    c = sqlite3.connect(db)
+    c.execute("PRAGMA journal_mode=DELETE")
+    c.close()
+    offsite_dir = tmp_path / "offsite"
+    secrets_dir = tmp_path / "secrets"
+    secrets_dir.mkdir()
+    (secrets_dir / "fitweek-release.jks").write_bytes(b"fake-jks-key")
+    (secrets_dir / "android-keystore.env").write_text("KEYSTORE_PASSWORD=segreto\n")
+    script = Path(__file__).resolve().parent.parent / "scripts" / "backup-offsite.sh"
+    env = {
+        "PATH": "/usr/local/bin:/usr/bin:/bin",
+        "FITWEEK_BACKUP_DIR": str(tmp_path),
+        "FITWEEK_SECRETS_DIR": str(secrets_dir),
+        "OFFSITE_PASSPHRASE": "test-passphrase-sicura",
+    }
+    res = subprocess.run(["bash", str(script), str(offsite_dir)], env=env, capture_output=True, text=True, check=True)
+    enc_file = Path(res.stdout.strip())
+    assert enc_file.is_file() and (Path(str(enc_file) + ".sha256")).is_file()
+
+    restored_dir = tmp_path / "restored"
+    res2 = subprocess.run(
+        ["bash", str(script), "--restore", str(enc_file), str(restored_dir)],
+        env=env, capture_output=True, text=True, check=True,
+    )
+    restored_db = Path(res2.stdout.strip())
+    assert restored_db.is_file()
+    assert (restored_dir / "fitweek-release.jks").read_bytes() == b"fake-jks-key"
+    _, restored_state = db_state(restored_db)
+    assert restored_state["inventory"][0]["amount"] == 1500

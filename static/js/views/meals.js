@@ -5,8 +5,10 @@ import { icon } from "../icons.js";
 import { openComposer } from "../composer.js";
 import { guessSlot } from "../reminders.js";
 import { app, persistState, refreshDaily } from "../store.js";
+import { formatQty, parseQty } from "../stats.js";
 import { empty, panel, tabs, toast } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
+import { openPlanProposal } from "./shopping.js";
 import { enqueue, flush } from "../workout/queue.js";
 
 const ui = { tab: "diary", weekOffset: 0, day: null, logs: null, loadedFor: null, planDay: (new Date().getDay() + 6) % 7, slot: "lunch" };
@@ -107,15 +109,36 @@ const PLAN_SLOTS = [
 
 /** Piano ricorrente: su schermo largo l'intera settimana in una griglia, su telefono un giorno alla volta. */
 function plan() {
+  const slotShort = { lunch: "Pranzo", pre: "Spuntino", dinner: "Cena" };
   return `<div class="plan-days">${tabs(DAYS.map((d, i) => [String(i), DAYSHORT[i]]), String(ui.planDay), "Giorno del piano", "plan-day")}</div>
   <div class="plan-grid">${DAYS.map((day, i) => {
     const m = app.state.meals[day] || {};
+    const items = m.items || [];
+    const weekday = i < 5;
     return `<section class="meal-card ${i === ui.planDay ? "on" : ""}"><h3>${esc(day)} ${GYM[day] ? `<span class="pill accent">${icon("dumbbell", "sm")}${GYM[day]}</span>` : ""}</h3>${PLAN_SLOTS.map(
       ([k, label]) =>
-        `<div class="field"><label for="meal-${esc(day)}-${k}">${label}</label><textarea id="meal-${esc(day)}-${k}" rows="3" maxlength="1000" data-meal-day="${esc(day)}" data-meal-key="${k}">${esc(m[k] || "")}</textarea></div>`,
-    ).join("")}</section>`;
+        `<div class="field"><label for="meal-${esc(day)}-${k}">${label}</label><textarea id="meal-${esc(day)}-${k}" rows="2" maxlength="1000" data-meal-day="${esc(day)}" data-meal-key="${k}">${esc(m[k] || "")}</textarea></div>`,
+    ).join("")}
+      <div class="plan-ing">
+        <span class="eyebrow">Ingredienti per la spesa${weekday ? " · secondo cena dal lavoro" : ""}</span>
+        ${items.length
+          ? `<div class="pick-list">${items.map((it, idx) => `<span class="pill">${esc(it.name)} · ${esc(formatQty(it.amount, it.unit))} (${esc(slotShort[it.slot] || "Cena")}) <button type="button" class="icon-btn" data-del-plan-ing="${esc(day)}:${idx}" aria-label="Rimuovi ${esc(it.name)}">${icon("x", "sm")}</button></span>`).join("")}</div>`
+          : '<p class="subtle">Nessun ingrediente per la spesa in questo giorno.</p>'}
+        <details class="free"><summary>${icon("plus", "sm")}Ingredienti di ${esc(day.toLowerCase())}</summary>
+          <form class="stack" data-plan-ing-form="${esc(day)}">
+            <div class="form-grid four">
+              <div class="field"><label>Ingrediente</label><input name="name" required maxlength="120" placeholder="es. Verdure fresche"></div>
+              <div class="field"><label>Quantità</label><input name="qty" required maxlength="40" placeholder="es. 250 g"></div>
+              <div class="field"><label>Momento</label><select name="slot"><option value="dinner">Cena</option><option value="pre">Spuntino</option><option value="lunch">Pranzo</option></select></div>
+              <div class="field"><label>Categoria</label><select name="category"><option>Verdure e frutta</option><option>Spuntini</option><option>Dispensa</option><option>Proteine</option><option>Altro</option></select></div>
+            </div>
+            <button class="btn small primary" type="submit">Aggiungi ingrediente</button>
+          </form>
+        </details>
+      </div>
+    </section>`;
   }).join("")}</div>
-  <div class="view-foot"><p class="subtle">È il "come previsto" proposto nei promemoria. Le modifiche si salvano da sole.</p><button class="btn small" data-reset-meals>${icon("rotate-ccw", "sm")}Ripristina il piano iniziale</button></div>`;
+  <div class="view-foot"><p class="subtle">È il "come previsto" proposto nei promemoria. Le cene lun–ven usano il secondo del lavoro.</p><div class="button-row"><button class="btn primary small" data-generate-list>${icon("sparkles", "sm")}Genera lista</button><button class="btn small" data-reset-meals>${icon("rotate-ccw", "sm")}Ripristina il piano iniziale</button></div></div>`;
 }
 
 function templates() {
@@ -191,9 +214,19 @@ export async function onClick(t) {
     await refreshDaily();
     return true;
   }
+  if (t.matches("[data-generate-list]")) return openPlanProposal(), false;
+  if (t.dataset.delPlanIng) {
+    const [day, idx] = t.dataset.delPlanIng.split(":");
+    const list = app.state.meals[day]?.items || [];
+    list.splice(num(idx), 1);
+    persistState();
+    return true;
+  }
   if (t.matches("[data-reset-meals]")) {
     if (!confirm("Sostituire il piano con i suggerimenti iniziali?")) return false;
-    for (const [d, [lunch, pre, dinner]] of Object.entries(MEAL_DEFAULTS)) app.state.meals[d] = { lunch, pre, dinner };
+    for (const [d, [lunch, pre, dinner]] of Object.entries(MEAL_DEFAULTS)) {
+      app.state.meals[d] = { lunch, pre, dinner, items: app.state.meals[d]?.items || [] };
+    }
     persistState();
     return true;
   }
@@ -202,13 +235,26 @@ export async function onClick(t) {
 
 export function onChange(t) {
   if (!t.dataset.mealDay) return false;
-  app.state.meals[t.dataset.mealDay] ??= { lunch: "", pre: "", dinner: "" };
+  app.state.meals[t.dataset.mealDay] ??= { lunch: "", pre: "", dinner: "", items: [] };
   app.state.meals[t.dataset.mealDay][t.dataset.mealKey] = t.value;
   persistState();
   return false;
 }
 
 export async function onSubmit(form, data) {
+  if (form.dataset.planIngForm) {
+    const day = form.dataset.planIngForm;
+    const parsed = parseQty(data.qty);
+    if (!parsed.amount || parsed.amount <= 0) return toast("Inserisci una quantità valida (es. 250 g, 2 pz)"), false;
+    app.state.meals[day] ??= { lunch: "", pre: "", dinner: "", items: [] };
+    app.state.meals[day].items ??= [];
+    app.state.meals[day].items.push({
+      name: data.name.trim(), amount: parsed.amount, unit: parsed.unit || "g",
+      category: data.category || "Altro", slot: data.slot || "dinner",
+    });
+    if (await persistState()) toast("Ingrediente aggiunto al piano");
+    return true;
+  }
   if (form.dataset.tplForm) return saveTemplate(form.dataset.tplForm, data);
   if (form.id === "tpl-new") return saveTemplate(`t-${uid().slice(0, 12)}`, data);
   return false;

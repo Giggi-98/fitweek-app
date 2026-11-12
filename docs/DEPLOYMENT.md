@@ -35,7 +35,7 @@ Automatizzata in `scripts/deploy.sh` (test → backup `pre-deploy-<commit>` → 
 - Automatico: `systemctl list-timers fitweek-backup.timer`; log con `journalctl -u fitweek-backup.service`.
 - Pre-migrazione: creato dall'app all'avvio se ci sono migrazioni da applicare (`/data/backups/pre-migration-*`, 10 conservati).
 - Non copiare mai il `.sqlite` a caldo con `cp`.
-- Da valutare: copia dei backup su un secondo disco/macchina (oggi stanno sullo stesso disco del server).
+- **Backup esterno (`scripts/backup-offsite.sh`)**: crea un archivio `.tar.gz.enc` cifrato (`AES-256-CBC` con `PBKDF2`, 600.000 iterazioni) contenente l'ultimo backup SQLite verificato e la chiave di firma APK (`/opt/fitweek-secrets/fitweek-release.jks` + `android-keystore.env`), lo trasferisce verso `OFFSITE_DEST` (cartella montata NAS/USB oppure `utente@host:/percorso` via `scp`), verifica l'hash SHA-256 e prova la decifratura post-trasferimento. Ripristino con `scripts/backup-offsite.sh --restore <file.tar.gz.enc> <cartella>`. Se un passo fallisce invia un errore a `journald` (`fitweek-backup-offsite`) ed esce con codice ≠ 0.
 
 ## Ripristino
 

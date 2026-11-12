@@ -39,6 +39,26 @@ export function nextEvent(items, nowMin) {
   return open.find((i) => toMinutes(i.time) >= nowMin) || null;
 }
 
+const SOON_MIN = 90; // quanto prima un evento diventa "la cosa da fare adesso"
+const OVERDUE_MAX_MIN = 180; // oltre, un evento non registrato non viene più riproposto (come i popup, D-014)
+
+/**
+ * L'azione più rilevante in questo momento, una sola: l'evento scaduto più recente ancora da registrare
+ * (nelle ultime 3 ore), altrimenti il prossimo entro 90 minuti; null se adesso non c'è nulla da fare.
+ * @param items voci dell'agenda con `time` = orario mostrato (quello posticipato, se "Più tardi")
+ * @returns {{item, due: boolean, minutes: number} | null} minutes = da quanto è scaduto / tra quanto arriva
+ */
+export function nowAction(items, nowMin) {
+  const open = items
+    .filter((i) => i.state === "pending" || i.state === "snoozed")
+    .map((i) => ({ item: i, delta: toMinutes(i.time) - nowMin }))
+    .sort((a, b) => a.delta - b.delta);
+  const overdue = open.filter((x) => x.delta <= 0 && -x.delta <= OVERDUE_MAX_MIN).pop();
+  if (overdue) return { item: overdue.item, due: true, minutes: Math.abs(overdue.delta) };
+  const soon = open.find((x) => x.delta > 0 && x.delta <= SOON_MIN);
+  return soon ? { item: soon.item, due: false, minutes: soon.delta } : null;
+}
+
 /** Riposiziona il puntatore e aggiorna i testi "vivi". Chiamata dopo ogni render e ogni 15 secondi. */
 export function positionNow(root = document) {
   const tl = $("[data-timeline]", root);

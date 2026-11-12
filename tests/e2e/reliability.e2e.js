@@ -154,6 +154,61 @@ const STATE = '**/api/state';
   await page.waitForFunction(() => fetch('/api/v1/today').then((r) => r.json()).then((t) => t.active_session.sets.length === 3), null, { timeout: 10000 });
   check('memoria piena: con l\'app aperta la serie arriva comunque', true);
 
+  // 6. Scheda "Adesso": con l'allenamento in corso non compare (c'è già "Riprendi"); a seduta chiusa, un evento
+  //    della routine tra 20 minuti diventa l'azione proposta in cima a Oggi
+  await page.click('.bottom-nav [data-view=dashboard]');
+  await page.waitForSelector('.today-hero');
+  check('adesso: nascosta durante l\'allenamento', (await page.locator('.now-card').count()) === 0);
+  await page.evaluate(async () => {
+    const { active_session: s } = await fetch('/api/v1/today').then((r) => r.json());
+    await fetch(`/api/v1/workout-sessions/${s.id}`, { method: 'DELETE' });
+  });
+  const soon = await page.evaluate(() => {
+    const d = new Date(Date.now() + 20 * 60000);
+    return { sameDay: d.getDate() === new Date().getDate(), weekday: (d.getDay() + 6) % 7, time: `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}` };
+  });
+  if (soon.sameDay) {
+    await page.evaluate((r) => fetch('/api/v1/reminders/e2e-now', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ weekday: r.weekday, time: r.time, kind: 'meal', slot: 'snack', title: 'Spuntino di prova', action: 'log_meal', enabled: true }) }), soon);
+    await page.reload();
+    await page.waitForSelector('.now-card');
+    const card = await page.textContent('.now-card');
+    check('adesso: propone l\'evento in arrivo con il tempo che manca', /Spuntino di prova/.test(card) && /tra (19|20) min/i.test(card), card.replace(/\s+/g, ' '));
+    await page.screenshot({ path: `${SHOTS}/rel-2-adesso.png`, fullPage: true });
+    await page.click('.now-card');
+    await page.waitForSelector('#modal[open]');
+    check('adesso: un tocco apre la registrazione giusta', true);
+    await page.keyboard.press('Escape');
+    await page.waitForSelector('#modal', { state: 'hidden' });
+    await page.evaluate(() => fetch('/api/v1/reminders/e2e-now', { method: 'DELETE' }));
+    await page.reload();
+    await page.waitForSelector('.today-hero');
+    check('adesso: nessuna scheda quando non c\'è nulla di vicino', (await page.locator('.now-card').count()) === 0);
+  }
+
+  // 7. Piano → dispensa → lista della spesa: fabbisogno − dispensa, nessun secondo per le cene lun–ven,
+  //    prezzi vuoti se non inseriti dall'utente, proposta da confermare
+  await page.evaluate(async () => {
+    const s = await fetch('/api/state').then((r) => r.json());
+    s.data.groceries = [];
+    s.data.inventory = [{ id: 'inv-ban', name: 'Banane', qty: '200 g', amount: 200, unit: 'g', expiry: '' }];
+    s.data.meals['Lunedì'].items.push({ name: 'Bistecca', amount: 250, unit: 'g', category: 'Proteine', slot: 'dinner' });
+    await fetch('/api/state', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ version: s.version, data: s.data }) });
+  });
+  await page.reload();
+  await page.click('.bottom-nav [data-view=shopping]');
+  await page.waitForSelector('[data-generate-list]');
+  await page.click('[data-generate-list]');
+  await page.waitForSelector('#modal[open] [data-m=apply-plan]');
+  const propText = await page.textContent('#modal');
+  check('proposta dal piano: sottrae la dispensa (Banane 600 g − 200 g = 400 g)', /Banane/.test(propText) && /400 g/.test(propText) && /in dispensa: 200 g/.test(propText));
+  check('proposta dal piano: nessun secondo per le cene lun–ven', !/Bistecca/.test(propText) && /Pollo/.test(propText));
+  await page.click('#modal [data-m=apply-plan]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  await page.waitForSelector('#sync[data-state=ok]');
+  const genGroceries = (await server('/api/state')).data.groceries;
+  const genBanane = genGroceries.find((g) => g.name === 'Banane');
+  check('proposta confermata: articoli aggiunti alla lista con quantità e unità', genBanane && genBanane.amount === 400 && genBanane.unit === 'g' && !genGroceries.some((g) => g.name === 'Bistecca'));
+
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();
   console.log(out.join('\n'));

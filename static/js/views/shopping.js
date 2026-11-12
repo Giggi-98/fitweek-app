@@ -1,12 +1,22 @@
 // Spesa e dispensa: lista della settimana (blob), spesa reale per settimana (API v1), dispensa con scadenze.
 import { request } from "../api.js";
 import { icon } from "../icons.js";
-import { dayNumber, mondayOf } from "../stats.js";
+import { dayNumber, formatQty, mondayOf, parseQty, planProposal } from "../stats.js";
 import { app, persistState } from "../store.js";
 import { empty, openModal, panel, tabs, toast } from "../ui.js";
-import { $, esc, fmtDate, fmtNum, isoDate, money, num, uid } from "../util.js";
+import { $, $$, esc, fmtDate, fmtNum, isoDate, money, num, storage, uid } from "../util.js";
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
+const UNITS = [
+  ["", "Unità libera / auto"],
+  ["g", "g (grammi)"],
+  ["kg", "kg (chili)"],
+  ["ml", "ml"],
+  ["l", "l (litri)"],
+  ["pz", "pz (pezzi)"],
+  ["conf", "conf (confezioni)"],
+];
+const USER_PRICES_KEY = "fitweek.userPrices.v1"; // prezzi inseriti a mano dall'utente (mai inventati)
 const WEEKS_SHOWN = 8;
 const ui = { tab: "list" };
 const parseAmount = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", "."), null));
@@ -36,22 +46,25 @@ function tiles(g, budget) {
 
 function listPanel(g) {
   const categories = [...new Set([...CATEGORIES, ...g.map((x) => x.category || "Altro")])].filter((c) => g.some((x) => (x.category || "Altro") === c));
+  const qtyText = (x) => formatQty(x.amount, x.unit, x.qty || "");
+  const priceText = (x) => (x.price != null && Number(x.price) > 0 ? money(x.price) : "—");
   const row = (x) =>
-    `<label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(x.qty)}${x.recurring ? " · ogni settimana" : ""}</span></span><span class="shopprice">${money(x.price)}</span><button type="button" class="icon-btn ${x.recurring ? "on" : ""}" data-recurring="${esc(x.id)}" aria-pressed="${Boolean(x.recurring)}" aria-label="${esc(x.name)}: compra ogni settimana" title="Compra ogni settimana">${icon("refresh-cw", "sm")}</button><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></label>`;
+    `<label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(qtyText(x))}${x.recurring ? " · ogni settimana" : ""}</span></span><span class="shopprice">${priceText(x)}</span><button type="button" class="icon-btn ${x.recurring ? "on" : ""}" data-recurring="${esc(x.id)}" aria-pressed="${Boolean(x.recurring)}" aria-label="${esc(x.name)}: compra ogni settimana" title="Compra ogni settimana">${icon("refresh-cw", "sm")}</button><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></label>`;
   const anyChecked = g.some((x) => x.checked);
   const group = (cat) => {
     const items = g.filter((x) => (x.category || "Altro") === cat);
     return `<div class="shop-group"><div class="group-head"><span class="tiny-label">${esc(cat)}</span><span class="tiny-label num">${money(items.reduce((s, x) => s + num(x.price), 0))}</span></div>${items.map(row).join("")}</div>`;
   };
+  const unitOpts = UNITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
   return panel(
     `${icon("shopping-cart")}Lista della spesa`,
-    `${categories.length ? `<div class="shop-groups">${categories.map(group).join("")}</div>` : empty("Lista vuota", "Aggiungi i prodotti qui sotto.")}
+    `${categories.length ? `<div class="shop-groups">${categories.map(group).join("")}</div>` : empty("Lista vuota", "Aggiungi i prodotti qui sotto o generala dal piano.")}
     ${anyChecked ? `<button type="button" class="btn primary full" data-arrived>${icon("package")}Spesa arrivata</button>` : ""}
     <details class="free"><summary>${icon("plus", "sm")}Aggiungi prodotto</summary>
-      <form id="shopping-form" class="stack"><div class="form-grid four"><div class="field"><label for="sh-name">Prodotto</label><input id="sh-name" name="name" required maxlength="120" placeholder="es. Banane"></div><div class="field"><label for="sh-qty">Quantità</label><input id="sh-qty" name="qty" required maxlength="60" placeholder="es. 1 kg"></div><div class="field"><label for="sh-price">Prezzo stimato (€)</label><input id="sh-price" name="price" inputmode="decimal" placeholder="0,00"></div><div class="field"><label for="sh-cat">Categoria</label><select id="sh-cat" name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
+      <form id="shopping-form" class="stack"><div class="form-grid four"><div class="field"><label for="sh-name">Prodotto</label><input id="sh-name" name="name" required maxlength="120" placeholder="es. Banane"></div><div class="field"><label for="sh-qty">Quantità</label><input id="sh-qty" name="qty" required maxlength="60" placeholder="es. 500 o 1 kg"></div><div class="field"><label for="sh-unit">Unità</label><select id="sh-unit" name="unit">${unitOpts}</select></div><div class="field"><label for="sh-price">Prezzo stimato (€)</label><input id="sh-price" name="price" inputmode="decimal" placeholder="facoltativo"></div><div class="field"><label for="sh-cat">Categoria</label><select id="sh-cat" name="category">${CATEGORIES.map((c) => `<option>${c}</option>`).join("")}</select></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
     </details>
-    <p class="subtle">Prezzi stimati a mano: verifica disponibilità e totale su Esselunga.</p>`,
-    `<div class="panel-actions">${anyChecked ? '<button class="btn small" data-clear-shopping>Deseleziona tutto</button>' : ""}<button class="btn small" data-copy-shopping>Copia lista</button></div>`,
+    <p class="subtle">Prezzi inseriti da te: se non l'hai mai inserito, il prezzo resta vuoto.</p>`,
+    `<div class="panel-actions"><button class="btn small" data-generate-list>${icon("sparkles", "sm")}Genera dal piano</button>${anyChecked ? '<button class="btn small" data-clear-shopping>Deseleziona tutto</button>' : ""}<button class="btn small" data-copy-shopping>Copia lista</button></div>`,
     "", "shopping-list",
   );
 }
@@ -86,11 +99,13 @@ function spendPanel(budget) {
 
 function pantryPanel() {
   const items = [...app.state.inventory].sort(byExpiry);
+  const qtyText = (x) => formatQty(x.amount, x.unit, x.qty || "");
+  const unitOpts = UNITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
   return panel(
     `${icon("package")}Dispensa`,
-    `${items.length ? `<div class="card-grid">${items.map((x) => `<div class="mini-card"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(x.qty)}${expiryLabel(x.expiry)}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("")}</div>` : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
+    `${items.length ? `<div class="card-grid">${items.map((x) => `<div class="mini-card"><div><div class="entry-title">${esc(x.name)}</div><div class="entry-sub">${esc(qtyText(x))}${expiryLabel(x.expiry)}</div></div><button type="button" class="icon-btn" data-remove-inv="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`).join("")}</div>` : empty("Dispensa non ancora censita", "Comincia da 3–4 alimenti già in casa.")}
     <details class="free"><summary>${icon("plus", "sm")}Aggiungi in dispensa</summary>
-      <form id="inventory-form" class="stack"><div class="form-grid three"><div class="field"><label for="in-name">Alimento</label><input id="in-name" name="name" required maxlength="120" placeholder="es. Riso"></div><div class="field"><label for="in-qty">Quantità</label><input id="in-qty" name="qty" required maxlength="60" placeholder="es. 300 g"></div><div class="field"><label for="in-exp">Scadenza (facoltativa)</label><input id="in-exp" name="expiry" type="date"></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
+      <form id="inventory-form" class="stack"><div class="form-grid four"><div class="field"><label for="in-name">Alimento</label><input id="in-name" name="name" required maxlength="120" placeholder="es. Riso"></div><div class="field"><label for="in-qty">Quantità</label><input id="in-qty" name="qty" required maxlength="60" placeholder="es. 300 o 300 g"></div><div class="field"><label for="in-unit">Unità</label><select id="in-unit" name="unit">${unitOpts}</select></div><div class="field"><label for="in-exp">Scadenza (facoltativa)</label><input id="in-exp" name="expiry" type="date"></div></div><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi</button></form>
     </details>
     <p class="subtle">Sottovuoto non significa senza scadenza: vale l'etichetta.</p>`,
   );
@@ -146,22 +161,78 @@ function openSpend(week, { arrived = false } = {}) {
   );
 }
 
-/** Gli articoli spuntati entrano in dispensa (senza doppioni); i ricorrenti restano in lista, da spuntare di nuovo. */
+/** Gli articoli spuntati entrano in dispensa (sommando le quantità compatibili); i ricorrenti restano in lista. */
 async function moveToPantry() {
   const bought = app.state.groceries.filter((x) => x.checked);
-  const have = new Set(app.state.inventory.map((x) => x.name.trim().toLowerCase()));
   for (const x of bought) {
-    if (!have.has(x.name.trim().toLowerCase())) app.state.inventory.push({ id: uid(), name: x.name, qty: x.qty, expiry: "" });
+    const parsed = x.amount != null ? parseQty(x.amount, x.unit) : parseQty(x.qty, x.unit);
+    const key = x.name.trim().toLowerCase();
+    const existing = app.state.inventory.find((i) => i.name.trim().toLowerCase() === key && (!parsed.unit || !i.unit || i.unit === parsed.unit));
+    if (existing && parsed.amount && existing.amount != null) {
+      existing.amount = Math.round((existing.amount + parsed.amount) * 100) / 100;
+      existing.unit = existing.unit || parsed.unit;
+      existing.qty = formatQty(existing.amount, existing.unit, existing.qty);
+    } else if (!existing) {
+      app.state.inventory.push({
+        id: uid(), name: x.name, amount: parsed.amount, unit: parsed.unit,
+        qty: formatQty(parsed.amount, parsed.unit, x.qty), expiry: "",
+      });
+    }
   }
   app.state.groceries = app.state.groceries.filter((x) => !x.checked || x.recurring);
   app.state.groceries.forEach((x) => (x.checked = false));
   if (await persistState()) toast(`${bought.length} ${bought.length === 1 ? "prodotto" : "prodotti"} in dispensa`);
 }
 
+/** Apre la proposta di lista generata da `fabbisogno del piano − dispensa`: non modifica la lista senza conferma. */
+export function openPlanProposal() {
+  const userPrices = storage.get(USER_PRICES_KEY, {});
+  const { toBuy, covered } = planProposal(app.state.meals, app.state.inventory, userPrices, app.today?.date || isoDate());
+  openModal(
+    `<div class="modal-ic">${icon("sparkles")}</div>
+    <h2 id="modal-title">Proposta dal piano</h2>
+    <p class="subtle">Fabbisogno della settimana meno ciò che hai già in dispensa. Per le cene lun–ven il secondo arriva dal lavoro e non viene aggiunto. I prezzi restano vuoti finché non li inserisci tu.</p>
+    ${toBuy.length
+      ? `<div class="stack">${toBuy
+          .map(
+            (x, i) => `<label class="shopitem"><input type="checkbox" data-prop-idx="${i}" checked><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(x.qty)}${x.inPantry ? ` (in dispensa: ${esc(formatQty(x.inPantry, x.unit))})` : ""}</span></span><span class="shopprice">${x.price != null ? money(x.price) : "—"}</span></label>`,
+          )
+          .join("")}</div>`
+      : empty("Tutto già in dispensa", "La dispensa copre tutti gli ingredienti previsti dal piano.")}
+    ${covered.length ? `<p class="subtle">Già coperti dalla dispensa: ${esc(covered.map((c) => c.name).join(", "))}.</p>` : ""}
+    ${toBuy.length ? `<button type="button" class="btn primary xl full" data-m="apply-plan">${icon("check")}Conferma e aggiungi alla lista</button>` : ""}
+    <div class="modal-secondary"><button type="button" data-m="close">Annulla</button></div>`,
+    async (t) => {
+      if (t.dataset.m === "close") return true;
+      if (t.dataset.m !== "apply-plan") return false;
+      const picked = $$("[data-prop-idx]:checked", $("#modal")).map((el) => toBuy[num(el.dataset.propIdx)]).filter(Boolean);
+      for (const item of picked) {
+        const key = item.name.trim().toLowerCase();
+        const existing = app.state.groceries.find((g) => g.name.trim().toLowerCase() === key && !g.checked);
+        if (existing) {
+          existing.amount = item.amount;
+          existing.unit = item.unit;
+          existing.qty = item.qty;
+          if (item.price != null) existing.price = item.price;
+        } else {
+          app.state.groceries.push({
+            id: uid(), name: item.name, qty: item.qty, amount: item.amount, unit: item.unit,
+            price: item.price ?? 0, category: item.category || "Altro", checked: false, recurring: false,
+          });
+        }
+      }
+      if (await persistState()) toast(`${picked.length} ${picked.length === 1 ? "articolo confermato" : "articoli confermati"} in lista`);
+      app.render();
+      return true;
+    },
+  );
+}
+
 export async function onClick(t) {
   if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
   if (t.dataset.spend) return openSpend(t.dataset.spend), false;
   if (t.matches("[data-arrived]")) return openSpend(thisWeek(), { arrived: true }), false;
+  if (t.matches("[data-generate-list]")) return openPlanProposal(), false;
   if (t.dataset.recurring) {
     const item = app.state.groceries.find((x) => x.id === t.dataset.recurring);
     if (item) item.recurring = !item.recurring;
@@ -208,12 +279,28 @@ export function onChange(t) {
 
 export async function onSubmit(form, data) {
   if (form.id === "shopping-form") {
-    app.state.groceries.push({ id: uid(), name: data.name.trim(), qty: data.qty.trim(), price: Math.max(0, parseAmount(data.price) ?? 0), category: data.category, checked: false, recurring: false });
+    const parsed = parseQty(data.qty, data.unit);
+    const qty = parsed.amount ? formatQty(parsed.amount, parsed.unit, data.qty.trim()) : data.qty.trim();
+    const rawPrice = parseAmount(data.price);
+    const price = rawPrice != null && rawPrice > 0 ? Math.max(0, rawPrice) : 0;
+    if (price > 0) {
+      const known = storage.get(USER_PRICES_KEY, {});
+      known[data.name.trim().toLowerCase()] = price;
+      storage.set(USER_PRICES_KEY, known);
+    }
+    app.state.groceries.push({
+      id: uid(), name: data.name.trim(), qty, amount: parsed.amount, unit: parsed.unit,
+      price, category: data.category, checked: false, recurring: false,
+    });
     if (await persistState()) toast("Prodotto aggiunto");
     return true;
   }
   if (form.id === "inventory-form") {
-    app.state.inventory.push({ id: uid(), name: data.name.trim(), qty: data.qty.trim(), expiry: data.expiry || "" });
+    const parsed = parseQty(data.qty, data.unit);
+    const qty = parsed.amount ? formatQty(parsed.amount, parsed.unit, data.qty.trim()) : data.qty.trim();
+    app.state.inventory.push({
+      id: uid(), name: data.name.trim(), qty, amount: parsed.amount, unit: parsed.unit, expiry: data.expiry || "",
+    });
     if (await persistState()) toast("Alimento aggiunto");
     return true;
   }

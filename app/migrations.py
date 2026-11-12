@@ -345,6 +345,71 @@ def _m007_sleep_notes_spend(c: sqlite3.Connection) -> None:
     )
 
 
+def _parse_qty(text: str) -> tuple[float | None, str]:
+    """Estrae (quantità numerica, unità) da una stringa libera (es. '2 × 500 g' → (1000.0, 'g'))."""
+    import re
+
+    s = (text or "").strip().lower().replace(",", ".")
+    if not s:
+        return None, ""
+    mult = re.match(r"^(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(kg|g|l|ml)\b", s)
+    if mult:
+        val, unit = float(mult.group(1)) * float(mult.group(2)), mult.group(3)
+        return (val * 1000, "g") if unit == "kg" else (val * 1000, "ml") if unit == "l" else (val, unit)
+    rng = re.match(r"^(\d+(?:\.\d+)?)\s*[–-]\s*(\d+(?:\.\d+)?)\s*(kg|g|l|ml)\b", s)
+    if rng:
+        val, unit = (float(rng.group(1)) + float(rng.group(2))) / 2, rng.group(3)
+        return (val * 1000, "g") if unit == "kg" else (val * 1000, "ml") if unit == "l" else (round(val), unit)
+    m = re.match(r"^(\d+(?:\.\d+)?)\s*(.*)$", s)
+    if not m:
+        return None, ""
+    val, rest = float(m.group(1)), m.group(2).strip()
+    if rest in ("kg", "chilo", "chili"):
+        return val * 1000, "g"
+    if rest in ("g", "gr", "grammi"):
+        return val, "g"
+    if rest in ("l", "lt", "litro", "litri"):
+        return val * 1000, "ml"
+    if rest in ("ml",):
+        return val, "ml"
+    if not rest or rest in ("pz", "pezzo", "pezzi", "uova"):
+        return val, "pz"
+    return val, "conf"
+
+
+def _m008_sessions_and_quantities(c: sqlite3.Connection) -> None:
+    """Rinnovo scorrevole delle sessioni (`last_seen_at`) + quantità numeriche con unità per spesa/dispensa
+    e ingredienti strutturati per il piano settimanale. Solo aggiunte."""
+    cols = {r[1] for r in c.execute("PRAGMA table_info(sessions)")}
+    if "last_seen_at" not in cols:
+        c.execute("ALTER TABLE sessions ADD COLUMN last_seen_at TEXT")
+    c.execute("UPDATE sessions SET last_seen_at = created_at WHERE last_seen_at IS NULL")
+
+    row = c.execute("SELECT version, json FROM app_state WHERE id=1").fetchone()
+    if not row:
+        return
+    version, blob = row
+    state = json.loads(blob)
+    changed = False
+    for section in ("groceries", "inventory"):
+        for item in state.get(section, []):
+            if "amount" not in item or "unit" not in item:
+                amt, unit = _parse_qty(item.get("qty", ""))
+                item.setdefault("amount", amt)
+                item.setdefault("unit", unit)
+                changed = True
+    seed_meals = initial_state()["meals"]
+    for day, d_obj in state.get("meals", {}).items():
+        if isinstance(d_obj, dict) and "items" not in d_obj:
+            d_obj["items"] = seed_meals.get(day, {}).get("items", [])
+            changed = True
+    if changed:
+        c.execute(
+            "UPDATE app_state SET version=?, json=? WHERE id=1",
+            (version + 1, json.dumps(state, ensure_ascii=False)),
+        )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -353,6 +418,7 @@ MIGRATIONS: list[Migration] = [
     (5, "meals_and_reminders", _m005_meals_and_reminders),
     (6, "meal_items_and_foods", _m006_meal_items_and_foods),
     (7, "sleep_notes_spend", _m007_sleep_notes_spend),
+    (8, "sessions_and_quantities", _m008_sessions_and_quantities),
 ]
 
 

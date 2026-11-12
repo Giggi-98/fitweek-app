@@ -132,3 +132,13 @@ La durata del sonno non è memorizzata: si calcola dagli orari (se la sveglia è
 
 Blob: `profile.proteinTarget`, `profile.kcalTarget` (numeri facoltativi scelti dall'utente), `groceries[].recurring` (resta in lista dopo "Spesa arrivata").
 `set_logs.rir`: 0–3 = ripetizioni di riserva, 4 = "4 o più".
+
+## Stato dopo 1.10.2 (schema 8, 2026-11-12)
+
+```sql
+ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;  -- rinnovo scorrevole delle sessioni attive
+```
+
+Nel blob `app_state` (migrazione 8, additiva e idempotente):
+- `groceries[]` e `inventory[]` portano `amount` (REAL, convertito in unità base `g`/`ml`/`pz`/`conf`) e `unit` (TEXT), popolati automaticamente da `qty` per le voci già esistenti.
+- `meals[Giorno].items` contiene l'elenco di ingredienti strutturati `[{name, amount, unit, category, slot}]` per calcolare la proposta di lista della spesa (`fabbisogno − dispensa`).

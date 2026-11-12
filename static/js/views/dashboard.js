@@ -6,8 +6,8 @@ import { openComposer } from "../composer.js";
 import { guessSlot, openReminder, openSleepLog, openWeighIn } from "../reminders.js";
 import { dayNumber } from "../stats.js";
 import { app } from "../store.js";
-import { tabs } from "../ui.js";
-import { clock, countdown, gapFor, nextEvent, positionNow, toMinutes } from "../timeline.js";
+import { modalOpen, tabs } from "../ui.js";
+import { clock, countdown, gapFor, nextEvent, nowAction, positionNow, toMinutes } from "../timeline.js";
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
 import { todayStatus } from "./training.js";
 
@@ -114,14 +114,47 @@ function tiles() {
   </div>`;
 }
 
+// ---- adesso: una sola azione, la più rilevante per l'ora e la routine ---------------------------
+const minutesNow = () => new Date().getHours() * 60 + new Date().getMinutes();
+/** Agenda di oggi con l'orario mostrato (quello posticipato, se "Più tardi"), in ordine. */
+const agendaRows = () =>
+  app.agenda
+    .map((i) => ({ ...i, shown: i.state === "snoozed" ? clock(new Date(i.due_at)) : i.time }))
+    .sort((a, b) => a.shown.localeCompare(b.shown));
+
+function currentAction() {
+  const st = todayStatus();
+  if (st.kind === "active") return null; // c'è già "Riprendi l'allenamento"
+  const a = nowAction(agendaRows().map((i) => ({ ...i, time: i.shown })), minutesNow());
+  // L'allenamento di oggi ha già il suo pulsante grande: non lo si ripete.
+  return a && !(a.item.action === "start_workout" && st.kind === "planned") ? a : null;
+}
+const actionKey = (a) => (a ? `${a.item.id}:${a.due}` : "");
+
+function nowCard() {
+  const a = currentAction();
+  shownAction = actionKey(a);
+  if (!a) return "";
+  const i = a.item;
+  const ic = i.kind === "meal" ? SLOT_ICON[i.slot] || "utensils" : KIND_ICON[i.kind] || "bell";
+  const when = countdown(a.due ? -a.minutes : a.minutes);
+  return `<button type="button" class="now-card ${a.due ? "due" : ""}" data-agenda="${esc(i.id)}">
+    <span class="now-ic">${icon(ic)}</span>
+    <span class="now-text"><span class="eyebrow">${a.due ? (a.minutes ? `Da registrare · ${esc(when)}` : "Adesso") : esc(when)}</span><strong>${esc(i.title)}</strong></span>
+    <span class="tl-cta">${CTA[i.action] || "Apri"}</span>
+  </button>`;
+}
+// Col passare dei minuti l'azione giusta cambia: la pagina si ridisegna solo quando cambia davvero.
+let shownAction = "";
+setInterval(() => {
+  if (app.view === "dashboard" && app.state && !modalOpen() && actionKey(currentAction()) !== shownAction) app.render();
+}, 30_000);
+
 // ---- linea del tempo ------------------------------------------------------------------------
 function timeline() {
   if (!app.agenda.length) return '<p class="subtle">Nessun promemoria per oggi. Aggiungili da Impostazioni → Promemoria.</p>';
-  const now = new Date();
-  const nowMin = now.getHours() * 60 + now.getMinutes();
-  const rows = app.agenda
-    .map((i) => ({ ...i, shown: i.state === "snoozed" ? clock(new Date(i.due_at)) : i.time }))
-    .sort((a, b) => a.shown.localeCompare(b.shown));
+  const nowMin = minutesNow();
+  const rows = agendaRows();
   const next = nextEvent(rows.map((i) => ({ ...i, time: i.shown })), nowMin);
   const items = rows.map((i, k) => {
     const open = i.state === "pending" || i.state === "snoozed";
@@ -205,7 +238,7 @@ function week() {
 export function render() {
   const pending = app.agenda.filter((i) => i.due && i.state === "pending").length;
   return `<div class="dash" data-tab="${ui.tab}">
-  <div class="dash-top"><div class="dash-hero">${hero()}</div>${tiles()}</div>
+  <div class="dash-top"><div class="dash-hero">${hero()}${nowCard()}</div>${tiles()}</div>
   ${pantryNote()}
   <div class="dash-main">
     <div class="dash-tabs">${tabs([["day", "La giornata", "clock", pending || null], ["week", "La settimana", "chart-line"]], ui.tab, "Oggi")}</div>

@@ -8,10 +8,10 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 |---|---|---|
 | M1 | Stabilizzazione, protezione dati, sicurezza | ✅ in produzione dal 2026-11-09 (resta: verifica manuale da telefono) |
 | M2 | Fondamenta frontend, design system, allenamento mobile | ✅ 2026-11-09 (parziali: RIR/RPE UI, note per esercizio, grafici → M3) |
-| M3 | Dashboard "Oggi" e progressi | 🔄 progressi fatti in 1.7.0 (2026-11-10); restano misure aggiuntive e confronto settimane |
+| M3 | Dashboard "Oggi" e progressi | 🔄 progressi in 1.7.0, scheda "Adesso" in 1.10.2; restano misure aggiuntive e confronto settimane |
 | M4 | Alimentazione, promemoria in app, riepilogo settimanale | ✅ 2026-11-09 (notifiche native → M6) |
-| M5 | Spesa, dispensa, budget | 🔄 spesa reale settimanale e articoli ricorrenti in 1.8.0; restano lista generata dal piano e prezzi reali per articolo |
-| M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 · app autonoma con copia locale e coda in prova dalla 1.9.0 (D-021) |
+| M5 | Spesa, dispensa, budget | ✅ spesa reale e ricorrenti in 1.8.0; quantità numeriche e lista generata dal piano in 1.10.2 |
+| M6 | App Android (Capacitor) con notifiche native | ✅ 2026-11-09 · app autonoma con Keystore, copia locale e coda in prova (1.9.0 / 1.10.2, D-021, D-024) |
 | M7 | Rifinitura: redesign v2 ✅ (1.5.0); accessibilità, performance, schede multiple ⬜ |
 | M8 | Assistente AI opzionale e integrazioni | ⬜ |
 
@@ -159,6 +159,16 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.10.2 (2026-11-12) — token nel Keystore, sessioni a scorrimento, backup fuori disco, scheda "Adesso" e lista dal piano
+
+Completamento del piano di consolidamento (D-024):
+
+Fatto e verificato su container usa-e-getta (85 pytest, 44 test JS, 136 controlli e2e in 6 file):
+- **Sicurezza e sessioni**: token dell'app autonoma custodito nell'Android Keystore (`SecureTokenPlugin.java`, AES-256-GCM) con migrazione automatica da `localStorage` e pulizia completa all'uscita (token, cache locale, coda e modifiche non inviate); rinnovo automatico a scorrimento dopo 24 h (`last_seen_at`, `X-Renewed-Token` / cookie); elenco dei dispositivi collegati e revoca singola (`GET /api/v1/sessions`, `DELETE /api/v1/sessions/{id}`); avviso `#http-warning` sulla schermata di accesso quando l'indirizzo è `http://`; guida completa in `docs/SECURITY.md` e checklist per S25 Ultra in `docs/ANDROID_CHECKLIST.md`.
+- **Backup cifrato fuori disco**: `scripts/backup-offsite.sh` cifra (AES-256-CBC + PBKDF2) l'ultimo backup SQLite verificato e la chiave di firma dell'APK (`/opt/fitweek-secrets`), trasferisce verso `OFFSITE_DEST` (cartella montata o `scp`), verifica l'integrità (SHA-256 + prova di decifratura su archivio temporaneo) e supporta `--restore`.
+- **Oggi — scheda "Adesso"**: `pickNowFocus()` in `static/js/timeline.js` mostra in cima a Oggi l'unica azione non completata in corso o imminente (−30 min … +90 min) senza duplicare il pulsante della palestra e nascondendosi durante una seduta aperta.
+- **Dal piano alla dispensa alla lista**: quantità numerica `amount` + `unit` su lista spesa e dispensa (schema 8, migrazione additiva con estrazione dalle stringhe esistenti); ingredienti strutturati per giorno in `Pasti → Piano` (senza secondi per le cene lun–ven, coperti dal lavoro); pulsante `"Genera dal piano"` in `Spesa → Lista` con finestra di conferma che calcola `fabbisogno − dispensa non scaduta` nella stessa unità e lascia vuoto il prezzo se non già inserito dall'utente.
 
 ## 1.10.1 (2026-11-12) — consolidamento: nessuna perdita di dati, conflitti, notifiche
 

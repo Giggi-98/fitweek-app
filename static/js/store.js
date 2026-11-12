@@ -271,4 +271,11 @@ export function syncState() {
   return statePending() ? persistState({ quiet: true }) : Promise.resolve(true);
 }
 
+/** Cancella la copia locale e gli stati temporanei su questo dispositivo all'uscita. */
+export function clearLocalState() {
+  cache.clear();
+  storage.remove(STATE_PENDING);
+  storage.remove(STATE_REJECTED);
+}
+
 export { reloadState };

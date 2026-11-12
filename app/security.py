@@ -62,6 +62,8 @@ class LoginRateLimiter:
 
 
 class SessionManager:
+    RENEW_AFTER_S = 86_400  # dopo 24 h emette un token con firma fresca (rinnovo scorrevole)
+
     def __init__(self, settings: Settings):
         self.settings = settings
         self._serializer = URLSafeTimedSerializer(settings.session_secret, salt="fitweek-session-v2")
@@ -70,25 +72,71 @@ class SessionManager:
         sid = secrets.token_urlsafe(32)
         now = datetime.now().astimezone().isoformat(timespec="seconds")
         with connect(self.settings.db_path) as c:
-            c.execute("INSERT INTO sessions VALUES (?, ?, ?)", (sid, now, user_agent[:200]))
+            c.execute(
+                "INSERT INTO sessions (id, created_at, user_agent, last_seen_at) VALUES (?, ?, ?, ?)",
+                (sid, now, user_agent[:200], now),
+            )
         return self._serializer.dumps(sid)
 
-    def session_id(self, token: str) -> str | None:
+    def verify(self, token: str) -> tuple[str | None, str | None]:
+        """Verifica il token e aggiorna `last_seen_at` (scadenza scorrevole).
+        Restituisce `(sid, token_rinnovato)` se la sessione è valida, altrimenti `(None, None)`."""
         if not token:
-            return None
+            return None, None
         try:
-            sid = self._serializer.loads(token, max_age=self.settings.session_max_age_s)
+            sid, signed_at = self._serializer.loads(token, return_timestamp=True)
         except (BadSignature, SignatureExpired):
-            return None
+            return None, None
         if not isinstance(sid, str):
-            return None
+            return None, None
+        now_dt = datetime.now().astimezone()
+        now_iso = now_dt.isoformat(timespec="seconds")
+        cutoff = now_dt.timestamp() - self.settings.session_max_age_s
         with connect(self.settings.db_path) as c:
-            found = c.execute("SELECT 1 FROM sessions WHERE id=?", (sid,)).fetchone()
-        return sid if found else None
+            row = c.execute(
+                "SELECT created_at, COALESCE(last_seen_at, created_at) FROM sessions WHERE id=?", (sid,)
+            ).fetchone()
+            if not row:
+                return None, None
+            try:
+                last_ts = datetime.fromisoformat(row[1]).timestamp()
+            except ValueError:
+                last_ts = 0.0
+            if last_ts < cutoff:
+                c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+                return None, None
+            if row[1] != now_iso:
+                c.execute("UPDATE sessions SET last_seen_at=? WHERE id=?", (now_iso, sid))
+        signed_age = now_dt.timestamp() - signed_at.timestamp()
+        renewed = self._serializer.dumps(sid) if signed_age >= self.RENEW_AFTER_S else None
+        return sid, renewed
 
-    def revoke(self, sid: str) -> None:
+    def session_id(self, token: str) -> str | None:
+        sid, _ = self.verify(token)
+        return sid
+
+    def list_sessions(self, current_sid: str) -> list[dict]:
+        self.purge_expired()
         with connect(self.settings.db_path) as c:
-            c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+            rows = c.execute(
+                "SELECT id, created_at, COALESCE(last_seen_at, created_at), user_agent "
+                "FROM sessions ORDER BY COALESCE(last_seen_at, created_at) DESC, id"
+            ).fetchall()
+        return [
+            {
+                "id": r[0],
+                "created_at": r[1],
+                "last_seen_at": r[2],
+                "user_agent": r[3],
+                "current": r[0] == current_sid,
+            }
+            for r in rows
+        ]
+
+    def revoke(self, sid: str) -> bool:
+        with connect(self.settings.db_path) as c:
+            cur = c.execute("DELETE FROM sessions WHERE id=?", (sid,))
+            return cur.rowcount > 0
 
     def revoke_all(self) -> None:
         with connect(self.settings.db_path) as c:
@@ -98,7 +146,7 @@ class SessionManager:
         cutoff = time.time() - self.settings.session_max_age_s
         limit = datetime.fromtimestamp(cutoff).astimezone().isoformat(timespec="seconds")
         with connect(self.settings.db_path) as c:
-            c.execute("DELETE FROM sessions WHERE created_at < ?", (limit,))
+            c.execute("DELETE FROM sessions WHERE COALESCE(last_seen_at, created_at) < ?", (limit,))
 
 
 def request_token(request: Request) -> str:

@@ -102,3 +102,111 @@ export function niceTicks(min, max, maxTicks = 5) {
 
 /** Errori di rete o del server passeggeri: l'operazione in coda va ritentata, non scartata. */
 export const isTransient = (status) => status === 0 || status === 408 || status === 429 || status >= 500;
+
+// ---- spesa e dispensa: quantità numeriche con unità e generazione lista dal piano -----------------
+const WEEKDAYS = new Set(["Lunedì", "Martedì", "Mercoledì", "Giovedì", "Venerdì"]);
+const normName = (s) => String(s || "").trim().toLowerCase();
+
+/**
+ * Interpreta una quantità testuale o numerica in unità base (`g`, `ml`, `pz`, `conf`).
+ * `kg` → `g` (×1000), `l` → `ml` (×1000), così fabbisogno e dispensa si sottraggono direttamente.
+ * @returns {{amount: number | null, unit: string}}
+ */
+export function parseQty(text, explicitUnit = "") {
+  const raw = String(text ?? "").trim().toLowerCase().replace(",", ".");
+  const u0 = String(explicitUnit || "").trim().toLowerCase();
+  if (!raw) return { amount: null, unit: u0 };
+  const toBase = (val, u) => {
+    if (!Number.isFinite(val) || val < 0) return { amount: null, unit: "" };
+    if (u === "kg" || u === "chilo" || u === "chili") return { amount: Math.round(val * 1000 * 100) / 100, unit: "g" };
+    if (u === "g" || u === "gr" || u === "grammi") return { amount: val, unit: "g" };
+    if (u === "l" || u === "lt" || u === "litro" || u === "litri") return { amount: Math.round(val * 1000 * 100) / 100, unit: "ml" };
+    if (u === "ml") return { amount: val, unit: "ml" };
+    if (!u || u === "pz" || u === "pezzo" || u === "pezzi" || u === "uova") return { amount: val, unit: "pz" };
+    return { amount: val, unit: "conf" };
+  };
+  const mult = raw.match(/^(\d+(?:\.\d+)?)\s*[x×]\s*(\d+(?:\.\d+)?)\s*(kg|g|l|ml)\b/);
+  if (mult) return toBase(Number(mult[1]) * Number(mult[2]), mult[3]);
+  const rng = raw.match(/^(\d+(?:\.\d+)?)\s*[–-]\s*(\d+(?:\.\d+)?)\s*(kg|g|l|ml)\b/);
+  if (rng) return toBase((Number(rng[1]) + Number(rng[2])) / 2, rng[3]);
+  const m = raw.match(/^(\d+(?:\.\d+)?)\s*(.*)$/);
+  if (!m) return { amount: null, unit: u0 };
+  return toBase(Number(m[1]), m[2].trim() || u0);
+}
+
+/** Formatta `(amount, unit)` per la lettura (es. 1000 g → "1 kg", 500 g → "500 g"). */
+export function formatQty(amount, unit = "", fallback = "") {
+  if (amount == null || !Number.isFinite(Number(amount)) || Number(amount) <= 0) return fallback;
+  const n = Number(amount);
+  const fmt = (v) => String(Math.round(v * 100) / 100).replace(".", ",");
+  if (unit === "g" && n >= 1000 && n % 100 === 0) return `${fmt(n / 1000)} kg`;
+  if (unit === "ml" && n >= 1000 && n % 100 === 0) return `${fmt(n / 1000)} l`;
+  return unit ? `${fmt(n)} ${unit}` : fmt(n);
+}
+
+const isMainCourse = (item) =>
+  item.category === "Proteine" ||
+  item.category === "secondo" ||
+  /\b(secondo|pollo|pesce|carne|tacchino|manzo|maiale|tonno|uova|frittata|mozzarella|prosciutto|salmone|merluzzo)\b/i.test(item.name || "");
+
+/**
+ * Calcola la proposta di lista della spesa: `fabbisogno del piano − dispensa (non scaduta)`.
+ * Regole del profilo (CLAUDE.md):
+ * - Cene lun–ven: il secondo arriva dal lavoro (sottovuoto dalla mensa), quindi nessun secondo viene aggiunto
+ *   per le cene dei giorni lavorativi.
+ * - Prezzi: mai inventati; `price` vale solo se l'utente lo ha già inserito (`knownPrices`), altrimenti `null`.
+ * @param meals oggetto `{Lunedì: {lunch, pre, dinner, items: [{name, amount, unit, category, slot}]}, ...}`
+ * @param inventory elenco dispensa `[{name, qty, amount, unit, expiry}]`
+ * @param knownPrices mappa `{nomeMinuscolo: prezzoInseritoDallUtente}` (solo prezzi reali/inseriti)
+ * @param todayIso data `YYYY-MM-DD` per ignorare gli articoli scaduti in dispensa
+ * @returns {{toBuy: Array, covered: Array}}
+ */
+export function planProposal(meals, inventory = [], knownPrices = {}, todayIso = "") {
+  const needed = new Map();
+  for (const [day, dObj] of Object.entries(meals || {})) {
+    const isWeekday = WEEKDAYS.has(day);
+    for (const raw of dObj?.items || []) {
+      const slot = raw.slot || "dinner";
+      // Nei giorni lavorativi (lun–ven) il pranzo è in mensa e il secondo della cena arriva dal lavoro.
+      if (isWeekday && slot === "lunch") continue;
+      if (isWeekday && slot === "dinner" && isMainCourse(raw)) continue;
+      const base = raw.amount != null ? parseQty(raw.amount, raw.unit) : parseQty(raw.qty, raw.unit);
+      if (!base.amount || base.amount <= 0) continue;
+      const key = `${normName(raw.name)}|${base.unit}`;
+      const cur = needed.get(key) || { name: raw.name.trim(), amount: 0, unit: base.unit, category: raw.category || "Altro" };
+      cur.amount = Math.round((cur.amount + base.amount) * 100) / 100;
+      needed.set(key, cur);
+    }
+  }
+
+  const pantry = new Map();
+  for (const inv of inventory || []) {
+    if (todayIso && inv.expiry && inv.expiry < todayIso) continue; // scaduto: non copre il fabbisogno
+    const base = inv.amount != null ? parseQty(inv.amount, inv.unit) : parseQty(inv.qty, inv.unit);
+    if (!base.amount || base.amount <= 0) continue;
+    const key = `${normName(inv.name)}|${base.unit}`;
+    pantry.set(key, (pantry.get(key) || 0) + base.amount);
+  }
+
+  const toBuy = [];
+  const covered = [];
+  for (const [key, req] of needed.entries()) {
+    const have = pantry.get(key) || 0;
+    const missing = Math.round(Math.max(0, req.amount - have) * 100) / 100;
+    const priceKey = normName(req.name);
+    const known = knownPrices && Object.prototype.hasOwnProperty.call(knownPrices, priceKey) ? knownPrices[priceKey] : null;
+    const entry = {
+      name: req.name,
+      category: req.category,
+      unit: req.unit,
+      needed: req.amount,
+      inPantry: have,
+      amount: missing,
+      qty: formatQty(missing || req.amount, req.unit),
+      price: known != null && Number(known) > 0 ? Number(known) : null,
+    };
+    if (missing > 0) toBuy.push(entry);
+    else covered.push(entry);
+  }
+  return { toBuy, covered };
+}

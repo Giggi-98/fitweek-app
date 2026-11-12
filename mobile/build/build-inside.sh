@@ -49,6 +49,124 @@ MANIFEST=android/app/src/main/AndroidManifest.xml
 sed -i 's#<application#<application android:usesCleartextTraffic="true"#' "$MANIFEST"
 sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n</manifest>#' "$MANIFEST"
 
+# Plugin nativo SecureToken: custodisce il token di sessione nell'Android Keystore (AES-256-GCM)
+# invece che in chiaro in localStorage.
+PKG_DIR="android/app/src/main/java/${APP_ID//.//}"
+cat > "$PKG_DIR/SecureTokenPlugin.java" <<JAVA
+package ${APP_ID};
+
+import android.content.Context;
+import android.content.SharedPreferences;
+import android.security.keystore.KeyGenParameterSpec;
+import android.security.keystore.KeyProperties;
+import android.util.Base64;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.nio.charset.StandardCharsets;
+import java.security.KeyStore;
+import javax.crypto.Cipher;
+import javax.crypto.KeyGenerator;
+import javax.crypto.SecretKey;
+import javax.crypto.spec.GCMParameterSpec;
+
+@CapacitorPlugin(name = "SecureToken")
+public class SecureTokenPlugin extends Plugin {
+    private static final String ALIAS = "fitweek_token_key";
+    private static final String PREFS = "fitweek_secure";
+    private static final String KEY_DATA = "token_gcm";
+    private static final String KEY_IV = "token_iv";
+
+    private SecretKey secretKey() throws Exception {
+        KeyStore ks = KeyStore.getInstance("AndroidKeyStore");
+        ks.load(null);
+        if (!ks.containsAlias(ALIAS)) {
+            KeyGenerator kg = KeyGenerator.getInstance(KeyProperties.KEY_ALGORITHM_AES, "AndroidKeyStore");
+            kg.init(new KeyGenParameterSpec.Builder(
+                ALIAS, KeyProperties.PURPOSE_ENCRYPT | KeyProperties.PURPOSE_DECRYPT)
+                .setBlockModes(KeyProperties.BLOCK_MODE_GCM)
+                .setEncryptionPaddings(KeyProperties.ENCRYPTION_PADDING_NONE)
+                .setKeySize(256)
+                .build());
+            return kg.generateKey();
+        }
+        return ((KeyStore.SecretKeyEntry) ks.getEntry(ALIAS, null)).getSecretKey();
+    }
+
+    private SharedPreferences prefs() {
+        return getContext().getSharedPreferences(PREFS, Context.MODE_PRIVATE);
+    }
+
+    @PluginMethod
+    public void get(PluginCall call) {
+        JSObject ret = new JSObject();
+        try {
+            String enc = prefs().getString(KEY_DATA, null);
+            String iv = prefs().getString(KEY_IV, null);
+            if (enc == null || iv == null) {
+                ret.put("value", JSObject.NULL);
+                call.resolve(ret);
+                return;
+            }
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.DECRYPT_MODE, secretKey(), new GCMParameterSpec(128, Base64.decode(iv, Base64.NO_WRAP)));
+            byte[] plain = c.doFinal(Base64.decode(enc, Base64.NO_WRAP));
+            ret.put("value", new String(plain, StandardCharsets.UTF_8));
+            call.resolve(ret);
+        } catch (Exception e) {
+            prefs().edit().clear().apply();
+            ret.put("value", JSObject.NULL);
+            call.resolve(ret);
+        }
+    }
+
+    @PluginMethod
+    public void set(PluginCall call) {
+        String value = call.getString("value", "");
+        if (value == null || value.isEmpty()) {
+            prefs().edit().clear().apply();
+            call.resolve();
+            return;
+        }
+        try {
+            Cipher c = Cipher.getInstance("AES/GCM/NoPadding");
+            c.init(Cipher.ENCRYPT_MODE, secretKey());
+            byte[] cipher = c.doFinal(value.getBytes(StandardCharsets.UTF_8));
+            prefs().edit()
+                .putString(KEY_DATA, Base64.encodeToString(cipher, Base64.NO_WRAP))
+                .putString(KEY_IV, Base64.encodeToString(c.getIV(), Base64.NO_WRAP))
+                .apply();
+            call.resolve();
+        } catch (Exception e) {
+            call.reject("Keystore error", e);
+        }
+    }
+
+    @PluginMethod
+    public void clear(PluginCall call) {
+        prefs().edit().clear().apply();
+        call.resolve();
+    }
+}
+JAVA
+
+cat > "$PKG_DIR/MainActivity.java" <<JAVA
+package ${APP_ID};
+
+import android.os.Bundle;
+import com.getcapacitor.BridgeActivity;
+
+public class MainActivity extends BridgeActivity {
+    @Override
+    public void onCreate(Bundle savedInstanceState) {
+        registerPlugin(SecureTokenPlugin.class);
+        super.onCreate(savedInstanceState);
+    }
+}
+JAVA
+
 # Versione: 1.4.0 → versionCode 10400
 IFS=. read -r MA MI PA <<<"$APP_VERSION"
 CODE=$((MA * 10000 + MI * 100 + PA))
