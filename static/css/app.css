@@ -197,10 +197,9 @@ body.has-rest .toast { bottom: calc(var(--nav-h) + 110px + env(safe-area-inset-b
   padding: var(--space-5); box-shadow: var(--shadow-1);
 }
 .panel { display: grid; gap: var(--space-3); align-content: start; }
-.panel-head { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); }
-.panel-head { min-height: 36px; }
+.panel-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: var(--space-2); min-height: 36px; }
 .panel-head h3 { display: inline-flex; align-items: center; gap: var(--space-2); min-width: 0; }
-.panel-actions { display: flex; align-items: center; gap: var(--space-2); flex: none; }
+.panel-actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }
 .panel-head h3 .icon { color: var(--color-accent); }
 .grid3 { display: grid; gap: var(--space-4); grid-template-columns: minmax(0, 1fr); }
 .metrics { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, 1fr); }

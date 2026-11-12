@@ -118,6 +118,9 @@ const FAKE_CAPACITOR = () => {
   await wp.fill('#pw', PW);
   await wp.click('#login-form button');
   await wp.waitForSelector('#shell:not(.hidden)');
+  await wp.waitForTimeout(1600);
+  await wp.evaluate(() => document.querySelector('#modal')?.close());
+  await wp.waitForSelector('#modal', { state: 'hidden' });
   await wp.click('.topbar [data-view=settings]');
   await wp.click('[data-tab=app]');
   const info = await wp.evaluate(() => fetch('/api/v1/app/android').then((r) => r.json()));
