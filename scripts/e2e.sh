@@ -32,6 +32,9 @@ for test in tests/e2e/${E2E_ONLY:-*}.e2e.js; do   # E2E_ONLY=native per un solo 
   docker run -d --rm --name "$NAME" -p "127.0.0.1:$PORT:8080" -e APP_PASSWORD="$E2E_PASSWORD" -e APP_ORIGINS="$E2E_APP_URL" "${APK_MOUNT[@]}" \
     -e SESSION_SECRET="$(openssl rand -hex 32)" -e DB_PATH=/tmp/e2e.sqlite fitweek:test >/dev/null
   for _ in $(seq 1 30); do curl -sf "$E2E_URL/api/health" >/dev/null && break; sleep 0.5; done
+  # La creazione del container cambia le interfacce di rete dell'host: Chromium annulla i caricamenti in corso
+  # (net::ERR_NETWORK_CHANGED) e la pagina resta sul caricamento. Si aspetta che la rete si assesti.
+  sleep 3
   NODE_PATH="$TOOLS/node_modules" node "$test" || failed=1
 done
 echo "Screenshot: $E2E_SHOTS"

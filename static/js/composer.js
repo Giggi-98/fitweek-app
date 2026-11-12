@@ -96,7 +96,7 @@ async function searchOnline(q) {
   Object.assign(online, { q, status: "loading", items: [], pick: null });
   paintBrowse();
   try {
-    const out = await request(`/api/v1/food-search?q=${encodeURIComponent(q)}`);
+    const out = await request(`/api/v1/food-search?q=${encodeURIComponent(q)}`, { timeout: 12000 });
     if (online.q !== q) return; // nel frattempo l'utente ha scritto altro
     if (!out.enabled) online.disabled = true;
     Object.assign(online, { status: "done", items: out.items });

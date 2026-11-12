@@ -5,12 +5,19 @@
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 const clone = (v) => JSON.parse(JSON.stringify(v));
 
-// Elenchi con `id` (si fondono voce per voce) e oggetti da fondere campo per campo.
+// Elenchi con `id` (si fondono voce per voce), oggetti da fondere campo per campo, e la scheda: un elenco
+// di esercizi per ogni giornata (si fonde esercizio per esercizio).
 const LISTS = new Set(["weights", "groceries", "inventory", "workouts"]);
 const OBJECTS = new Set(["profile", "meals"]);
+const LISTS_BY_KEY = new Set(["routines"]);
+const label = (item) => item.name || item.date || item.id;
 
-/** Voce per voce: le modifiche e le eliminazioni locali valgono; ciò che è nuovo sul server resta. */
-function mergeList(base, local, server) {
+/**
+ * Voce per voce: le modifiche e le eliminazioni locali valgono; ciò che è nuovo sul server resta.
+ * Se la stessa voce è cambiata da entrambe le parti vale quella locale e il caso finisce in `conflicts`;
+ * una voce modificata in locale ma eliminata sul server viene tenuta (meglio una voce in più che un dato perso).
+ */
+function mergeList(base, local, server, conflicts, section) {
   const baseById = new Map(base.map((x) => [x.id, x]));
   const localById = new Map(local.map((x) => [x.id, x]));
   const out = [];
@@ -21,34 +28,72 @@ function mergeList(base, local, server) {
       if (!before) out.push(item); // aggiunta sul server mentre ero offline
       continue; // c'era e in locale non c'è più: eliminata da me
     }
-    out.push(before && same(mine, before) ? item : mine); // non toccata da me → versione del server
+    if (before && same(mine, before)) out.push(item); // non toccata da me → versione del server
+    else {
+      if (!same(mine, item) && !(before && same(item, before))) conflicts.push({ section, what: label(mine) });
+      out.push(mine);
+    }
   }
   const onServer = new Set(server.map((x) => x.id));
-  for (const item of local) if (!baseById.has(item.id) && !onServer.has(item.id)) out.push(item); // nuova in locale
+  for (const item of local) {
+    if (onServer.has(item.id)) continue;
+    const before = baseById.get(item.id);
+    if (!before) out.push(item); // nuova in locale
+    else if (!same(item, before)) {
+      conflicts.push({ section, what: label(item) }); // modificata da me, eliminata dall'altro dispositivo
+      out.push(item);
+    }
+  }
   return out;
 }
 
-function mergeObject(base, local, server) {
+function mergeObject(base, local, server, conflicts, section) {
   const out = { ...server };
-  for (const key of Object.keys(local)) if (!same(local[key], base?.[key])) out[key] = local[key];
+  for (const key of Object.keys(local)) {
+    if (same(local[key], base?.[key])) continue;
+    if (!same(server?.[key], base?.[key]) && !same(server?.[key], local[key])) conflicts.push({ section, what: key });
+    out[key] = local[key];
+  }
   return out;
+}
+
+/** Una sola pesata per giorno: se i due dispositivi ne hanno aggiunta una ciascuno, resta quella locale. */
+function onePerDay(weights, local) {
+  const mine = new Set(local.map((w) => w.id));
+  const byDate = new Map();
+  for (const w of weights) {
+    const kept = byDate.get(w.date);
+    if (!kept || (mine.has(w.id) && !mine.has(kept.id))) byDate.set(w.date, w);
+  }
+  return weights.filter((w) => byDate.get(w.date) === w);
 }
 
 /**
  * Fusione a tre vie dello stato (blob): `base` = ultimo stato confermato dal server, `local` = stato con le
  * modifiche fatte sul telefono, `server` = stato attuale sul server. Per ogni sezione: se l'ho toccata solo
  * io vale la mia, se è cambiata solo sul server vale la sua, se entrambe si fonde (elenchi per id, oggetti
- * per campo; per il resto vale la modifica locale, che è la più recente fatta dall'utente).
+ * per campo, scheda per esercizio; per il resto vale la modifica locale, che è la più recente fatta dall'utente).
+ * @param conflicts elenco da riempire con i casi in cui la stessa cosa era cambiata da entrambe le parti
+ *                  e ha prevalso la versione locale: [{section, what}]
  */
-export function mergeState(base, local, server) {
+export function mergeState(base, local, server, conflicts = []) {
   const out = clone(server);
   for (const key of Object.keys(local)) {
     if (same(local[key], base[key])) continue;
     if (same(server[key], base[key])) out[key] = clone(local[key]);
-    else if (LISTS.has(key)) out[key] = mergeList(base[key] || [], local[key], server[key] || []);
-    else if (OBJECTS.has(key)) out[key] = mergeObject(base[key], local[key], server[key]);
-    else out[key] = clone(local[key]);
+    else if (LISTS.has(key)) out[key] = mergeList(base[key] || [], local[key], server[key] || [], conflicts, key);
+    else if (OBJECTS.has(key)) out[key] = mergeObject(base[key], local[key], server[key], conflicts, key);
+    else if (LISTS_BY_KEY.has(key)) {
+      out[key] = { ...server[key] };
+      for (const k of Object.keys(local[key])) {
+        out[key][k] = mergeList(base[key]?.[k] || [], local[key][k], server[key]?.[k] || [], conflicts, key);
+      }
+    } else {
+      if (!same(server[key], local[key])) conflicts.push({ section: key, what: key });
+      out[key] = clone(local[key]);
+    }
   }
+  if (out.weights && local.weights) out.weights = onePerDay(out.weights, local.weights);
   return out;
 }
 

@@ -1,8 +1,10 @@
 // Coda persistente delle scritture di allenamento. Ogni operazione è idempotente (PUT/PATCH/POST
 // con id del client), quindi può essere ripetuta senza duplicati. Se la rete manca, resta nel
 // telefono e viene inviata appena possibile: in palestra non si perde nessuna serie.
+// Nessuna operazione viene mai buttata: gli errori passeggeri (rete, 5xx, 429) si ritentano senza limite;
+// i rifiuti definitivi (4xx) finiscono in un elenco visibile in Impostazioni, da riprovare o scartare.
 import { request } from "../api.js";
-import { setPending, setSync, app } from "../store.js";
+import { keep, setPending, setSync, app } from "../store.js";
 import { toast } from "../ui.js";
 import { isTransient } from "../stats.js";
 import { storage } from "../util.js";
@@ -10,16 +12,37 @@ import { storage } from "../util.js";
 const KEY = "fitweek.workoutQueue.v1";
 let ops = storage.get(KEY, []);
 
+let retrying = false; // c'è un errore mostrato che un invio riuscito deve cancellare
+const REJECTED_KEY = "fitweek.rejected.v1";
+const MAX_REJECTED = 50;
+
 const save = () => {
-  storage.set(KEY, ops);
   setPending(ops.length);
+  keep(KEY, ops);
 };
+
+/** Operazioni rifiutate dal server, dalla più vecchia: [{at, message, method, path, body, key}]. */
+export const rejected = () => storage.get(REJECTED_KEY, []);
+function setAside(op, message) {
+  const { method, path, body, key } = op;
+  keep(REJECTED_KEY, [...rejected(), { at: new Date().toISOString(), message, method, path, body, key }].slice(-MAX_REJECTED));
+}
+export function dropRejected(index) {
+  storage.set(REJECTED_KEY, rejected().filter((_, i) => i !== index));
+}
+export function retryRejected(index) {
+  const op = rejected()[index];
+  if (!op) return;
+  dropRejected(index);
+  retrying = true; // se questa volta va a buon fine, l'indicatore "Non salvato" si spegne
+  enqueue(op.method, op.path, op.body, op.key);
+}
 
 /** Accoda. `key` deduplica: una nuova operazione con la stessa chiave sostituisce quella vecchia
  *  (es. modifiche ripetute alla stessa serie), mantenendo l'ordine della prima. */
 export function enqueue(method, path, body, key = `${method} ${path}`) {
   const i = ops.findIndex((o) => o.key === key);
-  const op = { method, path, body, key };
+  const op = { method, path, body, key, at: new Date().toISOString() };
   if (i >= 0) ops[i] = op;
   else ops.push(op);
   save();
@@ -36,30 +59,30 @@ export function flush() {
   return running;
 }
 
-let retrying = false;
-const MAX_TRIES = 6; // errori del server ripetuti: dopo ~90 s di tentativi l'operazione viene scartata con avviso
-
 async function drain() {
   while (ops.length) {
     const op = ops[0];
     try {
-      await request(op.path, { method: op.method, body: op.body });
+      await request(op.path, { method: op.method, body: op.body, editedAt: op.at });
     } catch (e) {
-      if (e.status === 0) break; // offline: riprova più tardi
       if (e.status === 401) {
         app.onUnauthorized();
         break;
       }
-      // Errore passeggero del server (riavvio, DB occupato): la serie resta in coda e si ritenta.
-      if (isTransient(e.status) && (op.tries = (op.tries || 0) + 1) < MAX_TRIES) {
-        save();
-        retrying = true;
-        setSync("error");
+      // Rete assente o errore passeggero del server (riavvio, DB occupato): resta in coda, si ritenta più tardi.
+      if (isTransient(e.status)) {
+        if (e.status !== 0) {
+          retrying = true;
+          setSync("error");
+        }
         break;
       }
-      // Rifiuto definitivo (4xx) o troppi tentativi: scarta per non bloccare la coda, ma avvisa.
-      toast(`Una modifica non è stata accettata dal server (${e.message}).`, { timeout: 6000 });
-      setSync("error");
+      // Eliminare qualcosa che sul server non c'è più: è già nello stato voluto.
+      if (!(op.method === "DELETE" && e.status === 404)) {
+        setAside(op, e.message);
+        toast(`Una modifica non è stata accettata dal server (${e.message}). La trovi in Impostazioni → Dati e accesso.`, { timeout: 6000 });
+        setSync("error");
+      }
       ops.shift();
       save();
       continue;

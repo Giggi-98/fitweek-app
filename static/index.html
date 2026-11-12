@@ -14,7 +14,12 @@
     <script type="module" src="/static/js/main.js"></script>
   </head>
   <body>
-    <div id="boot" class="boot" role="status">Caricamento…</div>
+    <div id="boot" class="boot" role="status">Caricamento…
+      <div id="boot-offline" class="boot-offline hidden">
+        <p>Il server non risponde. Continuo a provare…</p>
+        <button type="button" class="btn primary xl" id="work-offline">Lavora offline</button>
+      </div>
+    </div>
 
     <div id="login" class="login-shell hidden">
       <div class="login-card">

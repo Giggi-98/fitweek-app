@@ -37,3 +37,16 @@ test("testo della notifica in base all'azione", () => {
   const [p] = buildSchedule([R("w", 0, "13:00", { action: "log_weight" })], new Map(), MON_1200, 1);
   assert.match(p.body, /peso/);
 });
+
+test("posticipato oggi: la notifica suona al nuovo orario, non a quello originale già passato", () => {
+  const now = new Date(2026, 10, 9, 13, 5); // lunedì 13:05
+  const reminders = [{ id: "r1", weekday: 0, time: "13:00", title: "Pranzo", action: "log_meal", enabled: true }];
+  const until = new Date(2026, 10, 9, 13, 20);
+  assert.equal(buildSchedule(reminders, new Map([["r1", "pending"]]), now, 1).length, 0);
+  const plan = buildSchedule(reminders, new Map([["r1", "snoozed"]]), now, 1, new Map([["r1", until]]));
+  assert.equal(plan.length, 1);
+  assert.equal(plan[0].at.getTime(), until.getTime());
+  assert.equal(plan[0].id, notificationId("r1", "2026-11-09"));
+  // posticipo già scaduto: niente notifica nel passato
+  assert.equal(buildSchedule(reminders, new Map([["r1", "snoozed"]]), now, 1, new Map([["r1", new Date(2026, 10, 9, 13, 2)]])).length, 0);
+});

@@ -5,7 +5,7 @@ from datetime import date, datetime
 from typing import Any, Callable
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 
 from . import domain
 from .config import Settings
@@ -22,6 +22,33 @@ SESSION_COLS = (
 
 def now_iso() -> str:
     return datetime.now(TZ).isoformat(timespec="seconds")
+
+
+EDIT_HEADER = "x-edited-at"  # orario in cui la modifica è stata fatta sul dispositivo (coda offline)
+STALE = {"ok": True, "stale": True}  # risposta a una modifica più vecchia del dato già salvato: non applicata
+
+
+def _moment(value: str | None) -> datetime | None:
+    try:
+        moment = datetime.fromisoformat(value.strip().replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    return moment if moment.tzinfo else moment.replace(tzinfo=TZ)
+
+
+def edit_time(request: Request) -> str:
+    """Quando è stata fatta la modifica: l'orario dichiarato dal dispositivo (una scrittura rimasta in coda
+    offline arriva più tardi di quando è stata fatta), mai nel futuro; senza intestazione vale adesso."""
+    now = datetime.now(TZ)
+    moment = _moment(request.headers.get(EDIT_HEADER))
+    return (min(moment.astimezone(TZ), now) if moment else now).isoformat(timespec="seconds")
+
+
+def is_stale(stored: str | None, edited: str) -> bool:
+    """Vero se il dato salvato è stato modificato DOPO la modifica in arrivo: vince l'ultima fatta, non l'ultima
+    arrivata (es. telefono offline da lunedì che sincronizza mercoledì sopra una correzione fatta martedì dal PC)."""
+    saved, incoming = _moment(stored), _moment(edited)
+    return bool(saved and incoming and saved > incoming)
 
 
 def today() -> date:
@@ -161,29 +188,38 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                       (now_iso(), now_iso(), sid))
         return {"ok": True}
 
+    def _set_time(c: sqlite3.Connection, sid: str, exercise_id: str, set_index: int) -> str | None:
+        row = c.execute("SELECT logged_at FROM set_logs WHERE session_id=? AND exercise_id=? AND set_index=?",
+                        (sid, exercise_id, set_index)).fetchone()
+        return row[0] if row else None
+
     def check_slot(sid: str, exercise_id: str, set_index: int) -> None:
         if not (1 <= set_index <= 50) or not exercise_id.replace("-", "").replace("_", "").isalnum():
             raise HTTPException(status_code=422, detail="Serie non valida")
 
     @r.put("/workout-sessions/{sid}/sets/{exercise_id}/{set_index}", dependencies=writes)
-    def put_set(sid: str, exercise_id: str, set_index: int, body: SetLogPut):
+    def put_set(sid: str, exercise_id: str, set_index: int, body: SetLogPut, edited: str = Depends(edit_time)):
         check_slot(sid, exercise_id, set_index)
         with connect(settings.db_path) as c, transaction(c):
             get_one(c, sid)
+            if is_stale(_set_time(c, sid, exercise_id, set_index), edited):
+                return STALE
             c.execute(
                 "INSERT INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir, completed, logged_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, exercise_id, set_index) DO UPDATE SET"
                 " kg=excluded.kg, reps=excluded.reps, rir=excluded.rir, completed=excluded.completed,"
                 " logged_at=excluded.logged_at",
-                (sid, exercise_id, set_index, body.kg, body.reps, body.rir, int(body.completed), now_iso()),
+                (sid, exercise_id, set_index, body.kg, body.reps, body.rir, int(body.completed), edited),
             )
             c.execute("UPDATE workout_sessions SET updated_at=? WHERE id=?", (now_iso(), sid))
         return {"ok": True}
 
     @r.delete("/workout-sessions/{sid}/sets/{exercise_id}/{set_index}", dependencies=writes)
-    def delete_set(sid: str, exercise_id: str, set_index: int):
+    def delete_set(sid: str, exercise_id: str, set_index: int, edited: str = Depends(edit_time)):
         check_slot(sid, exercise_id, set_index)
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_set_time(c, sid, exercise_id, set_index), edited):
+                return STALE
             c.execute("DELETE FROM set_logs WHERE session_id=? AND exercise_id=? AND set_index=?",
                       (sid, exercise_id, set_index))
         return {"ok": True}

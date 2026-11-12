@@ -15,6 +15,8 @@ const LEGACY_DRAFTS_KEY = "fitweek.workoutDrafts.v1";
 
 // Selezione quando non c'è una seduta attiva.
 // justDone/justComplete: animazioni da eseguire una sola volta al prossimo render.
+// Un esercizio è completato solo quando lo conferma l'utente (edits.closed), non al raggiungimento delle
+// serie previste: le serie di oggi si possono aggiungere o togliere senza toccare la scheda.
 // rirFor: ultima serie segnata, per cui si può indicare lo sforzo (RIR) con un tocco facoltativo.
 const ui = { routine: null, week: null, summary: null, justDone: null, justComplete: null, rirFor: null, open: new Set() };
 
@@ -32,7 +34,7 @@ const fmtSet = (s) => `${s.kg == null ? "—" : fmtNum(s.kg)}×${s.reps ?? "—"
 
 function edits(sessionId) {
   const e = storage.get(EDITS_KEY, null);
-  return e && e.sessionId === sessionId ? e : { sessionId, values: {}, extra: {} };
+  return e && e.sessionId === sessionId ? { closed: {}, ...e } : { sessionId, values: {}, extra: {}, closed: {} };
 }
 const saveEdits = (e) => storage.set(EDITS_KEY, e);
 
@@ -192,13 +194,13 @@ function renderActive(session) {
   const { planned, done } = progressOf(session);
   const info = ROUTINES[session.routine];
   const best = bestLoads(app.sessions, session.id);
-  const nextEx = exs.find((ex) => setsOf(session, ex.id).filter((s) => s.completed).length < plannedSets(ex, session.week));
+  const nextEx = exs.find((ex) => !ed.closed[ex.id]);
   const html = `
   <section class="wk-header">
     ${ring(planned ? done / planned : 0, { size: 62, stroke: 7, label: String(done), sub: `/${planned}` })}
     <div class="ex-main">
       <h2>Giorno ${esc(session.routine)} · W${esc(session.week)}</h2>
-      <div class="wk-meta"><span>${icon("clock")}<span id="wk-elapsed">${session.started_at ? elapsed(session.started_at) : "—"}</span></span><span>${icon("dumbbell")}${done}/${planned} serie</span>${nextEx ? `<span>${icon("arrow-right")}${esc(nextEx.name)}</span>` : `<span>${icon("trophy")}Serie completate</span>`}</div>
+      <div class="wk-meta"><span>${icon("clock")}<span id="wk-elapsed">${session.started_at ? elapsed(session.started_at) : "—"}</span></span><span>${icon("dumbbell")}${done}/${planned} serie</span>${nextEx ? `<span>${icon("arrow-right")}${esc(nextEx.name)}</span>` : `<span>${icon("trophy")}Esercizi completati</span>`}</div>
     </div>
   </section>
   <div class="ex-grid">
@@ -207,9 +209,10 @@ function renderActive(session) {
       const p = plannedSets(ex, session.week);
       const prev = setsOf(prevSession, ex.id).filter((x) => x.completed);
       const loggedIdx = setsOf(session, ex.id).map((s) => s.set_index);
-      const count = Math.max(p + num(ed.extra[ex.id]), ...loggedIdx, p);
+      const count = Math.max(1, p + num(ed.extra[ex.id]), ...loggedIdx);
+      const canDrop = count > 1 && count > Math.max(0, ...loggedIdx); // si toglie solo una serie non registrata
       const completed = setsOf(session, ex.id).filter((s) => s.completed).length;
-      const isDone = completed >= p;
+      const isDone = Boolean(ed.closed[ex.id]);
       const open = !isDone || ui.open.has(ex.id);
       const video = safeUrl(ex.video);
       const dots = Array.from({ length: Math.max(p, completed) }, (_, k) => `<i class="${k < completed ? "on" : ""}"></i>`).join("");
@@ -229,7 +232,12 @@ function renderActive(session) {
         ${exerciseExtras(session, ex, prev, p, ed)}
         <div class="set-legend" aria-hidden="true"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
         ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, p, best)).join("")}
-        <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">${icon("plus", "sm")}Serie extra</button>` : ""}
+        <div class="ex-foot">
+          <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">${icon("plus", "sm")}Serie extra</button>
+          ${canDrop ? `<button type="button" class="link-btn" data-drop-set="${esc(ex.id)}">${icon("minus", "sm")}Togli serie</button>` : ""}
+          ${isDone ? `<button type="button" class="link-btn" data-reopen-ex="${esc(ex.id)}">Riapri esercizio</button>` : ""}
+        </div>
+        ${isDone ? "" : `<button type="button" class="btn full" data-close-ex="${esc(ex.id)}">${icon("check")}Esercizio completato${completed ? ` · ${completed} serie` : ""}</button>`}` : ""}
         ${rirStrip(session, ex)}
       </section>`;
     })
@@ -337,14 +345,23 @@ function toggleSet(row) {
   haptic(isRecord(bestLoads(app.sessions, s.id), exId, v.kg) ? [15, 40, 15, 40, 40] : 15);
   ui.justDone = `${exId}:${idx}`;
   ui.rirFor = { ex: exId, idx };
-  const ex = routineExercises(s.routine).find((e) => e.id === exId);
-  if (ex && setsOf(s, exId).filter((x) => x.completed).length === plannedSets(ex, s.week)) {
-    ui.justComplete = exId;
-    ui.open.delete(exId);
-    haptic([20, 60, 30]);
-    requestAnimationFrame(() => confetti(document.getElementById(`ex-${exId}`), 24));
-  }
   return true;
+}
+
+/** Conferma manuale: l'esercizio si chiude e si passa al successivo. `closed: false` lo riapre. */
+function setExerciseClosed(exId, closed) {
+  const ed = edits(active().id);
+  ed.closed = { ...ed.closed, [exId]: closed };
+  saveEdits(ed);
+  if (!closed) return ui.open.add(exId);
+  ui.open.delete(exId);
+  ui.justComplete = exId;
+  if (ui.rirFor?.ex === exId) ui.rirFor = null;
+  haptic([20, 60, 30]);
+  requestAnimationFrame(() => {
+    confetti(document.getElementById(`ex-${exId}`), 24);
+    document.querySelector(".ex-card.next")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  });
 }
 
 function step(btn) {
@@ -465,14 +482,10 @@ export async function onClick(t) {
   }
   if (t.matches("[data-check]")) {
     const row = t.closest(".set-row");
-    if (!toggleSet(row)) return false;
-    const card = row.closest(".ex-card");
-    requestAnimationFrame(() => {
-      const next = card && document.getElementById(card.id)?.querySelector(".set-row:not(.done)");
-      if (!next) document.querySelector(".ex-card.next")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    });
-    return true;
+    return toggleSet(t.closest(".set-row"));
   }
+  if (t.dataset.closeEx) return setExerciseClosed(t.dataset.closeEx, true), true;
+  if (t.dataset.reopenEx) return setExerciseClosed(t.dataset.reopenEx, false), true;
   if (t.dataset.rir && ui.rirFor) {
     const s = active();
     const own = logged(s, ui.rirFor.ex, ui.rirFor.idx);
@@ -502,10 +515,10 @@ export async function onClick(t) {
     else ui.open.add(id);
     return true;
   }
-  if (t.dataset.addSet) {
-    const s = active();
-    const ed = edits(s.id);
-    ed.extra[t.dataset.addSet] = num(ed.extra[t.dataset.addSet]) + 1;
+  if (t.dataset.addSet || t.dataset.dropSet) {
+    const id = t.dataset.addSet || t.dataset.dropSet;
+    const ed = edits(active().id);
+    ed.extra[id] = num(ed.extra[id]) + (t.dataset.addSet ? 1 : -1);
     saveEdits(ed);
     return true;
   }

@@ -4,7 +4,7 @@
 // arriveranno con l'app per telefono (D-013), che userà gli stessi promemoria del server.
 import { request } from "./api.js";
 import { DAYS, PLAN_KEY, SLOTS, SOURCE_LABEL } from "./constants.js";
-import { app, persistState, refreshDaily } from "./store.js";
+import { app, persistState, recordWeight, refreshDaily } from "./store.js";
 import { closeModal, dayOptions, modalOpen, openModal, toast } from "./ui.js";
 import { $, TIME24, esc, fmtDuration, fmtNum, isoDate, normalizeTime, num, uid } from "./util.js";
 import { icon } from "./icons.js";
@@ -187,8 +187,8 @@ export function openWeighIn({ reminderId = null } = {}) {
       if (t.dataset.m !== "save") return false;
       const w = num($("#m-weight").value.replace(",", "."));
       if (w < 20 || w > 500) return toast("Inserisci un peso valido"), false;
-      app.state.weights.push({ id: uid(), date: todayIso(), weight: w, waist: null, note: "" });
-      if (await persistState()) toast("Peso registrato");
+      const updated = recordWeight({ date: todayIso(), weight: w });
+      if (await persistState()) toast(updated ? "Pesata di oggi aggiornata" : "Peso registrato");
       afterChange();
       return true;
     },

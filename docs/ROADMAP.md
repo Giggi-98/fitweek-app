@@ -160,9 +160,26 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
 
+## 1.10.1 (2026-11-12) — consolidamento: nessuna perdita di dati, conflitti, notifiche
+
+Richiesta utente: prima un prodotto stabile, poi nuove funzioni. Dettagli in D-022 e D-023.
+
+Fatto e verificato su container usa-e-getta (83 pytest, 35 test JS, 128 controlli e2e in 6 file):
+- App autonoma: tempo massimo sulle richieste, pulsante "Lavora offline" dopo 2,5 s, rientro in linea automatico.
+- Palestra: esercizio completato solo su conferma, "Togli serie" accanto a "Serie extra".
+- Coda e stato: nessuna scrittura scartata per errori del server; rifiuti in "Modifiche non inviate"; avviso a memoria piena.
+- Conflitti: `X-Edited-At` su serie, pasti, sonno e note; avviso quando la stessa voce è cambiata su due dispositivi; scheda fusa per esercizio; una pesata per giorno; stato riletto al rientro.
+- Notifiche: "Più tardi" riprogramma la notifica; le notifiche esistenti non vengono più cancellate prima di averne programmate di nuove.
+- Test: nuovo `reliability.e2e.js`; `native.e2e.js` non dipende più dall'ora; attesa dopo l'avvio del container (Chromium annullava i caricamenti con `net::ERR_NETWORK_CHANGED`).
+
+Stato del rilascio: **server non ancora aggiornato** (serve `scripts/deploy.sh`, su autorizzazione). L'APK `next` 1.10.1 presente in `mobile/dist` contiene solo le prime tre voci ed è compatibile con il server 1.10.0; **dopo il deploy va ricompilato**, perché le pagine nuove inviano `X-Edited-At`, che il server 1.10.0 non ammette via CORS (le scritture resterebbero in coda, senza perdersi).
+
+Da fare (in ordine): prova su S25 Ultra con checklist; token nel Keystore, rinnovo e elenco dispositivi, `docs/SECURITY.md` (serve la scelta su HTTPS); backup fuori dal server (serve la destinazione); scheda "Adesso" in dashboard; lista della spesa generata dal piano.
+Non coperto: `X-Edited-At` per le modifiche alle sedute (`PATCH`/`DELETE`); notifiche oltre i 14 giorni senza aprire l'app.
+
 ## 1.10.0 (2026-11-11) — interfaccia a schede (design system v3)
 
-Implementato e verificato (pytest 78, test JS, e2e Playwright dei 5 file) su container usa-e-getta. **Non ancora in produzione** (serve `scripts/deploy.sh`) e **APK `next` da ricompilare** perché incorpora le pagine.
+Implementato e verificato (pytest 78, test JS, e2e Playwright dei 5 file) su container usa-e-getta. In produzione (verificato il 2026-11-12: `/api/health` risponde `1.10.0`, schema 7).
 
 - Schede orizzontali in ogni vista (`tabs()`), niente elementi sovrapposti, Oggi a tutta altezza su desktop.
 - Pasti: striscia dei 7 giorni + riepilogo del giorno; piano a griglia settimanale; abituali per momento del giorno.

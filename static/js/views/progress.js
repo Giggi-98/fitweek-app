@@ -1,6 +1,6 @@
 // Progressi: peso e girovita (registrati), medie settimanali (calcolate), storico e carichi.
 import { request } from "../api.js";
-import { app, persistState, refreshDaily, refreshWorkouts } from "../store.js";
+import { app, persistState, recordWeight, refreshDaily, refreshWorkouts } from "../store.js";
 import { lineChart } from "../chart.js";
 import { DAYS, GYM, PROGRAM_WEEKS, ROUTINES } from "../constants.js";
 import { consistency, exerciseHistory, mondayOf, movingAverage } from "../stats.js";
@@ -8,7 +8,7 @@ import { openSleepLog } from "../reminders.js";
 import { closeModal, dayOptions, empty, openModal, panel, stat, tabs, toast } from "../ui.js";
 import { enqueue, flush } from "../workout/queue.js";
 import { icon } from "../icons.js";
-import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num, uid } from "../util.js";
+import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
 
 const ui = { exercise: null, tab: "weight", list: "readings", loads: "trend" };
 const SCHEDULE = Object.fromEntries(DAYS.map((d, i) => [i, GYM[d]]).filter(([, r]) => r));
@@ -355,7 +355,7 @@ export async function onSubmit(form, data) {
     toast("Inserisci un peso valido");
     return false;
   }
-  app.state.weights.push({ id: uid(), date: data.date || isoDate(), weight, waist: data.waist ? num(data.waist) : null, note: data.note || "" });
-  if (await persistState()) toast("Misurazione salvata");
+  const updated = recordWeight({ date: data.date || isoDate(), weight, waist: data.waist ? num(data.waist) : null, note: data.note || "" });
+  if (await persistState()) toast(updated ? "Pesata di quel giorno aggiornata" : "Misurazione salvata");
   return true;
 }

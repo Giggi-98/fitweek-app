@@ -14,7 +14,7 @@ from .config import Settings
 from .db import connect, transaction
 from .schemas import ExerciseNotePut, GrocerySpendPut, IsoDate, SleepPut
 from .security import check_origin
-from .workouts import now_iso, today
+from .workouts import STALE, edit_time, is_stale, now_iso, today
 
 
 def _rows(c: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
@@ -41,6 +41,12 @@ def sleep_summary(rows: list[dict]) -> dict:
     }
 
 
+def _saved_at(c: sqlite3.Connection, table: str, key: str, value: str) -> str | None:
+    """Orario dell'ultima modifica salvata (tabella e colonna sono costanti del codice, mai input)."""
+    row = c.execute(f"SELECT updated_at FROM {table} WHERE {key}=?", (value,)).fetchone()
+    return row[0] if row else None
+
+
 def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     r = APIRouter(prefix="/api/v1", dependencies=[Depends(require_session)])
     writes = [Depends(check_origin)]
@@ -56,9 +62,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"items": rows, "summary": sleep_summary(rows)}
 
     @r.put("/sleep/{day}", dependencies=writes)
-    def put_sleep(day: IsoDate, body: SleepPut):
-        now = now_iso()
+    def put_sleep(day: IsoDate, body: SleepPut, edited: str = Depends(edit_time)):
+        now = edited
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "sleep_logs", "date", day), edited):
+                return STALE
             c.execute(
                 "INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(date) DO UPDATE SET bed_time=excluded.bed_time, wake_time=excluded.wake_time,"
@@ -68,9 +76,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"ok": True, "duration_min": domain.sleep_minutes(body.bed_time, body.wake_time)}
 
     @r.delete("/sleep/{day}", dependencies=writes)
-    def delete_sleep(day: IsoDate):
+    def delete_sleep(day: IsoDate, edited: str = Depends(edit_time)):
         with connect(settings.db_path) as c, transaction(c):
-            c.execute("UPDATE sleep_logs SET deleted_at=? WHERE date=?", (now_iso(), day))
+            if is_stale(_saved_at(c, "sleep_logs", "date", day), edited):
+                return STALE
+            c.execute("UPDATE sleep_logs SET deleted_at=?, updated_at=? WHERE date=?", (edited, edited, day))
         return {"ok": True}
 
     # ---- note per esercizio (restano tra una seduta e l'altra: sedile, presa, fastidi) ----------
@@ -80,14 +90,16 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             return {"items": _rows(c, "SELECT exercise_id, note, updated_at FROM exercise_notes WHERE note <> ''")}
 
     @r.put("/exercise-notes/{exercise_id}", dependencies=writes)
-    def put_exercise_note(exercise_id: str, body: ExerciseNotePut):
+    def put_exercise_note(exercise_id: str, body: ExerciseNotePut, edited: str = Depends(edit_time)):
         if not (1 <= len(exercise_id) <= 64) or not exercise_id.replace("-", "").replace("_", "").isalnum():
             raise HTTPException(status_code=422, detail="Esercizio non valido")
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "exercise_notes", "exercise_id", exercise_id), edited):
+                return STALE
             c.execute(
                 "INSERT INTO exercise_notes (exercise_id, note, updated_at) VALUES (?, ?, ?)"
                 " ON CONFLICT(exercise_id) DO UPDATE SET note=excluded.note, updated_at=excluded.updated_at",
-                (exercise_id, body.note.strip(), now_iso()),
+                (exercise_id, body.note.strip(), edited),
             )
         return {"ok": True}
 

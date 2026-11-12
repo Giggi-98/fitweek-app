@@ -23,8 +23,14 @@ const FAKE_CAPACITOR = () => {
         changeExactNotificationSetting: async () => ({ exact_alarm: 'granted' }),
         createChannel: async (c) => window.__ln.channels.push(c),
         getPending: async () => ({ notifications: pending.map((n) => ({ id: n.id })) }),
-        cancel: async ({ notifications }) => { window.__ln.cancelled.push(...notifications.map((n) => n.id)); pending = pending.filter((p) => !notifications.some((n) => n.id === p.id)); },
-        schedule: async ({ notifications }) => { pending.push(...notifications); window.__ln.scheduled = [...pending]; return { notifications }; },
+        cancel: async ({ notifications }) => { window.__ln.cancelled.push(...notifications.map((n) => n.id)); pending = pending.filter((p) => !notifications.some((n) => n.id === p.id)); window.__ln.scheduled = [...pending]; },
+        schedule: async ({ notifications }) => {
+          if (window.__ln.failSchedule) throw new Error('programmazione fallita');
+          // come su Android: una notifica con lo stesso id sostituisce quella già programmata
+          pending = pending.filter((p) => !notifications.some((n) => n.id === p.id)).concat(notifications);
+          window.__ln.scheduled = [...pending];
+          return { notifications };
+        },
         addListener: (evt, cb) => { listeners[evt] = cb; return { remove() {} }; },
       },
       App: { addListener: (evt, cb) => { listeners['app:' + evt] = cb; return { remove() {} }; }, minimizeApp: async () => { window.__ln.minimized = true; } },
@@ -84,6 +90,18 @@ const FAKE_CAPACITOR = () => {
   }
   await page.evaluate(() => window.__ln.listeners['app:backButton']({ canGoBack: false }));
   check('tasto indietro dalla home riduce a icona', await page.evaluate(() => window.__ln.minimized === true));
+
+  // Se la programmazione fallisce, le notifiche già programmate restano (prima venivano cancellate tutte)
+  const before = await page.evaluate(() => window.__ln.scheduled.length);
+  await page.evaluate(() => { window.__ln.failSchedule = true; window.dispatchEvent(new Event('fitweek:changed')); });
+  await page.waitForTimeout(800);
+  const afterFail = await page.evaluate(() => { window.__ln.failSchedule = false; return window.__ln.scheduled.length; });
+  check('programmazione fallita: le notifiche precedenti restano', before > 0 && afterFail === before, `${before} → ${afterFail}`);
+
+  // Un promemoria scaduto può aprire da solo il suo popup (dipende dall'ora reale): lo si chiude prima di proseguire.
+  await page.waitForTimeout(1800);
+  if (await page.locator('#modal[open]').count()) await page.evaluate(() => window.__ln.listeners['app:backButton']({ canGoBack: false }));
+  await page.waitForSelector('#modal', { state: 'hidden' });
 
   // Pannello nativo in Impostazioni
   await page.click('.topbar [data-view=settings]');

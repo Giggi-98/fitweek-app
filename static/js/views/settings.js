@@ -1,10 +1,11 @@
 // Impostazioni: profilo, programma, preferenze allenamento, tema, backup, sessione.
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
-import { app, loadAll, persistState, refreshDaily } from "../store.js";
+import { app, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
 import { panel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
+import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
 import { serverUrl, setToken, standalone } from "../platform.js";
@@ -134,6 +135,24 @@ export function applyTheme(theme = storage.get(THEME_KEY, "auto")) {
   else document.documentElement.dataset.theme = theme;
 }
 
+/** Modifiche che il server ha rifiutato: non si perdono, restano qui finché l'utente non decide. */
+function notSentPanel() {
+  const ops = rejected();
+  const state = rejectedState();
+  if (!ops.length && !state) return "";
+  const when = (iso) => new Date(iso).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const row = (title, sub, attrs) =>
+    `<div class="mini-card"><div><div class="entry-title">${esc(title)}</div><div class="entry-sub">${esc(sub)}</div></div><div class="button-row"><button type="button" class="btn small" ${attrs}="retry">Riprova</button><button type="button" class="btn small danger" ${attrs}="drop">Scarta</button></div></div>`;
+  return panel(
+    `${icon("hourglass")}Modifiche non inviate`,
+    `<p class="subtle">Il server non le ha accettate. Restano su questo dispositivo finché non le riprovi o le scarti.</p>
+    <div class="stack">${state ? row("Pesate, spesa, dispensa, profilo o piano", `${when(state.at)} · dati non validi${state.field ? ` (${state.field})` : ""}`, "data-rejected-state") : ""}${ops
+      .map((op, i) => row(`${op.method} ${op.path.replace("/api/v1/", "")}`, `${when(op.at)} · ${op.message}`, `data-rejected-index="${i}" data-rejected-op`))
+      .join("")}</div>`,
+    "", "", "not-sent",
+  );
+}
+
 export function render() {
   const p = app.state.profile;
   const pr = prefs();
@@ -160,7 +179,7 @@ export function render() {
       standalone
         ? `<p class="subtle">Backup automatico ogni notte sul server (${esc(serverUrl())}). Per scaricare o ripristinare una copia apri FitWeek dal browser.</p>`
         : `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia completa in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
-    )}${panel(
+    )}${notSentPanel()}${panel(
       `${icon("log-out")}Sessione`,
       `<p class="subtle">Esci da questo dispositivo, oppure da tutti (es. telefono perso).</p><div class="button-row"><button class="btn" data-action="logout">Esci</button><button class="btn danger" data-action="logout-all">Esci da tutti i dispositivi</button></div>`,
     )}${panel(
@@ -173,6 +192,17 @@ export function render() {
 
 export async function onClick(t) {
   if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
+  if (t.dataset.rejectedOp) {
+    const index = Number(t.dataset.rejectedIndex);
+    if (t.dataset.rejectedOp === "retry") retryRejected(index);
+    else if (confirm("Scartare questa modifica? Non sarà più recuperabile.")) dropRejected(index);
+    return true;
+  }
+  if (t.dataset.rejectedState) {
+    if (t.dataset.rejectedState === "retry") await retryRejectedState();
+    else if (confirm("Scartare queste modifiche? Non saranno più recuperabili.")) dropRejectedState();
+    return true;
+  }
   if (t.dataset.native === "test") return testNotification(), false;
   if (t.dataset.native === "sync") {
     await syncNotifications({ ask: true });

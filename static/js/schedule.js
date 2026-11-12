@@ -19,9 +19,10 @@ const isoLocal = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.get
  * @param reminders  [{id, weekday 0=lun, time "HH:MM", title, action, slot, enabled}]
  * @param todayState Map id → stato di oggi ("done" | "skipped" | "snoozed" | "pending")
  * @param now        Date corrente (fuso del telefono = Europe/Rome)
+ * @param snoozedUntil Map id → Date: i promemoria di oggi posticipati ("Più tardi") suonano al nuovo orario
  * @returns [{id, at: Date, title, body, extra}] ordinati per orario
  */
-export function buildSchedule(reminders, todayState = new Map(), now = new Date(), days = 14) {
+export function buildSchedule(reminders, todayState = new Map(), now = new Date(), days = 14, snoozedUntil = new Map()) {
   const out = [];
   const todayIso = isoLocal(now);
   for (let k = 0; k < days; k++) {
@@ -32,7 +33,8 @@ export function buildSchedule(reminders, todayState = new Map(), now = new Date(
       if (!r.enabled || r.weekday !== weekday) continue;
       if (iso === todayIso && ["done", "skipped"].includes(todayState.get(r.id))) continue;
       const [h, m] = r.time.split(":").map(Number);
-      const at = new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
+      const later = iso === todayIso && todayState.get(r.id) === "snoozed" ? snoozedUntil.get(r.id) : null;
+      const at = later || new Date(day.getFullYear(), day.getMonth(), day.getDate(), h, m, 0, 0);
       if (at <= now) continue;
       out.push({
         id: notificationId(r.id, iso),

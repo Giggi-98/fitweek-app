@@ -93,6 +93,19 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.locator('#content', { hasText: 'Ceci' }).waitFor({ timeout: 5000 });
   check('la modifica remota compare nell\'app', true);
 
+  // 6b. Server muto (es. fuori casa in 4G: nessun errore, solo attesa): dopo pochi secondi si può scegliere
+  //     di lavorare offline; quando il server torna, l'app se ne accorge da sola.
+  await page.route(`${B}/**`, () => {}); // richieste lasciate senza risposta
+  await page.reload();
+  await page.waitForSelector('#work-offline', { state: 'visible', timeout: 5000 });
+  check('server muto: compare "Lavora offline" entro pochi secondi', await page.locator('#shell').isHidden());
+  await page.click('#work-offline');
+  await page.waitForSelector('#shell:not(.hidden)', { timeout: 3000 });
+  check('lavora offline: l\'app si apre subito con la copia locale', /Offline/.test(await page.textContent('#sync .sync-text')));
+  await page.unroute(`${B}/**`);
+  await page.waitForSelector('#sync[data-state=ok]', { timeout: 30000 });
+  check('server di nuovo raggiungibile: l\'app torna online da sola', true);
+
   // 7. Uscita: il token viene revocato e rimosso
   page.once('dialog', (d) => d.accept());
   await page.click('.bottom-nav [data-view=training]');

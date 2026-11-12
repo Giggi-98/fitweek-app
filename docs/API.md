@@ -110,3 +110,13 @@ Modifiche a endpoint esistenti:
 - Tutte le rotte autenticate accettano il token sia dal cookie sia da `Authorization: Bearer <token>`; `POST /api/logout` revoca la sessione in entrambi i casi.
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
+
+## API 1.10.1 (2026-11-12) — orario della modifica
+
+Le scritture che passano dalla coda offline dichiarano quando sono state fatte con l'intestazione `X-Edited-At` (ISO 8601, es. `2026-11-12T17:05:00.000Z`). Vale per `PUT`/`DELETE` di `/api/v1/workout-sessions/{id}/sets/{exercise}/{n}`, `/api/v1/meal-logs/{id}`, `/api/v1/sleep/{giorno}` e per `PUT /api/v1/exercise-notes/{exercise}`.
+
+- Se il dato salvato è stato modificato **dopo** quell'orario, la scrittura non viene applicata e la risposta è `200 {"ok": true, "stale": true}` (non è un errore: il client non deve ritentare).
+- Altrimenti la scrittura è applicata e l'orario salvato (`logged_at` per le serie, `updated_at` per gli altri) è quello dichiarato, mai nel futuro.
+- Senza intestazione, o con un valore non valido, vale l'orario del server (comportamento precedente).
+- CORS: l'intestazione è ammessa per le origini dell'app autonoma (`APP_ORIGINS`).
+- Non coperti: `PATCH`/`DELETE` delle sedute, promemoria, pasti abituali, catalogo, spesa settimanale (scritture fatte solo in linea).

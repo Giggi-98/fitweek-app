@@ -1,7 +1,8 @@
 // Avvio, routing (hash) e delega degli eventi verso la vista attiva.
-import { request } from "./api.js";
+import { net, probeServer, request, workOffline } from "./api.js";
+import * as cache from "./cache.js";
 import { serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
-import { app, loadAll, refreshDaily, refreshWorkouts, syncState } from "./store.js";
+import { app, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, initModal, toast } from "./ui.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
@@ -92,12 +93,18 @@ function route() {
   else apply();
 }
 
+const OFFLINE_OFFER_MS = 2500;
 let started = false;
 async function boot() {
   if (standalone && !token()) return showLogin();
+  // App autonoma con una copia locale: se il server tarda, si propone di lavorare offline invece di aspettare.
+  const offer = standalone && cache.get("/api/state")
+    ? setTimeout(() => $("#boot-offline")?.classList.remove("hidden"), OFFLINE_OFFER_MS)
+    : null;
   try {
     await loadAll();
   } catch (e) {
+    clearTimeout(offer);
     if (e.status === 401) return app.onUnauthorized();
     // App autonoma senza rete e senza una copia locale (primo avvio): si torna all'accesso, dove si può
     // anche correggere l'indirizzo del server.
@@ -105,6 +112,8 @@ async function boot() {
     $("#boot").textContent = `Impossibile caricare i dati (${e.message}). Riprova tra poco.`;
     return;
   }
+  clearTimeout(offer);
+  $("#boot-offline")?.classList.add("hidden");
   $("#login").classList.add("hidden");
   $("#boot")?.classList.add("hidden");
   $("#shell").classList.remove("hidden");
@@ -133,6 +142,7 @@ window.addEventListener("hashchange", route);
 
 document.addEventListener("click", async (e) => {
   if (e.target.closest("#modal")) return; // gestiti dalla modale stessa
+  if (e.target.closest("#work-offline")) return workOffline();
   const nav = e.target.closest("[data-view]");
   if (nav) {
     e.preventDefault();
@@ -203,23 +213,30 @@ document.addEventListener("submit", async (e) => {
   }
 });
 
-// Tornando sull'app (es. dopo ore), aggiorna "oggi" e le sedute.
-document.addEventListener("visibilitychange", async () => {
-  if (document.visibilityState !== "visible" || !app.state) return;
+// Tornando sull'app (es. dopo ore) o quando il server torna raggiungibile, invia ciò che è in attesa e
+// aggiorna "oggi" e le sedute.
+async function resync() {
+  if (!app.state) return;
   await flush();
   await syncState();
   if (pendingCount()) return; // dati locali più recenti del server: non sovrascrivere
   try {
-    await Promise.all([refreshWorkouts(), refreshDaily()]);
+    await Promise.all([refreshWorkouts(), refreshDaily(), refreshState()]);
     $("#page-eyebrow").textContent = VIEWS[app.view].eyebrow?.() || ""; // il giorno può essere cambiato
     if (app.view !== "training") render();
   } catch {
     /* offline: resta con i dati locali */
   }
-});
+}
+document.addEventListener("visibilitychange", () => document.visibilityState === "visible" && resync());
+net.onBack = resync;
 
 // Al ritorno della rete partono anche le modifiche allo stato rimaste sul telefono.
 window.addEventListener("online", () => syncState());
-setInterval(() => app.state && syncState(), 20_000);
+setInterval(() => {
+  if (!app.state) return;
+  syncState();
+  probeServer();
+}, 20_000);
 
 boot();

@@ -28,7 +28,11 @@ async function ensurePermission(ask) {
 }
 
 let syncing = null;
-/** Cancella e riprogramma le notifiche dei prossimi 14 giorni dai promemoria del server. */
+const TEST_ID = 999999;
+const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+/** Riallinea le notifiche dei prossimi 14 giorni ai promemoria. Prima programma le nuove (stesso id = sostituita),
+ *  poi toglie solo quelle non più previste: se la programmazione fallisce restano quelle di prima. */
 export function syncNotifications({ ask = false } = {}) {
   if (!isNative() || !LN()) return Promise.resolve();
   syncing ??= (async () => {
@@ -37,10 +41,13 @@ export function syncNotifications({ ask = false } = {}) {
       const ln = LN();
       await ln.createChannel({ id: CHANNEL, name: "Promemoria", description: "Pasti, palestra, pesata, spesa", importance: 5, vibration: true, visibility: 1 });
       const [{ items }, agenda] = await Promise.all([request("/api/v1/reminders"), request("/api/v1/agenda")]);
-      const state = new Map(agenda.items.map((i) => [i.id, i.state]));
-      const plan = buildSchedule(items, state, new Date());
+      const now = new Date();
+      // Senza rete l'agenda in memoria può essere di un altro giorno: il suo stato non vale per oggi.
+      const todays = agenda.date === isoLocal(now) ? agenda.items : [];
+      const state = new Map(todays.map((i) => [i.id, i.state]));
+      const snoozed = new Map(todays.filter((i) => i.state === "snoozed").map((i) => [i.id, new Date(i.due_at)]));
+      const plan = buildSchedule(items, state, now, 14, snoozed);
       const pending = await ln.getPending();
-      if (pending.notifications.length) await ln.cancel({ notifications: pending.notifications.map((n) => ({ id: n.id })) });
       if (plan.length) {
         await ln.schedule({
           notifications: plan.map((n) => ({
@@ -49,6 +56,9 @@ export function syncNotifications({ ask = false } = {}) {
           })),
         });
       }
+      const wanted = new Set(plan.map((n) => n.id));
+      const obsolete = pending.notifications.filter((n) => !wanted.has(n.id) && n.id !== TEST_ID);
+      if (obsolete.length) await ln.cancel({ notifications: obsolete.map((n) => ({ id: n.id })) });
       Object.assign(nativeStatus, { scheduled: plan.length, lastSync: new Date(), error: null });
     } catch (e) {
       nativeStatus.error = e.message || String(e);
@@ -62,7 +72,7 @@ export function syncNotifications({ ask = false } = {}) {
 
 export async function testNotification() {
   if (!(await ensurePermission(true))) return toast("Notifiche non consentite: abilitale nelle impostazioni del telefono");
-  await LN().schedule({ notifications: [{ id: 999999, title: "FitWeek", body: "Notifica di prova: funziona!", channelId: CHANNEL, schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true } }] });
+  await LN().schedule({ notifications: [{ id: TEST_ID, title: "FitWeek", body: "Notifica di prova: funziona!", channelId: CHANNEL, schedule: { at: new Date(Date.now() + 5000), allowWhileIdle: true } }] });
   toast("Notifica di prova tra 5 secondi: puoi chiudere l'app");
 }
 

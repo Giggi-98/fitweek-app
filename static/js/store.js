@@ -6,10 +6,11 @@ import { standalone } from "./platform.js";
 import { mondayOf } from "./stats.js";
 import { localAgenda, localToday, mergeState } from "./sync.js";
 import { toast } from "./ui.js";
-import { $, isoDate, storage } from "./util.js";
+import { $, isoDate, storage, uid } from "./util.js";
 
 const SESSIONS_PATH = "/api/v1/workout-sessions?limit=200";
 const STATE_PENDING = "fitweek.statePending.v1"; // modifiche allo stato non ancora arrivate al server
+const STATE_REJECTED = "fitweek.stateRejected.v1"; // modifiche rifiutate dal server (422), tenute da parte
 const SCHEDULE = Object.fromEntries(DAYS.map((d, i) => [i, GYM[d]]).filter(([, r]) => r));
 
 export const app = {
@@ -34,6 +35,18 @@ let pendingOps = 0;
 let lastError = false;
 let baseState = null; // JSON dell'ultimo stato confermato dal server: base per la fusione
 const statePending = () => storage.get(STATE_PENDING, null);
+
+let warnedFull = 0;
+/** Salva sul dispositivo ciò che non è ancora sul server. Se lo spazio è finito lo dice, invece di tacere. */
+export function keep(key, value) {
+  if (storage.set(key, value)) return true;
+  if (Date.now() - warnedFull > 60_000) {
+    warnedFull = Date.now();
+    toast("Memoria del dispositivo piena: questa modifica resta solo finché l'app è aperta. Non chiuderla prima dell'invio.", { timeout: 8000 });
+  }
+  setSync("error");
+  return false;
+}
 const clockOf = (ms) => new Date(ms).toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" });
 
 export function setSync(kind) {
@@ -130,31 +143,59 @@ export async function refreshWorkouts() {
   app.sessions = sessions.items;
 }
 
+/** Al rientro sull'app: prende dal server lo stato cambiato altrove, senza toccare modifiche locali non inviate. */
+export async function refreshState() {
+  const untouched = () => !statePending() && JSON.stringify(app.state) === baseState;
+  await saveQueue;
+  if (!untouched()) return;
+  const fresh = await request("/api/state");
+  if (untouched()) adoptState(fresh);
+}
+
 async function reloadState() {
   adoptState(await request("/api/state"));
   app.render();
 }
 
+/** Una pesata per giorno: una seconda misura nello stesso giorno corregge la prima invece di affiancarla.
+ *  @returns true se ha aggiornato una pesata già presente */
+export function recordWeight({ date, weight, waist = null, note = "" }) {
+  const existing = app.state.weights.find((w) => w.date === date);
+  if (!existing) {
+    app.state.weights.push({ id: uid(), date, weight, waist, note });
+    return false;
+  }
+  Object.assign(existing, { weight, waist: waist ?? existing.waist, note: note || existing.note });
+  return true;
+}
+
 // ---- salvataggio dello stato (blob) -----------------------------------------------------------
-async function handleSaveError(e) {
+/** Il server ha rifiutato i dati (422): le modifiche locali non si buttano, si mettono da parte
+ *  (Impostazioni → Dati e accesso) e si torna ai dati salvati. */
+async function setAside(e) {
+  keep(STATE_REJECTED, { at: new Date().toISOString(), field: e.field || "", base: baseState, local: app.state });
+  storage.remove(STATE_PENDING);
+  toast(`Modifica rifiutata, dati non validi${e.field ? ` (${e.field})` : ""}. Ne ho tenuta una copia in Impostazioni → Dati e accesso.`, { timeout: 7000 });
   setSync("error");
-  if (e.status === 401) {
-    toast("Sessione scaduta: accedi di nuovo.");
-    app.onUnauthorized();
-    return;
+  try {
+    await reloadState();
+    setSync("ok");
+  } catch {
+    /* resta in errore, il prossimo salvataggio riprova */
   }
-  if (e.status === 422) {
-    toast(`Modifica rifiutata, dati non validi${e.field ? ` (${e.field})` : ""}. Ho ricaricato i dati salvati.`, { timeout: 6000 });
-    storage.remove(STATE_PENDING);
-    try {
-      await reloadState();
-      setSync("ok");
-    } catch {
-      /* resta in errore, il prossimo salvataggio riprova */
-    }
-    return;
-  }
-  toast(`Salvataggio non riuscito (${e.message}). Riproverò alla prossima modifica.`);
+}
+
+export const rejectedState = () => storage.get(STATE_REJECTED, null);
+export function dropRejectedState() {
+  storage.remove(STATE_REJECTED);
+}
+/** Riapplica le modifiche messe da parte sopra lo stato attuale e le invia di nuovo. */
+export function retryRejectedState() {
+  const r = rejectedState();
+  if (!r) return Promise.resolve(false);
+  app.state = mergeState(JSON.parse(r.base), r.local, app.state);
+  dropRejectedState();
+  return persistState();
 }
 
 async function putState() {
@@ -169,16 +210,24 @@ async function putState() {
 /** Il server ha una versione più nuova (altro dispositivo o modifiche offline): fusione e nuovo invio. */
 async function mergeAndPut() {
   const server = await request("/api/state", { fresh: true });
-  app.state = mergeState(JSON.parse(baseState), app.state, server.data);
+  const conflicts = [];
+  app.state = mergeState(JSON.parse(baseState), app.state, server.data, conflicts);
   app.version = server.version;
   await putState();
   app.render();
+  if (conflicts.length) {
+    const names = [...new Set(conflicts.map((c) => c.what))];
+    toast(`Modificato anche da un altro dispositivo: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` e altri ${names.length - 3}` : ""}. Ho tenuto la versione di questo dispositivo.`, { timeout: 8000 });
+  }
 }
 
 let saveQueue = Promise.resolve(true);
 /** Salva l'intero blob (domini non ancora migrati). Restituisce true se è al sicuro: sul server, oppure
- *  sul telefono in attesa di rete (verrà inviato da solo, fuso con ciò che nel frattempo è cambiato). */
-export function persistState() {
+ *  sul telefono in attesa di rete (verrà inviato da solo, fuso con ciò che nel frattempo è cambiato).
+ *  Qualsiasi errore non definitivo (rete, 5xx, 429, sessione scaduta, secondo conflitto) lascia le modifiche
+ *  in attesa sul dispositivo: sopravvivono a una ricarica e vengono ritentate da sole.
+ *  @param quiet true = nuovo tentativo automatico: niente avvisi ripetuti */
+export function persistState({ quiet = false } = {}) {
   if (!app.state) return Promise.resolve(false);
   setSync("saving");
   saveQueue = saveQueue.then(async () => {
@@ -194,13 +243,23 @@ export function persistState() {
           e = again;
         }
       }
+      if (e.status === 422) {
+        await setAside(e);
+        return false;
+      }
+      keep(STATE_PENDING, { version: app.version, base: baseState, local: app.state });
+      snapshot();
       if (e.status === 0) {
-        storage.set(STATE_PENDING, { version: app.version, base: baseState, local: app.state });
-        snapshot();
         setSync();
         return true;
       }
-      await handleSaveError(e);
+      setSync("error");
+      if (e.status === 401) {
+        toast("Sessione scaduta: accedi di nuovo. Le modifiche restano su questo dispositivo.");
+        app.onUnauthorized();
+      } else if (!quiet) {
+        toast(`Salvataggio non riuscito (${e.message}). Le modifiche restano su questo dispositivo: riprovo da solo.`, { timeout: 6000 });
+      }
       return false;
     }
   });
@@ -209,7 +268,7 @@ export function persistState() {
 
 /** Invia le modifiche allo stato rimaste in attesa (al ritorno della rete). */
 export function syncState() {
-  return statePending() ? persistState() : Promise.resolve(true);
+  return statePending() ? persistState({ quiet: true }) : Promise.resolve(true);
 }
 
 export { reloadState };

@@ -18,7 +18,7 @@ from .db import connect, transaction
 from .schemas import FoodPut, IsoDate, MealItem, MealLogPut, MealTemplatePut, ReminderAck, ReminderPut
 from .security import check_origin
 from .tracking import sleep_rows, sleep_summary
-from .workouts import TZ, now_iso, today
+from .workouts import STALE, TZ, edit_time, is_stale, now_iso, today
 
 MEAL_ACTION = "log_meal"
 
@@ -223,12 +223,14 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             return {"items": [parse_items(r) for r in rows]}
 
     @r.put("/meal-logs/{mid}", dependencies=writes)
-    def put_meal_log(mid: str, body: MealLogPut):
+    def put_meal_log(mid: str, body: MealLogPut, edited: str = Depends(edit_time)):
         _check_id(mid)
-        now = now_iso()
+        now = edited
         kcal, protein, source = body.kcal, body.protein_g, body.nutrition_source
         description = body.description
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_meal_time(c, mid), edited):
+                return STALE
             if body.items:
                 # Pasto composto: i totali derivano SEMPRE dalle voci (ricalcolati a ogni modifica).
                 kcal, protein, source = meal_totals(body.items)
@@ -301,9 +303,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"date": d, "items": found}
 
     @r.delete("/meal-logs/{mid}", dependencies=writes)
-    def delete_meal_log(mid: str):
+    def delete_meal_log(mid: str, edited: str = Depends(edit_time)):
         with connect(settings.db_path) as c, transaction(c):
-            c.execute("UPDATE meal_logs SET deleted_at=? WHERE id=?", (now_iso(), mid))
+            if is_stale(_meal_time(c, mid), edited):
+                return STALE
+            c.execute("UPDATE meal_logs SET deleted_at=?, updated_at=? WHERE id=?", (edited, edited, mid))
         return {"ok": True}
 
     # ---- promemoria e agenda ---------------------------------------------------------------
@@ -365,6 +369,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             return weekly_summary(c, d)
 
     return r
+
+
+def _meal_time(c: sqlite3.Connection, mid: str) -> str | None:
+    row = c.execute("SELECT updated_at FROM meal_logs WHERE id=?", (mid,)).fetchone()
+    return row[0] if row else None
 
 
 def _check_id(value: str) -> None:

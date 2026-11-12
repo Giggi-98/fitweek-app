@@ -47,7 +47,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.app_origins = settings.app_origins
     # CORS solo per l'app autonoma: niente cookie (allow_credentials resta falso), autenticazione con token.
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.app_origins), allow_methods=["*"],
-                       allow_headers=["Authorization", "Content-Type"], max_age=600)
+                       allow_headers=["Authorization", "Content-Type", "X-Edited-At"], max_age=600)
 
     # ---- middleware e gestione errori ---------------------------------------------------
     @app.middleware("http")
