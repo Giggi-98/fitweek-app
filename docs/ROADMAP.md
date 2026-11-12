@@ -172,7 +172,7 @@ Fatto e verificato su container usa-e-getta (83 pytest, 35 test JS, 128 controll
 - Notifiche: "Più tardi" riprogramma la notifica; le notifiche esistenti non vengono più cancellate prima di averne programmate di nuove.
 - Test: nuovo `reliability.e2e.js`; `native.e2e.js` non dipende più dall'ora; attesa dopo l'avvio del container (Chromium annullava i caricamenti con `net::ERR_NETWORK_CHANGED`).
 
-Stato del rilascio: **server non ancora aggiornato** (serve `scripts/deploy.sh`, su autorizzazione). L'APK `next` 1.10.1 presente in `mobile/dist` contiene solo le prime tre voci ed è compatibile con il server 1.10.0; **dopo il deploy va ricompilato**, perché le pagine nuove inviano `X-Edited-At`, che il server 1.10.0 non ammette via CORS (le scritture resterebbero in coda, senza perdersi).
+Stato del rilascio: in produzione dal 2026-11-12 (deploy `cd20548`, backup `pre-deploy-cd20548`, container healthy, schema 7 invariato). APK `next` 1.10.1 ricompilato dopo il deploy, con tutte le voci qui sopra. Regola per il futuro: se le pagine usano qualcosa di nuovo del server (qui l'intestazione `X-Edited-At`), l'APK va compilato dopo il deploy.
 
 Da fare (in ordine): prova su S25 Ultra con checklist; token nel Keystore, rinnovo e elenco dispositivi, `docs/SECURITY.md` (serve la scelta su HTTPS); backup fuori dal server (serve la destinazione); scheda "Adesso" in dashboard; lista della spesa generata dal piano.
 Non coperto: `X-Edited-At` per le modifiche alle sedute (`PATCH`/`DELETE`); notifiche oltre i 14 giorni senza aprire l'app.
