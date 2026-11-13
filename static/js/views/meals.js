@@ -6,7 +6,7 @@ import { openComposer } from "../composer.js";
 import { guessSlot } from "../reminders.js";
 import { app, persistState, refreshDaily } from "../store.js";
 import { formatQty, parseQty } from "../stats.js";
-import { empty, panel, tabs, toast } from "../ui.js";
+import { empty, panel, tabpanel, tabs, toast } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
 import { openPlanProposal } from "./shopping.js";
 import { enqueue, flush } from "../workout/queue.js";
@@ -33,7 +33,7 @@ async function loadLogs() {
 }
 
 const SLOT_ICON = { lunch: "soup", pre_workout: "zap", snack: "apple", dinner: "utensils", other: "cookie" };
-const viewTabs = () => tabs([["diary", "Diario", "notebook-pen"], ["plan", "Piano", "calendar"], ["templates", "Abituali", "sparkles"]], ui.tab, "Pasti");
+const viewTabs = () => tabs([["diary", "Diario", "notebook-pen"], ["plan", "Piano", "calendar"], ["templates", "Abituali", "sparkles"]], ui.tab, "Pasti", "tab", "meals-panel");
 
 const kcalLabel = (m) =>
   m.kcal != null ? `${m.nutrition_source === "estimate" ? "~" : ""}${fmtNum(m.kcal, 0)} kcal${m.protein_g != null ? ` · ${fmtNum(m.protein_g, 0)} g prot.` : ""} · ${SOURCE_LABEL[m.nutrition_source] || "stima"}` : "senza valori";
@@ -160,7 +160,7 @@ function templates() {
 
 export function render() {
   const body = ui.tab === "plan" ? plan() : ui.tab === "templates" ? templates() : diary();
-  return `<div class="view-bar">${viewTabs()}<button class="btn primary" data-add-log="${isoDate()}">${icon("plus", "sm")}Pasto</button></div>${body}`;
+  return `<div class="view-bar">${viewTabs()}<button class="btn primary" data-add-log="${isoDate()}">${icon("plus", "sm")}Pasto</button></div>${tabpanel("meals-panel", "Pasti", ui.tab, body)}`;
 }
 
 const optNum = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", ".")));

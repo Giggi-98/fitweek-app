@@ -153,6 +153,22 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
     return bad;
   });
   check('schede: in ogni vista ogni elenco di schede ha una sola sosta per Tab', everyList.length === 0, everyList.join(' | '));
+  const panelsOk = await page.evaluate(async () => {
+    const bad = [];
+    for (const view of ['dashboard', 'training', 'meals', 'shopping', 'progress', 'settings']) {
+      location.hash = view;
+      await new Promise((r) => setTimeout(r, 400));
+      for (const tab of document.querySelectorAll('#content [role=tab][aria-controls]')) {
+        const panel = document.getElementById(tab.getAttribute('aria-controls'));
+        if (!panel || panel.getAttribute('role') !== 'tabpanel') { bad.push(`${view}: ${tab.id} senza tabpanel`); continue; }
+        const by = panel.getAttribute('aria-labelledby');
+        if (!by || !document.getElementById(by)) bad.push(`${view}: ${panel.id} etichetta rotta (${by})`);
+        if (tab.getAttribute('aria-selected') === 'true' && by !== tab.id) bad.push(`${view}: ${panel.id} etichettato da ${by}, scheda attiva ${tab.id}`);
+      }
+    }
+    return bad;
+  });
+  check('schede: aria-controls risolve un tabpanel esistente, etichettato dalla scheda attiva', panelsOk.length === 0, panelsOk.join(' | '));
   // ---- FW-ARCH-001: la conferma del ripristino dice cosa viene sostituito e cosa resta
   const full = await api('/api/backup');
   const legacy = { format: 'fitweek-backup-v2', version: full.version, data: full.data, workout_sessions: full.workout_sessions };

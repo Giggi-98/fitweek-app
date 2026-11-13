@@ -2,7 +2,7 @@
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
 import { app, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
-import { panel, tabs, toast } from "../ui.js";
+import { panel, tabpanel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
 import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
@@ -219,7 +219,7 @@ export function render() {
       `<div class="summary-list"><div class="summary-row"><i>${icon("package", "sm")}</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker.</small></div></div><div class="summary-row"><i>${icon("utensils", "sm")}</i><div><strong>Ricerca prodotti</strong><small>Quando cerchi un alimento, il solo testo cercato va a Open Food Facts. Nient'altro esce dal server.</small></div></div><div class="summary-row"><i>${icon("user", "sm")}</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">Uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
     )}</div>`;
   const body = ui.tab === "reminders" ? remindersPanel() : ui.tab === "app" ? androidPanel() : ui.tab === "data" ? data() : general();
-  return `${tabs([["general", "Generale", "user"], ["reminders", "Promemoria", "bell"], ["app", "App Android", "smartphone"], ["data", "Dati e accesso", "download"]], ui.tab, "Impostazioni")}${body}`;
+  return `${tabs([["general", "Generale", "user"], ["reminders", "Promemoria", "bell"], ["app", "App Android", "smartphone"], ["data", "Dati e accesso", "download"]], ui.tab, "Impostazioni", "tab", "settings-panel")}${tabpanel("settings-panel", "Impostazioni", ui.tab, body)}`;
 }
 
 export async function onClick(t) {

@@ -5,7 +5,7 @@ import { lineChart } from "../chart.js";
 import { DAYS, GYM, PROGRAM_WEEKS, ROUTINES } from "../constants.js";
 import { consistency, exerciseHistory, mondayOf, movingAverage } from "../stats.js";
 import { openSleepLog } from "../reminders.js";
-import { closeModal, dayOptions, empty, openModal, panel, stat, tabs, toast } from "../ui.js";
+import { closeModal, dayOptions, empty, openModal, panel, stat, tabpanel, tabs, toast } from "../ui.js";
 import { enqueue, flush } from "../workout/queue.js";
 import { icon } from "../icons.js";
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
@@ -166,14 +166,14 @@ function weightTab() {
   <div class="split wide-left">${panel(`${icon("scale")}Andamento del peso`, weightPanel(arr), "", "chart-panel")}
   ${panel(
     `${icon("pencil")}Pesate`,
-    `${tabs([["readings", "Misurazioni", null, weigh.length], ["weekly", "Medie settimanali"]], ui.list, "Elenco", "list")}
-    ${ui.list === "weekly"
+    `${tabs([["readings", "Misurazioni", null, weigh.length], ["weekly", "Medie settimanali"]], ui.list, "Elenco", "list", "progress-list-panel")}
+    ${tabpanel("progress-list-panel", "Elenco", ui.list, ui.list === "weekly"
       ? weekly.length
         ? `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Media <span class="badge-calc">calc.</span></th><th>Pesate</th></tr></thead><tbody>${weekly.slice(0, 8).map((w) => `<tr><td>${esc(fmtDate(w.week))}</td><td>${fmtNum(w.avg)} kg</td><td>${w.n}</td></tr>`).join("")}</tbody></table></div>`
         : empty("Nessuna media", "Servono alcune pesate.")
       : weigh.length
         ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0, 7).map((a) => `<tr class="clickable" role="button" tabindex="0" data-edit-weight="${esc(a.id)}" aria-label="Modifica pesata del ${esc(fmtDate(a.date))}"><td>${esc(fmtDate(a.date))}</td><td>${fmtNum(a.weight)} kg</td><td>${a.waist ? fmtNum(a.waist) + " cm" : "—"}</td><td class="cell-action"><button type="button" class="icon-btn" data-del-weight="${esc(a.id)}" aria-label="Elimina misurazione">${icon("trash-2", "sm")}</button></td></tr>`).join("")}</tbody></table></div>${weigh.length > 7 ? `<p class="subtle">Ultime 7 di ${weigh.length} misurazioni.</p>` : ""}`
-        : empty("Ancora nessuna pesata", "Registra la prima qui sotto.")}
+        : empty("Ancora nessuna pesata", "Registra la prima qui sotto."))}
     <details class="free"><summary>${icon("plus", "sm")}Registra peso e girovita</summary><form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label for="w-date">Giorno</label><select id="w-date" name="date">${dayOptions()}</select></div><div class="field"><label for="w-kg">Peso (kg)</label><input id="w-kg" type="number" name="weight" min="20" max="500" step="0.1" required inputmode="decimal" placeholder="es. 89,4"></div><div class="field"><label for="w-waist">Girovita (cm) · facoltativo</label><input id="w-waist" type="number" name="waist" min="20" max="250" step="0.1" inputmode="decimal"></div><div class="field"><label for="w-note">Nota · facoltativa</label><input id="w-note" name="note" maxlength="500" placeholder="es. mattina a digiuno"></div></div><button class="btn primary" type="submit">${icon("scale", "sm")}Registra misurazione</button></form></details>`,
   )}</div>`;
 }
@@ -198,13 +198,13 @@ const trainingTab = () =>
   `<div class="split"><div class="stack">${panel(`${icon("list-checks")}Costanza`, consistencyPanel())}${historyPanel()}</div>
   ${panel(
     `${icon("trending-up")}Carichi`,
-    `${tabs([["trend", "Per esercizio"], ["recent", "Ultimi carichi"]], ui.loads, "Carichi", "loads")}${ui.loads === "recent" ? loadsTable() : exercisePanel()}`,
+    `${tabs([["trend", "Per esercizio"], ["recent", "Ultimi carichi"]], ui.loads, "Carichi", "loads", "progress-loads-panel")}${tabpanel("progress-loads-panel", "Carichi", ui.loads, ui.loads === "recent" ? loadsTable() : exercisePanel())}`,
     "", "", "ex-panel",
   )}</div>`;
 
 export function render() {
   const body = ui.tab === "training" ? trainingTab() : ui.tab === "sleep" ? sleepTab() : weightTab();
-  return `${tabs([["weight", "Peso", "scale"], ["training", "Allenamento", "dumbbell"], ["sleep", "Sonno", "moon"]], ui.tab, "Progressi")}${body}`;
+  return `${tabs([["weight", "Peso", "scale"], ["training", "Allenamento", "dumbbell"], ["sleep", "Sonno", "moon"]], ui.tab, "Progressi", "tab", "progress-panel")}${tabpanel("progress-panel", "Progressi", ui.tab, body)}`;
 }
 
 // ---- modifica successiva -------------------------------------------------------------------

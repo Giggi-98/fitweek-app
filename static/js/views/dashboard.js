@@ -6,7 +6,7 @@ import { openComposer } from "../composer.js";
 import { guessSlot, openReminder, openSleepLog, openWeighIn } from "../reminders.js";
 import { dayNumber } from "../stats.js";
 import { app } from "../store.js";
-import { modalOpen, tabs } from "../ui.js";
+import { modalOpen, tabId, tabs } from "../ui.js";
 import { clock, countdown, gapFor, nextEvent, nowAction, positionNow, toMinutes } from "../timeline.js";
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
 import { todayStatus } from "./training.js";
@@ -221,7 +221,7 @@ function week() {
     })
     .join("");
   const sleep = t.sleep || { nights: 0 };
-  return `<section class="panel dash-week">
+  return `<section class="panel dash-week" role="tabpanel" id="dash-week" aria-labelledby="${tabId("Oggi", "week")}" tabindex="0">
     <div class="panel-head"><h3>${icon("chart-line")}La settimana</h3><a class="btn small" href="#meals">Diario${icon("arrow-right", "sm")}</a></div>
     <div class="chart-caption"><span>Calorie teoriche al giorno <span class="badge-calc">stima</span></span><span class="chart-legend">${target ? `<span><i class="key ref"></i>riferimento ${fmtNum(target, 0)} kcal</span>` : ""}<span><i class="key gym done"></i>allenamento fatto</span><span><i class="key gym"></i>in programma</span></span></div>
     <div class="wk-chart">${cols}${ref}</div>
@@ -241,8 +241,8 @@ export function render() {
   <div class="dash-top"><div class="dash-hero">${hero()}${nowCard()}</div>${tiles()}</div>
   ${pantryNote()}
   <div class="dash-main">
-    <div class="dash-tabs">${tabs([["day", "La giornata", "clock", pending || null], ["week", "La settimana", "chart-line"]], ui.tab, "Oggi")}</div>
-    <section class="panel dash-agenda">
+    <div class="dash-tabs">${tabs([["day", "La giornata", "clock", pending || null], ["week", "La settimana", "chart-line"]], ui.tab, "Oggi", "tab", { day: "dash-agenda", week: "dash-week" })}</div>
+    <section class="panel dash-agenda" role="tabpanel" id="dash-agenda" aria-labelledby="${tabId("Oggi", "day")}" tabindex="0">
       <div class="panel-head"><h3>${icon("clock")}La giornata${pending ? ` <span class="pill accent">${pending} da fare</span>` : ""}</h3><div class="panel-actions"><span class="now-chip" title="Ora attuale">${icon("clock", "sm")}<span class="tl-now-time">${clock(new Date())}</span></span><button class="btn small" data-quick-meal>${icon("plus", "sm")}Pasto</button></div></div>
       ${timeline()}
     </section>

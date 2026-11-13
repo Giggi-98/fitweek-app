@@ -29,11 +29,23 @@ export const empty = (title, text) => `<div class="data-empty"><strong>${title}<
  * Schede orizzontali, uguali in tutte le viste. `items` = [[chiave, etichetta, icona?, conteggio?]].
  * La vista riceve il click su `data-tab` (o sull'attributo indicato in `attr`).
  * Da tastiera: Tab si ferma solo sulla scheda attiva; frecce, Inizio e Fine scelgono le altre (`tabKey`).
+ * `panel` (id condiviso, o mappa chiave → id) collega ogni scheda al suo pannello con `aria-controls`:
+ * il contenuto va avvolto da `tabpanel()` (FW-UX-002).
  */
-export const tabs = (items, active, label, attr = "tab") =>
-  `<div class="tabs" role="tablist" aria-label="${esc(label)}">${items
-    .map(([key, text, ic, count]) => `<button type="button" class="tab ${key === active ? "active" : ""}" role="tab" aria-selected="${key === active}" tabindex="${key === active ? 0 : -1}" data-${attr}="${esc(key)}">${ic ? icon(ic, "sm") : ""}<span>${esc(text)}</span>${count == null ? "" : `<small>${esc(count)}</small>`}</button>`)
+const slug = (s) => String(s).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/(^-|-$)/g, "");
+export const tabId = (label, key) => `tab-${slug(label)}-${slug(key)}`;
+export const tabs = (items, active, label, attr = "tab", panel = null) => {
+  const controls = (key) => {
+    const id = typeof panel === "string" ? panel : panel?.[key];
+    return id ? ` aria-controls="${esc(id)}"` : "";
+  };
+  return `<div class="tabs" role="tablist" aria-label="${esc(label)}">${items
+    .map(([key, text, ic, count]) => `<button type="button" class="tab ${key === active ? "active" : ""}" role="tab" id="${tabId(label, key)}"${controls(key)} aria-selected="${key === active}" tabindex="${key === active ? 0 : -1}" data-${attr}="${esc(key)}">${ic ? icon(ic, "sm") : ""}<span>${esc(text)}</span>${count == null ? "" : `<small>${esc(count)}</small>`}</button>`)
     .join("")}</div>`;
+};
+/** Il contenuto comandato dalle schede: un solo pannello, etichettato dalla scheda attiva. */
+export const tabpanel = (id, label, activeKey, body) =>
+  `<div class="tabpanel" role="tabpanel" id="${esc(id)}" aria-labelledby="${tabId(label, activeKey)}" tabindex="0">${body}</div>`;
 /** Tasti di un elenco di schede (`role=tablist`): frecce, Inizio, Fine. Le schede disattivate si saltano.
  *  @returns la scheda da attivare, o null se il tasto non riguarda le schede */
 export function tabKey(tab, key) {

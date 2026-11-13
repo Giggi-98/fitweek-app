@@ -3,7 +3,7 @@ import { request } from "../api.js";
 import { icon } from "../icons.js";
 import { dayNumber, formatQty, mondayOf, parseQty, planProposal } from "../stats.js";
 import { app, persistState } from "../store.js";
-import { empty, openModal, panel, tabs, toast } from "../ui.js";
+import { empty, openModal, panel, tabpanel, tabs, toast } from "../ui.js";
 import { $, $$, esc, fmtDate, fmtNum, isoDate, money, num, putBack, storage, takeById, uid } from "../util.js";
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
@@ -116,7 +116,7 @@ export function render() {
   const g = app.state.groceries;
   const budget = num(app.state.profile.budget);
   const body = ui.tab === "pantry" ? pantryPanel() : ui.tab === "spend" ? spendPanel(budget) : listPanel(g);
-  return `${tiles(g, budget)}${tabs([["list", "Lista", "shopping-cart", g.filter((x) => !x.checked).length], ["pantry", "Dispensa", "package", app.state.inventory.length], ["spend", "Spese", "chart-line"]], ui.tab, "Spesa e dispensa")}${body}`;
+  return `${tiles(g, budget)}${tabs([["list", "Lista", "shopping-cart", g.filter((x) => !x.checked).length], ["pantry", "Dispensa", "package", app.state.inventory.length], ["spend", "Spese", "chart-line"]], ui.tab, "Spesa e dispensa", "tab", "shopping-panel")}${tabpanel("shopping-panel", "Spesa e dispensa", ui.tab, body)}`;
 }
 
 // ---- spesa reale ------------------------------------------------------------------------------

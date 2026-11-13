@@ -739,6 +739,8 @@ input[type="file"]::file-selector-button { margin-right: var(--space-3); min-hei
 /* ================================================================== coerenza tra viste (1.8) */
 /* schede orizzontali: la navigazione interna di ogni vista */
 .tabs { display: flex; gap: var(--space-1); overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--color-border); min-width: 0; }
+/* contenuto comandato dalle schede: stessa cadenza verticale che avrebbe avuto senza il contenitore */
+.tabpanel { display: grid; gap: var(--space-4); align-content: start; }
 .tabs::-webkit-scrollbar { display: none; }
 .tab { position: relative; flex: none; display: inline-flex; align-items: center; gap: var(--space-2); min-height: 46px; padding: 0 var(--space-4); border: 0; background: none; color: var(--color-text-muted); font-weight: 650; letter-spacing: -0.01em; white-space: nowrap; transition: color var(--dur-2); }
 .tab::after { content: ""; position: absolute; left: var(--space-3); right: var(--space-3); bottom: -1px; height: 2px; border-radius: 2px 2px 0 0; background: var(--color-accent); transform: scaleX(0); transition: transform var(--dur-2) var(--ease-out); }
