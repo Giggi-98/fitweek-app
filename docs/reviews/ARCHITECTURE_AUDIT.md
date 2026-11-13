@@ -4,12 +4,12 @@
 - **Data:** 2026-11-13
 - **Repository:** `Giggi-98/fitweek-app`
 - **Branch applicativo:** `main`
-- **HEAD verificato:** `5e333bd8ca290f96fc81dfddff66934de623614a`
+- **HEAD verificato nell'ultimo controllo:** `e014e0da498ffa05d8b0570c76cec2f074224483` (le sezioni storiche precedenti restano riferite a `5e333bd`)
 - **Baseline del codice applicativo esaminato:** `2dac1ab955224228659143f70fff8c01cef01029`
 - **Differenza baseline → HEAD:** cinque commit (`70f7607`, `b0f78d2`, `79304c6`, `d8817c4`, `5e333bd`) con correzioni applicative e documentazione; review incrementale della chat 01 disponibile nel report `2026-11-13-5e333bd.md`.
 - **Branch di archivio:** `review/engineering`
 - **Metodo:** analisi statica mirata del codice e coordinamento con la review baseline; non è un audit runtime completo
-- **Stato:** MODIFICHE RICHIESTE (preliminare); non costituisce nuovo verdetto della review incrementale
+- **Stato ultimo controllo area 02:** APPROVATO CON RISERVE **per le correzioni FW-ARCH-001/002 esaminate staticamente**, senza approvazione di runtime/deploy e senza chiusura definitiva; le sezioni precedenti documentano lo stato storico.
 - **Checkpoint ufficiale:** `null` secondo `REVIEW_LEDGER.md`; non avanzato
 
 ## 1. Confini di responsabilità
@@ -98,3 +98,34 @@ Questo audit non modifica `REVIEW_LEDGER.md`, non certifica runtime/produzione e
 - **FW-ARCH-001:** specificato il conflitto tra semantica restore condizionale di backend/schema e testo UI che promette sostituzione totale.
 - **FW-ARCH-002:** ancora aperto; documentazione `docs/ARCHITECTURE.md` non aggiornata.
 - **Nessuna modifica applicativa o al Ledger.** Questo aggiornamento non dichiara test superati e non cambia il verdetto della chat 01.
+
+## 9. Verifica correzioni architetturali — 2026-11-13, main e014e0d
+
+- **Intervallo applicativo:** `5e333bd8ca290f96fc81dfddff66934de623614a..e014e0da498ffa05d8b0570c76cec2f074224483`, 7 commit fast-forward secondo compare GitHub. HEAD `main` verificato identico a `e014e0d` al momento della revisione/pubblicazione.
+- **Coordinamento:** letto `docs/reviews/2026-11-13-e014e0d.md` e Ledger ufficiale aggiornato. La chat 01 ha esaminato staticamente l'intero intervallo, mantiene il checkpoint `null`, e ha evidenziato un caso limite ancora da verificare in FW-REV-010. Non duplicare FW-REV.
+- **Verdetto circoscritto:** APPROVATO CON RISERVE per la direzione e la presenza delle correzioni architetturali, **non** approvazione di produzione, APK o recuperabilità reale. Nessun test applicativo eseguito dal reviewer 02.
+
+### FW-ARCH-001 — P2 — Correzione supportata staticamente; test runtime pendenti
+
+- **Commit:** `1327e5d61eb7ef9689c734a56c0646fb1a796ce7`.
+- **Stato:** correzione presente nel codice, **aperto in attesa di verifica indipendente dei test e di restore isolato**. La discrepanza originaria della conferma generica è stata affrontata, senza cambiare la semantica legacy.
+- **Evidenza:** `app/main.py` restituisce `replaced` e `kept`; `app/schemas.py` definisce `BACKUP_OPTIONAL_DOMAINS` e il significato di `None`; `static/js/backup.js` calcola gli stessi domini e genera testi pre/post ripristino, usati da `static/js/views/settings.js`. `docs/API.md` descrive la matrice per formati v1–v4, i dati esclusi dal JSON e il backup pre-restore.
+- **Test presenti ma non eseguiti dal reviewer:** `tests/test_restore_matrix.py` con dati sentinella e test per `reminder_acks`; `tests/js/backup.test.mjs` per elenco e comunicazioni UI.
+- **Rischio residuo:** il JSON non include `set_tombstones`, `reminder_acks`, record eliminati né sessioni: il restore azzera i tombstone con le sedute, azzera gli acknowledge solo se sostituisce i promemoria e non tocca gli accessi, secondo `docs/API.md`. La descrizione deve restare ben distinta da un recupero SQLite completo. La prova di restore su DB temporaneo e i test con guasti/transazioni concorrenti non sono stati eseguiti da questa chat.
+- **Criteri prima della chiusura:** eseguire le suite Python/JS pertinenti con output verificabile; verificare v1–v4, contenuti `replaced/kept`, `reminder_acks`, `set_tombstones`, backup pre-restore, rollback su errore e UI. Non sperimentare su produzione.
+- **Collegamento:** FW-REV-004 per coerenza dell'export, senza duplicazione.
+
+### FW-ARCH-002 — P2 — Documentazione riallineata staticamente; verifica operativa pendente
+
+- **Commit:** `e014e0da498ffa05d8b0570c76cec2f074224483`.
+- **Stato:** correzione documentale presente e sostanzialmente coerente con i componenti di codice esaminati; **aperto fino a controllo conclusivo di accuratezza e dichiarazioni operative**.
+- **Evidenza:** `docs/ARCHITECTURE.md` separa architettura attuale 1.10.5, elementi non implementati e testo storico 2026-11-09. Documenta FastAPI, SQLite schema 9, stato ibrido, auth revocabile, Android stable/next, offline, backup e limiti di compatibilità, facendo riferimento a `docs/API.md` e altri documenti tecnici.
+- **Rischio residuo:** dichiarazioni come “nessun accesso da Internet”, stato dei deploy e APK su dispositivi non possono essere confermate dal solo tree GitHub; descriverle come configurazione prevista/dichiarata, salvo evidenza operativa.
+- **Criteri prima della chiusura:** confronto finale delle sezioni con configurazione e codice a SHA fisso; separare fatti di repository e condizioni di produzione; niente riscrittura generalizzata.
+- **Collegamento:** FW-REV-007 riguarda un documento funzionale differente.
+
+### Altre verifiche e coordinamento
+
+- I fix FW-REV-002/009 di ordinamento timestamp sono supportati staticamente dalla chat 01; è ancora necessaria la verifica runtime. Il caso limite Keystore + flag localStorage di FW-REV-010 rimane di proprietà chat 01 e non genera FW-ARCH.
+- La compatibilità APK/backend è debito da provare su versioni realmente distribuite. Non inferire che `main` sia in produzione.
+- Questa revisione architetturale non modifica `REVIEW_LEDGER.md`, non cambia checkpoint o stati FW-REV e non dichiara test superati.
