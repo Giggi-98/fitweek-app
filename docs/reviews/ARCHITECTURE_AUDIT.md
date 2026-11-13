@@ -129,3 +129,37 @@ Questo audit non modifica `REVIEW_LEDGER.md`, non certifica runtime/produzione e
 - I fix FW-REV-002/009 di ordinamento timestamp sono supportati staticamente dalla chat 01; è ancora necessaria la verifica runtime. Il caso limite Keystore + flag localStorage di FW-REV-010 rimane di proprietà chat 01 e non genera FW-ARCH.
 - La compatibilità APK/backend è debito da provare su versioni realmente distribuite. Non inferire che `main` sia in produzione.
 - Questa revisione architetturale non modifica `REVIEW_LEDGER.md`, non cambia checkpoint o stati FW-REV e non dichiara test superati.
+
+## 10. Controllo del ciclo 5 — 2026-11-13 — main 439dc83
+
+- **Intervallo verificato staticamente:** `e014e0da498ffa05d8b0570c76cec2f074224483..439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7`. GitHub compare: quattro commit consecutivi, nessun commit saltato; `main` coincideva con `439dc83` al momento della pubblicazione.
+- **Commit:** `9ba8b7c` (FW-REV-010), `cfb68d8` (FW-UX-002 e test undo/409), `f2bf1e6` (FW-ARCH-001), `439dc83` (documentazione 1.10.6).
+- **Coordinamento:** `REVIEW_LEDGER.md` e ultima review chat 01 `2026-11-13-e014e0d.md` riletti su `review/engineering`; ultima review chat 01 **non copre ancora** i quattro commit di questo intervallo. Maker handoff `2026-11-13-439dc83.maker.md` letto come dichiarazione e non come prova indipendente. Checkpoint ufficiale `null`, non modificato.
+- **Verdetto area 02:** **APPROVATO CON RISERVE per la correzione architetturale esaminata staticamente**, non approvazione operativa del deploy, APK o ripristino effettivo. Nessun test eseguito dal reviewer 02.
+
+### FW-ARCH-001 — P2 — Errore di integrità su restore: correzione presente, verifica runtime pendente
+
+- **Stato:** aperto; correzione principale contratto v1–v4 precedentemente supportata staticamente, nuovo handling rollback/422 supportato staticamente a `f2bf1e6`.
+- **Evidenza:** in `app/main.py` la transazione del restore è ora avvolta da `try/except sqlite3.IntegrityError`, che produce `HTTPException(422, ...)`. Il context manager `transaction(c)` gestisce il rollback se l'eccezione interrompe gli insert. `tests/test_restore_matrix.py` aggiunge `test_restore_rolls_back_completely_when_a_domain_fails`: due `sleep_logs` con la stessa data provocano errore e il test confronta il JSON esportato prima e dopo. La verifica diretta del sorgente conferma struttura ed esistenza del test, **non il suo esito**.
+- **Scenario e impatto:** file JSON malformato con chiavi duplicate a metà del restore; la precedente via non gestita poteva produrre HTTP 500, mentre il codice nuovo intende offrire 422 e annullamento di tutte le scritture. Il backup pre-restore resta fuori dalla transazione e viene creato prima dell'importazione.
+- **Test necessari:** eseguire indipendentemente `tests/test_restore_matrix.py` e `tests/js/backup.test.mjs`; controllare atomicità sul DB SQLite temporaneo, v1–v4, collisioni e limiti del JSON (inclusi `set_tombstones` e `reminder_acks`), verifica rollback di dati non rappresentati nell'export; nessun test distruttivo sul live.
+- **Rischio residuo:** il backup JSON resta parziale rispetto al database SQLite e il risultato reale di restore sui dati dell'utente non è stato verificato da questa chat. I casi di eccezioni diverse da `IntegrityError` non sono qualificati come bug nuovi senza riproduzione.
+- **Collegamenti:** FW-REV-004 (export snapshot), FW-REV-002/009 (serie offline) senza duplicare i finding di chat 01.
+
+### FW-ARCH-002 — P2 — Situazione invariata
+
+- Il contenuto architetturale corretto nel commit `e014e0d` non è stato modificato dal ciclo 5; la documentazione corrente resta staticamente riallineata, con verifica operativa sulle affermazioni di deploy/rete e APK ancora pendente. Nessun nuovo ID.
+
+### Cambiamenti esterni all'owner area 02
+
+- **FW-REV-010:** `static/js/platform.js` aggiunge controllo Keystore, marcatore in cookie WebView e mancato auto-login quando `localStorage` non è scrivibile; `static/js/logout.js` distingue gli esiti `true`, `marked` e `false`. Un caso combinato di mancata persistenza dei marcatori seguito da ripresa dello storage rimane descritto dal maker come rischio residuo. La chat 01 è owner; non chiudere né duplicare qui.
+- **FW-UX-002 / undo spesa:** `static/js/ui.js`, viste, CSS e test di interazione sono stati modificati; le verifiche accessibilità e undo/409 spettano alla chat 03 e/o chat 01 secondo i loro ID.
+- **Autore Kimi:** nessun commit o documento consultato attribuisce inequivocabilmente lavoro a Kimi; non attribuire modifiche senza prova.
+
+### Test e distribuzione: evidenza distinta
+
+- **Dichiarazioni maker nell'handoff:** `scripts/check.sh` con 105 pytest e 83 test JS, `scripts/e2e.sh` con 169 controlli; prima del fix restore un test mostrava 500 e dopo il fix 422 con rollback. Nessuna uscita dei test è stata verificata indipendentemente dalla chat 02.
+- **Aggiornamento operativo nell'handoff maker:** riferisce deploy live 1.10.6, schema 9 e APK Android `next` ricompilato. Il reviewer 02 **non ha verificato** endpoint di produzione, stato container, checksum APK o funzionamento su telefono reale. Non asserire “nessun deploy” come fatto attuale.
+- **Prossime verifiche:** prove indipendenti del restore su copia isolata; evidenza di versione realmente distribuita; test sul device Android `next` e QA dei casi falliti per integrità dati.
+
+**Nessuna modifica a `main`, `REVIEW_LEDGER.md`, al checkpoint o ai documenti degli altri owner.**
