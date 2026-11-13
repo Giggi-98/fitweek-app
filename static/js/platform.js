@@ -8,6 +8,7 @@ import { storage } from "./util.js";
 const config = globalThis.FITWEEK_APP || null;
 const SERVER_KEY = "fitweek.server.v1";
 const TOKEN_KEY = "fitweek.token.v1";
+const SIGNED_OUT_KEY = "fitweek.signedOut.v1"; // uscita fatta, ma il Keystore non ha confermato l'eliminazione
 
 export const standalone = Boolean(config);
 const clean = (url) => String(url || "").trim().replace(/\/+$/, "");
@@ -31,13 +32,33 @@ async function secured(plugin, value) {
   }
 }
 
+/** Toglie il token dal Keystore e controlla rileggendolo che sia sparito davvero.
+ *  @returns true solo se l'eliminazione è confermata */
+async function wiped(plugin) {
+  try {
+    await plugin.clear();
+  } catch { /* lo dice la rilettura qui sotto */ }
+  try {
+    return !(await plugin.get())?.value;
+  } catch {
+    return false;
+  }
+}
+
 /** Carica il token dal Keystore Android (se presente) e migra un eventuale token salvato in localStorage.
  *  Il vecchio valore viene tolto solo a scrittura confermata: se il Keystore fallisce resta l'unica copia
- *  persistente, e la migrazione si ritenta al prossimo avvio. */
+ *  persistente, e la migrazione si ritenta al prossimo avvio.
+ *  Dopo un'uscita in cui il Keystore non ha confermato l'eliminazione, il token rimasto lì non viene usato:
+ *  si riprova a eliminarlo e l'app si apre sulla schermata di accesso (FW-REV-010). */
 export async function initToken() {
   if (!standalone) return null;
   const legacy = storage.get(TOKEN_KEY);
   const plugin = secureStore();
+  if (plugin && storage.get(SIGNED_OUT_KEY)) {
+    if (await wiped(plugin)) storage.remove(SIGNED_OUT_KEY);
+    memToken = null;
+    return memToken;
+  }
   if (plugin) {
     if (legacy) {
       if (await secured(plugin, legacy)) storage.remove(TOKEN_KEY);
@@ -58,20 +79,30 @@ export async function initToken() {
 
 export const token = () => (standalone ? (memToken !== undefined ? memToken : storage.get(TOKEN_KEY)) : null);
 
+/** @returns false solo se all'uscita il Keystore non ha confermato l'eliminazione del token: l'app non lo userà
+ *  più (vedi `initToken`), ma chi chiama deve dirlo all'utente */
 export async function setToken(value) {
   memToken = value || null;
   const plugin = secureStore();
   if (plugin) {
     if (!value) {
       storage.remove(TOKEN_KEY); // uscita: il token in chiaro sparisce comunque
-      await plugin.clear().catch(() => {});
-    } else if (await secured(plugin, value)) storage.remove(TOKEN_KEY);
+      if (await wiped(plugin)) storage.remove(SIGNED_OUT_KEY);
+      else {
+        storage.set(SIGNED_OUT_KEY, true);
+        return false;
+      }
+    } else if (await secured(plugin, value)) {
+      storage.remove(TOKEN_KEY);
+      storage.remove(SIGNED_OUT_KEY); // nel Keystore ora c'è il token del nuovo accesso
+    }
     // Keystore guasto: il token nuovo vale per questa sessione (in memoria) e non viene mai scritto in chiaro;
     // un eventuale vecchio token non ancora migrato resta dov'è.
-    return;
+    return true;
   }
   if (value) storage.set(TOKEN_KEY, value);
   else storage.remove(TOKEN_KEY);
+  return true;
 }
 
 export const apiUrl = (path) => serverUrl() + path;

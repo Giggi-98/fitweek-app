@@ -32,6 +32,7 @@ Stato: `[ ]` da provare · `[x]` superato · `[!]` anomalia rilevata
 - [ ] **Serie eliminata dal PC**: registrare una serie e aspettare `Sincronizzato`; in modalità aereo correggerne il carico sul telefono; qualche minuto dopo eliminare quella serie dal PC (Progressi → modifica seduta); riattivando la rete sul telefono la serie non ricompare sul PC.
 - [ ] **Uscita con modifiche non inviate**: in modalità aereo registrare una serie e toccare *Esci*: compare la richiesta di conferma con il numero di modifiche; con *Annulla* si resta dentro e la serie parte al rientro in rete.
 - [ ] **Uscita pulita**: toccando *Esci* in *Impostazioni → Dati e accesso*, l'app torna alla schermata di accesso e la copia locale viene cancellata.
+- [ ] **Uscita senza server** (1.10.4): in modalità aereo toccare *Esci*: compare l'avviso che la sessione resta valida sul server; con *Annulla* si resta dentro, con *OK* si torna all'accesso. Riaprendo l'app (anche con la rete) non si rientra da soli. Dal PC, in *Dati e accesso*, la sessione del telefono è ancora in elenco e si può revocare.
 
 ---
 

@@ -38,6 +38,13 @@ Ciclo 1 (1.10.3, 2026-11-13) — per tutti: **correzione implementata, in attesa
 | FW-REV-008 (P2) | sì, test JS | `sync.js`: la voce resta, avviso dedicato | `tests/js/sync.test.mjs` |
 | FW-REV-007 (P3) | confermato leggendo doc e seed | `docs/TRAINING_PROGRAM.md` riscritto; nessuna migrazione | `test_seed_progressions_match_the_pdf_table` |
 
+Ciclo 2 (1.10.4, 2026-11-13), dal report `docs/reviews/2026-11-13-5e333bd.md` — **correzione implementata, in attesa di verifica indipendente**. Scelte in D-028.
+
+| Finding | Riprodotto dal maker | Correzione | Test |
+|---|---|---|---|
+| FW-REV-009 (P1), completa FW-REV-002 | sì, pytest (3 test falliti prima) | `app/workouts.py`: `edit_time` al millisecondo | `tests/test_edit_time.py` |
+| FW-REV-010 (P2) | sì, test JS (6 falliti prima) | `platform.js`: eliminazione riletta e segno di uscita; `logout.js`: avvisi e conferma | `tests/js/platform.test.mjs`, `tests/js/logout.test.mjs` |
+
 Non fatto in questo ciclo: deploy (lo schema 9 arriva sull'istanza in uso solo al deploy, con backup pre-migrazione automatico), APK `next` ricompilato, prova su telefono reale.
 
 ## M1 — Stabilizzazione, protezione dati, sicurezza
@@ -182,6 +189,10 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.10.4 (2026-11-13) — correzioni della seconda review
+
+FW-REV-009 (orari delle modifiche al millisecondo) e FW-REV-010 (uscita che non si dà per riuscita se non lo è): vedi la sezione "Review indipendente" in cima e D-028. Nessuna funzione nuova, nessun cambio di schema. Stato: nel repository, **non in produzione**; APK `next` da ricompilare dopo il deploy.
 
 ## 1.10.3 (2026-11-13) — correzioni della prima review indipendente
 
