@@ -28,6 +28,17 @@ def transaction(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
     conn.execute("COMMIT")
 
 
+@contextmanager
+def snapshot(conn: sqlite3.Connection) -> Iterator[sqlite3.Connection]:
+    """Lettura coerente su più tabelle: tutte le SELECT nel blocco vedono lo stesso istante del DB, anche se
+    intanto un altro dispositivo scrive (in WAL chi scrive non viene bloccato). Sola lettura: si chiude con ROLLBACK."""
+    conn.execute("BEGIN")
+    try:
+        yield conn
+    finally:
+        conn.execute("ROLLBACK")
+
+
 def backup_to(conn: sqlite3.Connection, dest: Path) -> None:
     """Backup coerente (API SQLite) in un file autonomo senza WAL, verificato."""
     dest.parent.mkdir(parents=True, exist_ok=True)

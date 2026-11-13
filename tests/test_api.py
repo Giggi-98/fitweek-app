@@ -167,3 +167,32 @@ def test_frontend_has_no_inline_styles():
     offenders = [str(f.relative_to(static)) for f in [*static.rglob("*.js"), *static.rglob("*.html")]
                  if 'style="' in f.read_text(encoding="utf-8") or "<style" in f.read_text(encoding="utf-8")]
     assert offenders == []
+
+
+def test_backup_is_one_consistent_snapshot_under_concurrent_writes(auth_client, settings, monkeypatch):
+    """FW-REV-004: un altro dispositivo scrive a metà dell'esportazione (dopo la lettura dello stato, prima
+    delle sedute). L'export deve essere una fotografia di un solo istante: o tutto prima, o tutto dopo."""
+    import sqlite3
+
+    import app.main as main
+
+    original = main.load_sessions
+
+    def write_then_load(c, *args, **kwargs):
+        other = sqlite3.connect(settings.db_path, timeout=5)
+        other.execute(
+            "INSERT INTO workout_sessions (id, routine, week, date, status, created_at, updated_at)"
+            " VALUES ('mid-export', 'A', 1, '2026-11-13', 'done', '2026-11-13T10:00:00', '2026-11-13T10:00:00')")
+        other.execute("UPDATE app_state SET version = version + 1 WHERE id = 1")
+        other.commit()
+        other.close()
+        return original(c, *args, **kwargs)
+
+    before = auth_client.get("/api/state").json()["version"]
+    monkeypatch.setattr(main, "load_sessions", write_then_load)
+    exported = auth_client.get("/api/backup").json()
+    monkeypatch.setattr(main, "load_sessions", original)
+    assert exported["version"] == before
+    assert exported["workout_sessions"] == [], "la seduta scritta a metà non appartiene a questa fotografia"
+    later = auth_client.get("/api/backup").json()
+    assert later["version"] == before + 1 and [s["id"] for s in later["workout_sessions"]] == ["mid-export"]

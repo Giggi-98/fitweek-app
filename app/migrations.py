@@ -410,6 +410,21 @@ def _m008_sessions_and_quantities(c: sqlite3.Connection) -> None:
         )
 
 
+def _m009_set_tombstones(c: sqlite3.Connection) -> None:
+    """Segno di eliminazione per ogni posizione di serie (seduta, esercizio, numero): permette di scartare un
+    PUT offline più vecchio dell'eliminazione, che altrimenti ricreerebbe la serie. Solo una tabella nuova:
+    nessuna riga esistente viene toccata. I segni spariscono con la seduta (ON DELETE CASCADE)."""
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS set_tombstones (
+            session_id TEXT NOT NULL REFERENCES workout_sessions(id) ON DELETE CASCADE,
+            exercise_id TEXT NOT NULL,
+            set_index INTEGER NOT NULL,
+            deleted_at TEXT NOT NULL,
+            PRIMARY KEY (session_id, exercise_id, set_index)
+        )"""
+    )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -419,6 +434,7 @@ MIGRATIONS: list[Migration] = [
     (6, "meal_items_and_foods", _m006_meal_items_and_foods),
     (7, "sleep_notes_spend", _m007_sleep_notes_spend),
     (8, "sessions_and_quantities", _m008_sessions_and_quantities),
+    (9, "set_tombstones", _m009_set_tombstones),
 ]
 
 

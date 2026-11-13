@@ -138,3 +138,45 @@ def test_migration_8_populates_quantities_and_offsite_backup_restores(tmp_path):
     assert (restored_dir / "fitweek-release.jks").read_bytes() == b"fake-jks-key"
     _, restored_state = db_state(restored_db)
     assert restored_state["inventory"][0]["amount"] == 1500
+
+
+def test_seed_progressions_match_the_pdf_table():
+    """FW-REV-007: il seed porta le progressioni del PDF (b6: 4 serie da W5; c5: 6 serie da W7)."""
+    from app.seed import ROUTINES
+
+    assert (ROUTINES["B"][5]["id"], ROUTINES["B"][5]["sets"]) == ("b6", [3, 3, 3, 3, 4, 4, 4, 4])
+    assert (ROUTINES["C"][4]["id"], ROUTINES["C"][4]["sets"]) == ("c5", [5, 5, 5, 5, 5, 5, 6, 6])
+    assert [len(ROUTINES[d]) for d in "ABC"] == [7, 7, 5] and all(len(e["sets"]) == 8 for d in "ABC" for e in ROUTINES[d])
+
+
+def test_migration_9_adds_deletion_marks_without_touching_logged_sets(tmp_path):
+    """FW-REV-002: DB allo schema 8 con serie registrate → lo schema 9 aggiunge solo la tabella dei segni."""
+    from app.migrations import _applied
+    from app.db import connect, transaction
+
+    db = tmp_path / "f.sqlite"
+    legacy_db(db)
+    with connect(db) as c:  # porta il DB allo schema 8, come l'istanza in uso oggi
+        _applied(c)
+        for version, name, fn in MIGRATIONS:
+            if version <= 8:
+                with transaction(c):
+                    fn(c)
+                    c.execute("INSERT INTO schema_migrations VALUES (?, ?, 'x')", (version, name))
+        c.execute("INSERT INTO workout_sessions (id, routine, week, date, status, created_at, updated_at)"
+                  " VALUES ('s1', 'A', 1, '2026-11-09', 'done', 't', 't')")
+        c.execute("INSERT INTO set_logs VALUES ('s1', 'a1', 1, 40, 10, NULL, 1, '2026-11-09T20:00:00+01:00')")
+        assert not c.execute("SELECT 1 FROM sqlite_master WHERE name='set_tombstones'").fetchone()
+    version_before, state_before = db_state(db)
+
+    assert run_migrations(db, tmp_path / "backups") == 9
+    assert db_state(db) == (version_before, state_before), "lo stato dell'utente non cambia"
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT kg, reps FROM set_logs").fetchall() == [(40.0, 10)]
+    assert c.execute("SELECT count(*) FROM set_tombstones").fetchone()[0] == 0
+    assert len(list((tmp_path / "backups").glob("pre-migration-009-*.sqlite"))) == 1
+    c.execute("PRAGMA foreign_keys=ON")
+    c.execute("INSERT INTO set_tombstones VALUES ('s1', 'a1', 1, '2026-11-10T10:00:00+01:00')")
+    c.execute("DELETE FROM workout_sessions WHERE id='s1'")
+    assert c.execute("SELECT count(*) FROM set_tombstones").fetchone()[0] == 0, "spariscono con la seduta"
+    c.close()

@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from . import APP_VERSION
 from .config import BASE_DIR, Settings, load_settings
-from .db import backup_to, connect, transaction
+from .db import backup_to, connect, snapshot, transaction
 from .logging_setup import setup_logging
 from .migrations import run_migrations
 from .schemas import BackupRestore, LoginBody, StatePut
@@ -190,7 +190,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.get("/api/backup", dependencies=[Depends(require_session)])
     def backup():
-        with connect(settings.db_path) as c:
+        """Esportazione JSON: una sola fotografia del DB, non una lettura per tabella in istanti diversi."""
+        with connect(settings.db_path) as c, snapshot(c):
             version, blob = c.execute("SELECT version, json FROM app_state WHERE id=1").fetchone()
             sessions_ = load_sessions(c, limit=100_000)
             c.row_factory = sqlite3.Row

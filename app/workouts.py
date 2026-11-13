@@ -193,6 +193,26 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                         (sid, exercise_id, set_index)).fetchone()
         return row[0] if row else None
 
+    def _deleted_time(c: sqlite3.Connection, sid: str, exercise_id: str, set_index: int) -> str | None:
+        """Quando la serie è stata eliminata l'ultima volta (segno in `set_tombstones`), o None."""
+        row = c.execute("SELECT deleted_at FROM set_tombstones WHERE session_id=? AND exercise_id=? AND set_index=?",
+                        (sid, exercise_id, set_index)).fetchone()
+        return row[0] if row else None
+
+    def _mark_deleted(c: sqlite3.Connection, sid: str, exercise_id: str, set_index: int, edited: str) -> None:
+        """Ricorda l'eliminazione: senza questo segno un PUT rimasto in coda su un dispositivo offline, fatto
+        PRIMA dell'eliminazione, ricreerebbe la serie. Il segno non torna mai indietro nel tempo e resta
+        anche se la serie viene poi registrata di nuovo (a quel punto la protegge il suo `logged_at`)."""
+        if not c.execute("SELECT 1 FROM workout_sessions WHERE id=?", (sid,)).fetchone():
+            return
+        if is_stale(_deleted_time(c, sid, exercise_id, set_index), edited):
+            return
+        c.execute(
+            "INSERT INTO set_tombstones (session_id, exercise_id, set_index, deleted_at) VALUES (?, ?, ?, ?)"
+            " ON CONFLICT(session_id, exercise_id, set_index) DO UPDATE SET deleted_at=excluded.deleted_at",
+            (sid, exercise_id, set_index, edited),
+        )
+
     def check_slot(sid: str, exercise_id: str, set_index: int) -> None:
         if not (1 <= set_index <= 50) or not exercise_id.replace("-", "").replace("_", "").isalnum():
             raise HTTPException(status_code=422, detail="Serie non valida")
@@ -202,8 +222,9 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         check_slot(sid, exercise_id, set_index)
         with connect(settings.db_path) as c, transaction(c):
             get_one(c, sid)
-            if is_stale(_set_time(c, sid, exercise_id, set_index), edited):
-                return STALE
+            if (is_stale(_set_time(c, sid, exercise_id, set_index), edited)
+                    or is_stale(_deleted_time(c, sid, exercise_id, set_index), edited)):
+                return STALE  # più vecchia della serie salvata, oppure della sua eliminazione
             c.execute(
                 "INSERT INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir, completed, logged_at)"
                 " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, exercise_id, set_index) DO UPDATE SET"
@@ -220,6 +241,7 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         with connect(settings.db_path) as c, transaction(c):
             if is_stale(_set_time(c, sid, exercise_id, set_index), edited):
                 return STALE
+            _mark_deleted(c, sid, exercise_id, set_index, edited)
             c.execute("DELETE FROM set_logs WHERE session_id=? AND exercise_id=? AND set_index=?",
                       (sid, exercise_id, set_index))
         return {"ok": True}

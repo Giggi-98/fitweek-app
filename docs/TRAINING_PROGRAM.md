@@ -42,14 +42,19 @@ Ripetizioni costanti per tutte le 8 settimane.
 | c5 | Calf su rialzo con manubri | 10–12 | 5 | 5 | 5 | 5 | 5 | 5 | **6** | 6 |
 | — | Vogatore | 10 min | 130–150 BPM W1–W4 · 150–170 BPM W5–W8 |
 
-## Discrepanze con `seed.py` / DB attuale
+## Allineamento tra PDF, `seed.py` e DB
 
-| id | Seed attuale | PDF |
-|---|---|---|
-| b6 | `[3,3,3,4,4,4,4,4]` (4 serie da W4) | `[3,3,3,3,4,4,4,4]` (4 serie da W5) |
-| c5 | `[5,5,5,5,5,6,6,6]` (6 serie da W6) | `[5,5,5,5,5,5,6,6]` (6 serie da W7) |
+Stato al 2026-11-13 (sezione riscritta dopo il finding FW-REV-007: prima descriveva come "attuale" un seed che non esisteva più).
 
-Tutti gli altri 18 esercizi coincidono. Correzione pianificata in M1 (richiede migrazione dati approvata).
+| Dove | b6 (Curl manubri su panca) | c5 (Calf su rialzo) | Come è verificato |
+|---|---|---|---|
+| PDF | `[3,3,3,3,4,4,4,4]` (4 serie da W5) | `[5,5,5,5,5,5,6,6]` (6 serie da W7) | tabelle qui sopra, estratte il 2026-11-09 |
+| `app/seed.py` oggi | uguale al PDF | uguale al PDF | test `test_seed_progressions_match_the_pdf_table` |
+| Seed della versione 1.0 (storico) | `[3,3,3,4,4,4,4,4]` (4 serie da W4) | `[5,5,5,5,5,6,6,6]` (6 serie da W6) | errore di trascrizione, corretto in M1 |
+| DB creati con la 1.0 | corretti dalla migrazione 3 (`fix_progressions_b6_c5`), solo se il valore era ancora quello errato: una progressione cambiata dall'utente non viene toccata | idem | test `test_legacy_db_is_backed_up_and_fixed…` e `test_user_modified_progression_is_not_touched` |
+| DB dell'istanza in uso | **non riletto in questa revisione** (nessun accesso ai dati reali): la migrazione 3 risulta applicata dal deploy di M1, ma il contenuto attuale di `routines` va confermato guardando la scheda nell'app | idem | da verificare a mano |
+
+Tutti gli altri 18 esercizi coincidono tra seed e PDF. Non c'è nessuna correzione pianificata: **non scrivere una nuova migrazione delle progressioni** partendo da questa pagina.
 
 ## Note
 

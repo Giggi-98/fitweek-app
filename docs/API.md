@@ -111,6 +111,14 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.10.3 (2026-11-13) — serie eliminate ed esportazione coerente
+
+Nessun contratto cambia; cambiano due comportamenti (finding FW-REV-002 e FW-REV-004).
+
+- `DELETE /api/v1/workout-sessions/{id}/sets/{exercise}/{n}` ricorda l'orario dell'eliminazione (`X-Edited-At`, o adesso) nella tabella `set_tombstones`, anche se la serie non era ancora arrivata al server. Un `PUT` sulla stessa posizione con `X-Edited-At` **precedente** all'eliminazione non ricrea la serie e risponde `200 {"ok": true, "stale": true}`; un `PUT` più recente la ricrea normalmente. Un'eliminazione più vecchia della serie salvata resta `stale` come prima. Per una seduta inesistente il `DELETE` risponde `{"ok": true}` senza scrivere nulla.
+- Limiti: gli orari hanno la precisione del secondo e sono quelli dichiarati dal dispositivo (come per `X-Edited-At`); il ripristino di un backup azzera i segni di eliminazione insieme alle sedute.
+- `GET /api/backup`: tutte le tabelle sono lette nella stessa transazione di lettura, quindi il file descrive un solo istante anche se intanto un altro dispositivo scrive. Formato invariato (`fitweek-backup-v4`); i segni di eliminazione non fanno parte del file.
+
 ## API 1.10.1 (2026-11-12) — orario della modifica
 
 Le scritture che passano dalla coda offline dichiarano quando sono state fatte con l'intestazione `X-Edited-At` (ISO 8601, es. `2026-11-12T17:05:00.000Z`). Vale per `PUT`/`DELETE` di `/api/v1/workout-sessions/{id}/sets/{exercise}/{n}`, `/api/v1/meal-logs/{id}`, `/api/v1/sleep/{giorno}` e per `PUT /api/v1/exercise-notes/{exercise}`.

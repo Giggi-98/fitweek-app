@@ -142,3 +142,13 @@ ALTER TABLE sessions ADD COLUMN last_seen_at TEXT;  -- rinnovo scorrevole delle 
 Nel blob `app_state` (migrazione 8, additiva e idempotente):
 - `groceries[]` e `inventory[]` portano `amount` (REAL, convertito in unità base `g`/`ml`/`pz`/`conf`) e `unit` (TEXT), popolati automaticamente da `qty` per le voci già esistenti.
 - `meals[Giorno].items` contiene l'elenco di ingredienti strutturati `[{name, amount, unit, category, slot}]` per calcolare la proposta di lista della spesa (`fabbisogno − dispensa`).
+
+## Stato dopo 1.10.3 (schema 9, 2026-11-13)
+
+```sql
+-- migrazione 9, solo una tabella nuova: nessuna riga esistente viene toccata
+set_tombstones(session_id → workout_sessions ON DELETE CASCADE, exercise_id, set_index, deleted_at,
+               PRIMARY KEY (session_id, exercise_id, set_index))
+```
+
+Un segno per ogni posizione di serie eliminata, con l'orario dell'eliminazione più recente. Serve a scartare un `PUT` rimasto in coda su un dispositivo offline e fatto prima dell'eliminazione (FW-REV-002). Il segno resta anche se la serie viene registrata di nuovo: a quel punto conta il più recente tra `set_logs.logged_at` e `set_tombstones.deleted_at`. Non c'è pulizia periodica: al più una riga per posizione, e spariscono con la seduta.

@@ -58,3 +58,63 @@ def test_old_sleep_and_note_edits_do_not_overwrite_newer(auth_client):
     auth_client.put("/api/v1/exercise-notes/a1", json={"note": "sedile 4"})
     assert auth_client.put("/api/v1/exercise-notes/a1", json={"note": "sedile 2"}, headers=OLD).json()["stale"] is True
     assert auth_client.get("/api/v1/exercise-notes").json()["items"][0]["note"] == "sedile 4"
+
+
+# ---- FW-REV-002: una serie eliminata non torna per una scrittura offline più vecchia ----------------
+def at(**ago):
+    return {"X-Edited-At": (datetime.now(timezone.utc) - timedelta(**ago)).isoformat()}
+
+
+def test_offline_put_older_than_delete_does_not_resurrect_the_set(auth_client):
+    """Telefono offline accoda il PUT lunedì, il PC elimina la serie martedì, il telefono si riconnette."""
+    new_session(auth_client)
+    assert auth_client.put(SET, json={"kg": 50, "reps": 8}, headers=at(days=3)).json() == {"ok": True}
+    assert auth_client.delete(SET, headers=at(days=1)).json() == {"ok": True}
+    late = auth_client.put(SET, json={"kg": 55, "reps": 8}, headers=at(days=2))
+    assert late.status_code == 200 and late.json() == {"ok": True, "stale": True}
+    assert sets(auth_client) == []
+
+
+def test_put_newer_than_delete_recreates_the_set_and_older_delete_is_then_ignored(auth_client):
+    new_session(auth_client)
+    auth_client.put(SET, json={"kg": 50, "reps": 8}, headers=at(days=3))
+    auth_client.delete(SET, headers=at(days=2))
+    assert auth_client.put(SET, json={"kg": 60, "reps": 6}, headers=at(hours=1)).json() == {"ok": True}
+    assert [s["kg"] for s in sets(auth_client)] == [60]
+    assert auth_client.delete(SET, headers=at(days=1)).json()["stale"] is True  # eliminazione più vecchia della serie
+    assert [s["kg"] for s in sets(auth_client)] == [60]
+    assert auth_client.put(SET, json={"kg": 61, "reps": 6}).json() == {"ok": True}  # modifica normale, adesso
+    assert [s["kg"] for s in sets(auth_client)] == [61]
+
+
+def test_delete_arriving_before_the_older_put_still_wins(auth_client):
+    """L'eliminazione arriva per prima su una serie che il server non ha ancora visto."""
+    new_session(auth_client)
+    assert auth_client.delete(SET, headers=at(hours=1)).json() == {"ok": True}
+    assert auth_client.put(SET, json={"kg": 40, "reps": 10}, headers=at(hours=2)).json()["stale"] is True
+    assert sets(auth_client) == []
+    other = SET.replace("/a1/1", "/a1/2")  # le altre serie non sono toccate
+    assert auth_client.put(other, json={"kg": 40, "reps": 10}, headers=at(hours=2)).json() == {"ok": True}
+    assert len(sets(auth_client)) == 1
+
+
+def test_older_delete_does_not_move_the_deletion_back_in_time(auth_client):
+    new_session(auth_client)
+    auth_client.delete(SET, headers=at(hours=1))
+    auth_client.delete(SET, headers=at(days=5))  # ripetizione vecchia: il segno resta quello più recente
+    assert auth_client.put(SET, json={"kg": 40, "reps": 10}, headers=at(hours=3)).json()["stale"] is True
+
+
+def test_delete_for_unknown_session_is_harmless(auth_client):
+    assert auth_client.delete(SET).json() == {"ok": True}
+
+
+def test_restore_clears_deletion_marks(auth_client):
+    new_session(auth_client)
+    auth_client.put(SET, json={"kg": 50, "reps": 8}, headers=at(days=3))
+    backup = auth_client.get("/api/backup").json()
+    auth_client.delete(SET, headers=at(days=1))
+    assert auth_client.post("/api/v1/restore", json=backup).status_code == 200
+    assert [s["kg"] for s in sets(auth_client)] == [50], "il ripristino riporta la serie del backup"
+    # il segno dell'eliminazione (1 giorno fa) è sparito con il ripristino: una modifica di 2 giorni fa vale
+    assert auth_client.put(SET, json={"kg": 52, "reps": 8}, headers=at(days=2)).json() == {"ok": True}

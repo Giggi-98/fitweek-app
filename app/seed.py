@@ -1,3 +1,4 @@
+from copy import deepcopy
 from datetime import date
 
 # Serie per settimana verificate sul PDF originale: vedi docs/TRAINING_PROGRAM.md.
@@ -33,7 +34,7 @@ exercise('c5','Calf su rialzo con manubri','10–12',[5,5,5,5,5,5,6,6],'https://
 def initial_state():
     return {
         'profile':{'name':'','age':28,'height':166,'startingWeight':90,'budget':50,'week':1,'startDate':date.today().isoformat(),'gymDays':['Lunedì','Mercoledì','Venerdì'],'notes':'Lavoro lun–gio 9–18, ven 9–17. Palestra 19:30–22:00, rientro 22:15–22:30. Pranzo al lavoro alle 13: primo + contorno; secondo sottovuoto per cena. Niente colazione obbligatoria.'},
-        'routines':ROUTINES,
+        'routines':deepcopy(ROUTINES),
         'workouts':[],
         'weights':[],
         'meals':{
