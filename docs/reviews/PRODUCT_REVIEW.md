@@ -96,3 +96,43 @@ Eseguiti dal reviewer: sola lettura statica dei documenti GitHub e dei moduli in
 - Blob documenti `main`: `CLAUDE.md` `dbb3b6d`; `PRODUCT_REQUIREMENTS.md` `65181f2`; `ROADMAP.md` `469b368`; `DECISIONS.md` `95b092a`.
 - Blob audit branch review: Ledger `1dc4760`; Architecture `278ce8d`; Technical Debt `67ed46c`; UX Audit `2cacbfd`; UX Backlog `d191380`.
 - Questa analisi non certifica che `main`, APK o produzione coincidano. Prima della pubblicazione sono stati ricontrollati HEAD di `main`, Ledger e assenza dei documenti sul branch di review.
+---
+
+## Aggiornamento Product Strategy — 2026-11-13 — e014e0d
+
+- **HEAD `main` verificato:** `e014e0da498ffa05d8b0570c76cec2f074224483`.
+- **Delta rispetto all'audit iniziale:** `5e333bd8ca290f96fc81dfddff66934de623614a..e014e0da498ffa05d8b0570c76cec2f074224483`, 7 commit (D-027, correzioni 1.10.4 e 1.10.5, documentazione).
+- **Metodo:** confronto GitHub e lettura delle revisioni aggiornate di chat 01/02/03, roadmap e documentazione; consultazione statica del codice coinvolto nelle verifiche precedenti. **Nessun test applicativo, APK, restore reale o prova su telefono eseguito da questa chat.**
+- **Checkpoint ufficiale:** `null`, esclusiva competenza chat 01. La review incrementale `docs/reviews/2026-11-13-e014e0d.md` copre staticamente il delta e conclude **APPROVATO CON RISERVE (solo statico)**, non autorizzazione al rilascio.
+
+### Evidenze nuove e stato prodotto
+
+| Dominio | Evidenza del repository / audit proprietario | Implicazione product |
+| --- | --- | --- |
+| Integrità serie offline | `1418d74`: `app/workouts.py` conserva millisecondi in `edit_time`; chat 01 considera FW-REV-002/009 corretti nel percorso statico, **ancora aperti per test runtime**. A pari millisecondo resta un caso di ordinamento da valutare. | FW-PROD-001 **non sbloccato**; serve riproduzione out-of-order e APK reale. |
+| Logout Android | `d57212b`: `platform.js`/`logout.js` distinguono il logout fallito; chat 01 mantiene FW-REV-010 **aperto** per caso con fallimento contemporaneo di Keystore e scrittura flag localStorage. | FW-PROD-001 include test di fallimento e riavvio senza ri-autenticazione silenziosa. |
+| Spesa/dispensa | `b8fa875`: Undo rimozione e separazione pulsanti dalla label; chat 03: FW-UX-001/003 fix staticamente presenti, **non chiusi**. | FW-PROD-006: verificare Undo con rete instabile, reload, toast concorrenti e persistenza. |
+| Navigazione | `1e7702d`: tabs con tastiera; chat 03: FW-UX-002 **parziale** perché mancano legami tab/pannello, screen reader non provato. | FW-PROD-005 rimane QA prima di altro polish. |
+| Ripristino | `1327e5d`: API e UI esplicitano `replaced` e `kept`; chat 02: FW-ARCH-001 **aperto**, test restore isolato non eseguiti. | FW-PROD-002: non confondere export JSON con recupero SQLite completo; verificare versioni v1–v4, ack/tombstone e rollback. |
+| Architettura | `e014e0d`: `docs/ARCHITECTURE.md` riallineato; chat 02: FW-ARCH-002 ancora aperto per accuratezza finale e condizioni operative. | Dipendenza documentale; non giustifica nuova feature. |
+
+### Verdetto, priorità e decisioni
+
+**DIREZIONE CORRETTA; GATE DI AFFIDABILITÀ ANCORA APERTO.** Le correzioni sono presenti in `main` e i test di regressione sono descritti dal maker; nessun reviewer ne ha attestato l'esecuzione. Non è dimostrato che il codice sia distribuito sul server o incluso nell'APK `next` installato. La roadmap segnala 1.10.5 nel repository e non in produzione, con APK da ricompilare.
+
+1. **FW-PROD-001 (P1):** mantenere come primo gate; richiede verifiche FW-REV-002/009/010, sincronizzazione e riavvio su Android reale con combinazione APK/backend esplicitata.
+2. **FW-PROD-002 (P1):** mantenere gate backup/restore; il miglioramento della comunicazione non sostituisce il test isolato di recuperabilità.
+3. **FW-PROD-003 (P2):** consentita **analisi funzionale senza sviluppo** del doppio lavoro piano→ingredienti→lista, usando tre settimane tipo e misurando tempi/correzioni. Non introdurre parser, ricette complesse o AI sulla base del solo audit statico.
+4. **FW-PROD-004/005/006 (P2):** QA dei flussi mensa-cena, interazioni Android e spesa/dispensa in coordinamento con i finding esistenti.
+5. **FW-PROD-007/008 (P3):** restano rinviati; nessuna nuova funzionalità richiesta adesso.
+
+**Criterio per sbloccare il prossimo ciclo:** esiti indipendenti di test critici, prova reale Android, restore isolato e conferma della compatibilità deploy/APK; eventuali finding tecnici restano di proprietà dei rispettivi reviewer. Nessun nuovo FW-PROD assegnato in questo aggiornamento.
+
+### Riferimenti di coordinamento
+
+- Chat 01: Ledger corrente e `docs/reviews/2026-11-13-e014e0d.md`: FW-REV-001…010, nessuna chiusura formale dei finding, checkpoint `null`.
+- Chat 02: `ARCHITECTURE_AUDIT.md` / `TECHNICAL_DEBT.md`, sezione di verifica a `e014e0d`, FW-ARCH-001/002 aperti.
+- Chat 03: `UX_AUDIT.md` / `UX_BACKLOG.md`, appendice a `e014e0d`, FW-UX-001/003 in attesa di runtime e FW-UX-002 parziale.
+- Prodotti: `CLAUDE.md`, `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md`, `docs/DECISIONS.md` letti sul branch `main`.
+
+**Persistenza:** aggiornamento riservato ai documenti chat 04 su `review/engineering`, senza scrittura su `main`, Ledger o audit di altre aree.
