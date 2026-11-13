@@ -68,6 +68,17 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await saved();
   check('annulla: la voce torna al suo posto, senza doppioni, anche sul server', same(await ids(), before) && (await page.locator('#shopping-list .shoprow').nth(0).locator('.shopname').textContent()) === firstName, JSON.stringify(await ids()));
 
+  // due rimozioni di fila: restano annullabili tutte e due, con un solo tocco (prima l'Annulla della prima spariva)
+  await page.locator('#shopping-list .shoprow').nth(0).locator('[data-remove-shop]').click();
+  await page.locator('#shopping-list .shoprow').nth(0).locator('[data-remove-shop]').click();
+  await page.waitForSelector('#toast:not(.hidden) .toast-action');
+  await saved();
+  check('due rimozioni: l\'avviso le conta e offre di annullarle tutte', /2 voci rimosse/.test(await page.textContent('#toast')) && (await page.textContent('#toast .toast-action')) === 'Annulla tutte' && same(await ids(), before.slice(2)), await page.textContent('#toast'));
+  await page.screenshot({ path: `${SHOTS}/ux-1b-undo-two.png` });
+  await page.click('#toast .toast-action');
+  await saved();
+  check('due rimozioni: un tocco le riporta entrambe al loro posto, anche sul server', same(await ids(), before) && (await page.locator('#shopping-list .shoprow').count()) === before.length, JSON.stringify(await ids()));
+
   // offline: rimozione e annulla con il server irraggiungibile, poi ritorno della rete
   await page.route('**/api/state', (route) => (route.request().method() === 'PUT' ? route.abort() : route.continue()));
   await page.locator('#shopping-list .shoprow').nth(1).locator('[data-remove-shop]').click();

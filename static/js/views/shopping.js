@@ -3,7 +3,7 @@ import { request } from "../api.js";
 import { icon } from "../icons.js";
 import { dayNumber, formatQty, mondayOf, parseQty, planProposal } from "../stats.js";
 import { app, persistState } from "../store.js";
-import { empty, openModal, panel, tabpanel, tabs, toast } from "../ui.js";
+import { empty, openModal, panel, removalToast, tabpanel, tabs, toast } from "../ui.js";
 import { $, $$, esc, fmtDate, fmtNum, isoDate, money, num, putBack, storage, takeById, uid } from "../util.js";
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
@@ -18,7 +18,6 @@ const UNITS = [
 ];
 const USER_PRICES_KEY = "fitweek.userPrices.v1"; // prezzi inseriti a mano dall'utente (mai inventati)
 const WEEKS_SHOWN = 8;
-const UNDO_MS = 7000; // quanto resta visibile "Annulla" dopo una rimozione
 const ui = { tab: "list" };
 const parseAmount = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", "."), null));
 const thisWeek = () => mondayOf(app.today?.date || isoDate());
@@ -230,22 +229,22 @@ export function openPlanProposal() {
 }
 
 /** Rimuove subito la voce (nessuna conferma a ogni tocco) e offre "Annulla" per qualche secondo: un tocco
- *  sbagliato sulla piccola ✕ si recupera. La rimozione e l'eventuale ripristino sono due salvataggi normali,
- *  in coda uno dopo l'altro: funzionano anche offline e non creano doppioni (la voce torna con il suo id). */
+ *  sbagliato sulla piccola ✕ si recupera, anche dopo più rimozioni di fila (`removalToast`). La rimozione e
+ *  l'eventuale ripristino sono salvataggi normali, in coda uno dopo l'altro: funzionano anche offline e non
+ *  creano doppioni (la voce torna con il suo id). */
 function removeWithUndo(section, id, where) {
   const { list, item, index } = takeById(app.state[section], id);
   if (!item) return false;
   app.state[section] = list;
   persistState();
-  toast(`${item.name} rimosso ${where}`, {
-    action: "Annulla",
-    timeout: UNDO_MS,
-    onAction: () => {
-      app.state[section] = putBack(app.state[section], item, index);
+  removalToast(
+    `${item.name} rimosso ${where}`,
+    () => (app.state[section] = putBack(app.state[section], item, index)),
+    () => {
       persistState();
       app.render();
     },
-  });
+  );
   return true;
 }
 

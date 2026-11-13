@@ -1,22 +1,54 @@
 import { icon } from "./icons.js";
 import { $, esc, fmtDate, isoDate, num } from "./util.js";
 
+const UNDO_MS = 7000; // quanto resta disponibile "Annulla" dopo una rimozione
+let pending = null; // l'ultimo avviso con un'azione, finché l'azione vale: { message, action, onAction, until }
+
+/** Avviso in basso. C'è un solo riquadro: un avviso senza azione che arriva mentre un "Annulla" è ancora
+ *  valido non lo porta via (FW-UX-001): mostra il proprio testo e, sotto, quello dell'azione con il suo pulsante. */
 export function toast(message, { action, onAction, timeout = 4000 } = {}) {
   const node = $("#toast");
-  node.replaceChildren(document.createTextNode(message));
-  if (action) {
+  const now = Date.now();
+  if (action) pending = { message, action, onAction, until: now + timeout };
+  else if (pending && pending.until <= now) pending = null;
+  const shown = pending;
+  node.replaceChildren(document.createTextNode(shown && !action ? `${message}\n${shown.message}` : message));
+  if (shown) {
     const b = document.createElement("button");
     b.className = "toast-action";
-    b.textContent = action;
+    b.textContent = shown.action;
     b.addEventListener("click", () => {
       node.classList.add("hidden");
-      onAction?.();
+      if (pending === shown) pending = null;
+      shown.onAction?.();
     });
     node.append(b);
   }
   node.classList.remove("hidden");
   clearTimeout(toast.timer);
-  toast.timer = setTimeout(() => node.classList.add("hidden"), timeout);
+  toast.timer = setTimeout(() => node.classList.add("hidden"), Math.max(timeout, shown ? shown.until - now : 0));
+}
+
+let removed = []; // ripristini delle rimozioni ancora annullabili, nell'ordine in cui sono state fatte
+let removedUntil = 0;
+/** "Annulla" per una rimozione fatta con un tocco. Più rimozioni ravvicinate restano tutte recuperabili
+ *  (FW-UX-001): l'avviso le conta, il pulsante le riporta tutte indietro e la finestra riparte dall'ultima.
+ *  `restore` rimette a posto la singola voce; `afterUndo` è chiamata una volta sola (salvataggio, ridisegno). */
+export function removalToast(text, restore, afterUndo, timeout = UNDO_MS) {
+  const now = Date.now();
+  if (now >= removedUntil) removed = [];
+  removed.push(restore);
+  removedUntil = now + timeout;
+  const many = removed.length > 1;
+  toast(many ? `${removed.length} voci rimosse` : text, {
+    action: many ? "Annulla tutte" : "Annulla",
+    timeout,
+    onAction: () => {
+      removedUntil = 0;
+      removed.splice(0).reverse().forEach((put) => put()); // dall'ultima alla prima: ognuna ritrova la sua posizione
+      afterUndo();
+    },
+  });
 }
 
 // I parametri title/desc sono testo dell'app (costanti); i dati utente vanno passati già escapati.

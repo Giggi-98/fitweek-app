@@ -84,20 +84,91 @@ test("FW-UX-001: elenco cambiato nel frattempo → la voce torna comunque, in fo
   assert.deepEqual(takeById([{ id: "a" }], "zzz"), { list: [{ id: "a" }], item: null, index: -1 });
 });
 
-test("FW-UX-001: un toast successivo sostituisce il precedente (resta un solo annullo, nessun dato perso)", async () => {
-  const { toast } = await import("../../static/js/ui.js");
+/** #toast finto: tiene il testo mostrato e il pulsante, che il test può "toccare". */
+function fakeToast() {
   const node = {
     kids: [],
+    hidden: true,
     replaceChildren(n) { this.kids = [n]; },
     append(b) { this.kids.push(b); },
-    classList: { add() {}, remove() {} },
+    classList: { add: () => (node.hidden = true), remove: () => (node.hidden = false) },
+    get text() { return this.kids[0]?.text; },
+    get button() { return this.kids[1] || null; },
   };
   globalThis.document.querySelector = (sel) => (sel === "#toast" ? node : null);
   globalThis.document.createTextNode = (t) => ({ text: t });
-  globalThis.document.createElement = () => ({ className: "", textContent: "Annulla", addEventListener() {} });
-  toast("Pane rimosso dalla lista", { action: "Annulla", onAction: () => {}, timeout: 7000 });
-  toast("Latte rimosso dalla lista", { action: "Annulla", onAction: () => {}, timeout: 7000 });
-  assert.equal(node.kids.length, 2, "nel toast restano solo il testo e l'annullo dell'ultima rimozione");
-  assert.equal(node.kids[1].textContent, "Annulla");
+  globalThis.document.createElement = () => ({ className: "", textContent: "", addEventListener(_, fn) { this.click = fn; } });
+  return node;
+}
+const realNow = Date.now;
+const at = (ms) => (Date.now = () => ms);
+
+test("FW-UX-001: due rimozioni ravvicinate si annullano entrambe, con un solo tocco e nell'ordine giusto", () => {
+  const node = fakeToast();
+  at(1_000_000);
+  let list = [{ id: "pane" }, { id: "latte" }, { id: "uova" }];
+  let saves = 0;
+  const remove = (id) => {
+    const out = takeById(list, id);
+    list = out.list;
+    removalToast(`${id} rimosso dalla lista`, () => (list = putBack(list, out.item, out.index)), () => saves++);
+  };
+  remove("pane");
+  assert.equal(node.text, "pane rimosso dalla lista");
+  assert.equal(node.button.textContent, "Annulla");
+  at(1_003_000); // 3 secondi dopo: la prima rimozione è ancora annullabile
+  remove("latte");
+  assert.equal(node.text, "2 voci rimosse");
+  assert.equal(node.button.textContent, "Annulla tutte");
+  node.button.click();
+  assert.deepEqual(list.map((x) => x.id), ["pane", "latte", "uova"], "tornano tutte e due, al loro posto");
+  assert.equal(saves, 1, "un solo salvataggio per il ripristino");
+  assert.equal(node.hidden, true);
   clearTimeout(toast.timer);
+  Date.now = realNow;
+});
+
+test("FW-UX-001: una rimozione fatta dopo che l'annullo precedente è scaduto non riporta indietro la vecchia", () => {
+  const node = fakeToast();
+  at(2_000_000);
+  const back = [];
+  removalToast("pane rimosso dalla lista", () => back.push("pane"), () => {});
+  at(2_007_001); // la finestra di 7 secondi è passata
+  removalToast("latte rimosso dalla lista", () => back.push("latte"), () => {});
+  assert.equal(node.text, "latte rimosso dalla lista");
+  node.button.click();
+  assert.deepEqual(back, ["latte"]);
+  clearTimeout(toast.timer);
+  Date.now = realNow;
+});
+
+test("FW-UX-001: un avviso arrivato nel frattempo (rete, salvataggio) non porta via l'Annulla ancora valido", () => {
+  const node = fakeToast();
+  at(3_000_000);
+  const back = [];
+  removalToast("pane rimosso dalla lista", () => back.push("pane"), () => {});
+  at(3_002_000);
+  toast("Server non raggiungibile: le modifiche restano su questo dispositivo");
+  assert.match(node.text, /Server non raggiungibile/);
+  assert.match(node.text, /pane rimosso dalla lista/, "resta scritto a cosa si riferisce l'Annulla");
+  assert.equal(node.button?.textContent, "Annulla");
+  node.button.click();
+  assert.deepEqual(back, ["pane"]);
+  at(3_020_000); // molto dopo: un avviso semplice non mostra più nessun annullo
+  toast("Profilo aggiornato");
+  assert.equal(node.text, "Profilo aggiornato");
+  assert.equal(node.button, null);
+  clearTimeout(toast.timer);
+  Date.now = realNow;
+});
+
+test("FW-UX-001: annullo scaduto → l'avviso successivo non lo ripropone", () => {
+  const node = fakeToast();
+  at(4_000_000);
+  removalToast("pane rimosso dalla lista", () => {}, () => {});
+  at(4_007_001);
+  toast("Profilo aggiornato");
+  assert.equal(node.button, null);
+  clearTimeout(toast.timer);
+  Date.now = realNow;
 });

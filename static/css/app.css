@@ -158,10 +158,11 @@ main { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-4)
   display: flex; gap: var(--space-3); align-items: center; justify-content: space-between;
   padding: var(--space-3) var(--space-4); border-radius: var(--radius-md);
   background: var(--color-text); color: var(--color-bg); box-shadow: var(--shadow-2); font-weight: 600;
+  white-space: pre-line; /* un avviso sopra un "Annulla" ancora valido: due righe */
   animation: toast-in var(--dur-3) var(--ease-spring);
 }
 body.has-rest .toast { bottom: calc(var(--nav-h) + 110px + env(safe-area-inset-bottom)); }
-.toast-action { border: 0; background: none; color: inherit; font-weight: 800; text-decoration: underline; }
+.toast-action { flex: none; border: 0; background: none; color: inherit; font-weight: 800; text-decoration: underline; white-space: nowrap; }
 
 /* timer di recupero: sopra la barra, a portata di pollice */
 .rest-bar {
