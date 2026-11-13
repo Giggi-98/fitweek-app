@@ -7,44 +7,53 @@
 - Initialized: 2026-11-13
 - Branch creation base commit (application): `2dac1ab955224228659143f70fff8c01cef01029`
 - Last verified reviewed application commit: **NONE (null)**
-- Review status: **PENDING_INITIAL_REVIEW**
-- Initial review verdict: **NOT ISSUED**
-- Last review report: **NONE**
+- Review status: **INITIAL_BASELINE_STATIC_AUDIT_COMPLETED — RUNTIME_VERIFICATION_PENDING**
+- Initial review verdict: **MODIFICHE RICHIESTE**
+- Last review report: `docs/reviews/2026-11-13-2dac1ab.md`
+- Candidate baseline SHA (static code audit, *not* approved checkpoint): `2dac1ab955224228659143f70fff8c01cef01029`
 
-> The branch creation base is an administrative Git starting point, **not** a completed engineering review or approved checkpoint. Do not use it as an automatically verified review boundary.
+> Branch creation base and candidate baseline are not automatically approved or fully verified checkpoints. The audit was static and its findings remain open. Production and APK have not been tested.
 
 ## Checkpoint tracking
 | Field | Value |
 | --- | --- |
 | Initial Git base | `2dac1ab955224228659143f70fff8c01cef01029` |
+| Candidate static baseline | `2dac1ab955224228659143f70fff8c01cef01029` |
 | Last verified reviewed application commit | `null` |
-| Latest reviewed application SHA | `null` |
-| Pending application review | Initial full baseline review required |
+| Latest fully reviewed application SHA | `null` |
+| Pending review | Complete verification of initial baseline, including key tests and uncovered paths |
 | Checkpoint advancement authorized | No automatic advancement |
 
-On the first actual review, evaluate the initial baseline comprehensively and record its exact application SHA and examined scope before advancing any checkpoint. On subsequent reviews, compare the last verified application checkpoint with the then-current `main` HEAD. The review branch's documentation commits are not application commits.
+The initial baseline review did not compare incremental diffs: there is no earlier reviewed application checkpoint. Review-only branch commits must not be counted as application changes.
 
 ## Findings registry
-No code findings have yet been independently confirmed, because **no engineering review has yet been performed**.
-
 | ID | Severity | Summary | State | First seen | Last verified |
 | --- | --- | --- | --- | --- | --- |
-| — | — | None reviewed yet | Not assessed | — | — |
+| FW-REV-001 | P1 | In-flight queue dedup can discard newer set operation | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-002 | P1 | Deleted set can be recreated by stale offline PUT (no tombstone) | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-003 | P1 | Same-day meal plan merge overwrites independent slot edits | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-004 | P2 | JSON export lacks cross-table read snapshot | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-005 | P2 | Failed Android Keystore migration can drop legacy persistent token | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-006 | P2 | Logout leaves pending queue to replay on next login | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-007 | P3 | Training-program documentation stale vs current seed | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
+| FW-REV-008 | P2 | Local delete vs remote update is silently resolved without conflict notification | Open | 2026-11-13 | Static code evidence at `2dac1ab` |
 
-Do not treat the empty table as evidence of zero bugs. Preserve stable `FW-REV-XXX` IDs across reviews; do not mark findings resolved without checking actual code and relevant regression tests.
+**Resolved findings:** none. Stable IDs must remain unchanged; do not close without code-and-test verification. **Risk tracked, not an unproven vulnerability finding:** unencrypted HTTP on LAN documented in `docs/SECURITY.md`.
 
 ## Review history
 | Date | Application range | Verdict | Report | Notes |
 | --- | --- | --- | --- | --- |
-| 2026-11-13 | **Not reviewed** | **Not issued** | — | Administrative branch and documentation initialization only; Git base `2dac1ab` |
+| 2026-11-13 | Not reviewed | Not issued | — | Branch initialization; Git base `2dac1ab` only |
+| 2026-11-13 | Initial baseline audit targeting `2dac1ab` | MODIFICHE RICHIESTE | `2026-11-13-2dac1ab.md` | Static audit; eight open findings, full checkpoint remains null |
 
 ## Test evidence
-- Reviewer-executed application tests: **none**.
-- Developer-declared tests validated by reviewer: **none**.
-- Missing verification: initial repository baseline, application test suite, security, data integrity, migrations, offline/Android compatibility, Docker, and UX, as applicable.
+- Reviewer-executed application tests: **none** (container GitHub clone DNS failure; no runnable checkout).
+- Developer-declared tests: `CLAUDE.md` states 85 pytest and 44 JS tests; claims not independently validated.
+- Tests present in GitHub tree: Python tests, Node `tests/js`, Playwright `tests/e2e`; execution status **unknown**.
+- Missing: concurrency and offline regressions for FW-REV-001/002/003/008, consistent snapshot export, Android token error case, logout queue, Android APK/device, responsive visual review, real restore rehearsal and PDF cross-check.
 
 ## Next action
-Perform an initial independent engineering review against GitHub `main`. Record all actual files and commits examined, verified risks, findings and test evidence in a dated `docs/reviews/YYYY-MM-DD-SHA.md` report, then propose (but do not silently write) the corresponding Ledger update. Obtain separate authorization for review archive writes.
+Complete runnable and device checks and decide whether the candidate may be promoted to a fully verified checkpoint. Do not conflate review completion with code approval; findings may remain open.
 
 ## Concurrency and safeguards
-Before every future update, read the current Ledger and branch head directly from GitHub. Do not overwrite concurrent changes, edit `main`, modify application code or open issues/PRs without explicit authorization. Ensure written files are reread from the repository after authorized writes.
+Reread the branch HEAD and Ledger blob SHA immediately before writing. If changed, reconcile, do not overwrite concurrent changes. Write only to `review/engineering` with owner authorization, reread the saved files, never edit `main`, application code, issues or PRs without separate approval.
