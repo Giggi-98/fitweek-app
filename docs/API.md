@@ -136,7 +136,7 @@ Dati che il backup JSON **non contiene** e cosa ne fa il ripristino:
 | `sessions` (accessi dei dispositivi) | mai toccati |
 | orari tecnici (`updated_at`, `created_at` di pasti abituali, alimenti, promemoria, sonno, note, spese) | riscritti con l'ora del ripristino |
 
-Prima di ogni ripristino il server salva l'intero database in `/data/backups/pre-restore-*.sqlite`; tutte le sostituzioni avvengono in una sola transazione. Per riavere esattamente lo stato di un momento passato serve il backup SQLite (`scripts/restore.sh`), non il JSON. Test: `tests/test_restore_matrix.py`, `tests/js/backup.test.mjs`, e2e `ux`.
+Prima di ogni ripristino il server salva l'intero database in `/data/backups/pre-restore-*.sqlite`; tutte le sostituzioni avvengono in una sola transazione. Un file che viola una chiave del database (es. due notti di sonno nella stessa data) viene rifiutato con **422** e la transazione annulla tutto: nessun dominio cambia (1.10.6). Per riavere esattamente lo stato di un momento passato serve il backup SQLite (`scripts/restore.sh`), non il JSON. Test: `tests/test_restore_matrix.py`, `tests/js/backup.test.mjs`, e2e `ux`.
 
 ## API 1.10.4 (2026-11-13) — orari delle modifiche al millisecondo (FW-REV-009)
 

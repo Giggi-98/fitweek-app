@@ -60,6 +60,15 @@ Ciclo 4 (1.10.5, 2026-11-13), da `ARCHITECTURE_AUDIT.md`/`TECHNICAL_DEBT.md` —
 | FW-ARCH-001 (P2) | sì: pytest con dati sentinella per v1–v4 conferma la matrice; il testo della conferma prometteva "tutti i dati" | `main.py`: `replaced`/`kept` nella risposta; `backup.js` + `settings.js`: conferma e messaggio; matrice in `docs/API.md` | `tests/test_restore_matrix.py`, `tests/js/backup.test.mjs`, e2e `ux` |
 | FW-ARCH-002 (P2) | confermato leggendo il documento | `docs/ARCHITECTURE.md` riscritto, storico in fondo | nessun test automatico (documento) |
 
+Ciclo 5 (1.10.6, 2026-11-13), dal report `docs/reviews/2026-11-13-e014e0d.md` (chat 01) e dagli aggiornamenti UX (chat 03) e architettura (chat 02) — **correzione implementata, in attesa di verifica indipendente**. Scelte in D-031.
+
+| Finding | Riprodotto dal maker | Correzione | Test |
+|---|---|---|---|
+| FW-REV-010 (P2), caso limite | sì, test JS: Keystore guasto + localStorage che non scrive → rientro silenzioso riprodotto | `platform.js`: sovrascrittura a vuoto se `clear()` non conferma, marcatore di uscita su due canali (localStorage + cookie WebView), avvio fail-closed senza memoria scrivibile; `logout.js`: tre esiti con avviso dedicato | `tests/js/platform.test.mjs`, `tests/js/logout.test.mjs` |
+| Undo spesa in volo + 409 (verifica chat 01) | nessun difetto riprodotto: serie dei PUT, fusione e guardia sull'id reggono | nessuna (verifica con test) | `tests/js/store.test.mjs` (nuovo), `tests/js/ui.test.mjs` (toast unico) |
+| FW-UX-002 (P2), completamento | sì, e2e `ux` esteso | `ui.js`: `tabs()` con `aria-controls`/`id`, nuovo `tabpanel()`; cablato in 6 viste + 2 schede inline; dashboard con mappa scheda → riquadro. Tema (preferenza) senza pannello, segnalato alla chat 03 | `tests/js/ui.test.mjs`, e2e `ux` |
+| FW-ARCH-001 (P2), verifica runtime | sì: file con chiave violata a metà ripristino → prima risposta 500 | `main.py`: `IntegrityError` → 422, transazione già presente annulla tutto | `tests/test_restore_matrix.py` |
+
 Non fatto in questo ciclo: deploy (lo schema 9 arriva sull'istanza in uso solo al deploy, con backup pre-migrazione automatico), APK `next` ricompilato, prova su telefono reale.
 
 ## M1 — Stabilizzazione, protezione dati, sicurezza
@@ -204,6 +213,10 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.10.6 (2026-11-13) — caso limite dell'uscita, schede complete, ripristino atomico
+
+FW-REV-010 (rientro silenzioso quando Keystore e memoria del dispositivo falliscono insieme: uscita fail-closed su tre livelli), verifica con test dell'undo della spesa durante salvataggio in volo e 409 (nessun difetto), FW-UX-002 completato (associazione `aria-controls`/`tabpanel` in tutte le viste) e FW-ARCH-001 (file di backup malformato → 422 con annullamento completo, prima 500): vedi la sezione "Review indipendente" in cima e D-031. Nessun cambio di schema. Stato: nel repository, **non in produzione**; APK `next` da ricompilare dopo il deploy.
 
 ## 1.10.5 (2026-11-13) — finding UX della chat 03
 
