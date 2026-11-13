@@ -4,7 +4,7 @@ import { icon } from "../icons.js";
 import { dayNumber, formatQty, mondayOf, parseQty, planProposal } from "../stats.js";
 import { app, persistState } from "../store.js";
 import { empty, openModal, panel, tabs, toast } from "../ui.js";
-import { $, $$, esc, fmtDate, fmtNum, isoDate, money, num, storage, uid } from "../util.js";
+import { $, $$, esc, fmtDate, fmtNum, isoDate, money, num, putBack, storage, takeById, uid } from "../util.js";
 
 const CATEGORIES = ["Spuntini", "Proteine", "Verdure e frutta", "Dispensa", "Altro"];
 const UNITS = [
@@ -18,6 +18,7 @@ const UNITS = [
 ];
 const USER_PRICES_KEY = "fitweek.userPrices.v1"; // prezzi inseriti a mano dall'utente (mai inventati)
 const WEEKS_SHOWN = 8;
+const UNDO_MS = 7000; // quanto resta visibile "Annulla" dopo una rimozione
 const ui = { tab: "list" };
 const parseAmount = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", "."), null));
 const thisWeek = () => mondayOf(app.today?.date || isoDate());
@@ -49,7 +50,7 @@ function listPanel(g) {
   const qtyText = (x) => formatQty(x.amount, x.unit, x.qty || "");
   const priceText = (x) => (x.price != null && Number(x.price) > 0 ? money(x.price) : "—");
   const row = (x) =>
-    `<label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(qtyText(x))}${x.recurring ? " · ogni settimana" : ""}</span></span><span class="shopprice">${priceText(x)}</span><button type="button" class="icon-btn ${x.recurring ? "on" : ""}" data-recurring="${esc(x.id)}" aria-pressed="${Boolean(x.recurring)}" aria-label="${esc(x.name)}: compra ogni settimana" title="Compra ogni settimana">${icon("refresh-cw", "sm")}</button><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></label>`;
+    `<div class="shoprow"><label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(qtyText(x))}${x.recurring ? " · ogni settimana" : ""}</span></span><span class="shopprice">${priceText(x)}</span></label><button type="button" class="icon-btn ${x.recurring ? "on" : ""}" data-recurring="${esc(x.id)}" aria-pressed="${Boolean(x.recurring)}" aria-label="${esc(x.name)}: compra ogni settimana" title="Compra ogni settimana">${icon("refresh-cw", "sm")}</button><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`;
   const anyChecked = g.some((x) => x.checked);
   const group = (cat) => {
     const items = g.filter((x) => (x.category || "Altro") === cat);
@@ -228,6 +229,26 @@ export function openPlanProposal() {
   );
 }
 
+/** Rimuove subito la voce (nessuna conferma a ogni tocco) e offre "Annulla" per qualche secondo: un tocco
+ *  sbagliato sulla piccola ✕ si recupera. La rimozione e l'eventuale ripristino sono due salvataggi normali,
+ *  in coda uno dopo l'altro: funzionano anche offline e non creano doppioni (la voce torna con il suo id). */
+function removeWithUndo(section, id, where) {
+  const { list, item, index } = takeById(app.state[section], id);
+  if (!item) return false;
+  app.state[section] = list;
+  persistState();
+  toast(`${item.name} rimosso ${where}`, {
+    action: "Annulla",
+    timeout: UNDO_MS,
+    onAction: () => {
+      app.state[section] = putBack(app.state[section], item, index);
+      persistState();
+      app.render();
+    },
+  });
+  return true;
+}
+
 export async function onClick(t) {
   if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
   if (t.dataset.spend) return openSpend(t.dataset.spend), false;
@@ -239,16 +260,8 @@ export async function onClick(t) {
     persistState();
     return true;
   }
-  if (t.dataset.removeShop) {
-    app.state.groceries = app.state.groceries.filter((x) => x.id !== t.dataset.removeShop);
-    persistState();
-    return true;
-  }
-  if (t.dataset.removeInv) {
-    app.state.inventory = app.state.inventory.filter((x) => x.id !== t.dataset.removeInv);
-    persistState();
-    return true;
-  }
+  if (t.dataset.removeShop) return removeWithUndo("groceries", t.dataset.removeShop, "dalla lista");
+  if (t.dataset.removeInv) return removeWithUndo("inventory", t.dataset.removeInv, "dalla dispensa");
   if (t.matches("[data-clear-shopping]")) {
     app.state.groceries.forEach((x) => (x.checked = false));
     persistState();

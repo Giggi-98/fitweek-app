@@ -145,7 +145,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.click('.bottom-nav [data-view=shopping]');
   await page.waitForSelector('.shopitem');
   const before = (await api('/api/state')).data.groceries;
-  await page.locator('.shopitem').nth(0).locator('[data-recurring]').click();
+  await page.locator('.shoprow').nth(0).locator('[data-recurring]').click();
   await page.locator('.shopitem').nth(0).locator('.cbox').click();
   await page.locator('.shopitem').nth(1).locator('.cbox').click();
   await page.click('[data-arrived]');

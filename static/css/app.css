@@ -477,6 +477,9 @@ button.tile:active { transform: scale(0.98); }
 .mini-card { display: flex; justify-content: space-between; align-items: center; gap: var(--space-2); padding: var(--space-2) var(--space-2) var(--space-2) var(--space-4); border-radius: var(--radius-md); background: var(--color-surface-2); border: 1px solid var(--color-border); }
 .shopitem { position: relative; display: grid; grid-template-columns: 30px minmax(0, 1fr) auto 36px 36px; gap: var(--space-2); align-items: center; min-height: 52px; border-bottom: 1px solid var(--color-border); cursor: pointer; }
 .shopitem input { position: absolute; opacity: 0; pointer-events: none; }
+/* Riga della lista: la label (casella + testo) e i due pulsanti sono fratelli, non uno dentro l'altro. */
+.shoprow { display: grid; grid-template-columns: minmax(0, 1fr) 36px 36px; gap: var(--space-2); align-items: center; border-bottom: 1px solid var(--color-border); }
+.shoprow > .shopitem { grid-template-columns: 30px minmax(0, 1fr) auto; border-bottom: 0; }
 .cbox { width: 26px; height: 26px; border-radius: 9px; border: 2px solid var(--color-border-strong); display: grid; place-items: center; color: transparent; transition: background var(--dur-2), border-color var(--dur-2), transform var(--dur-2) var(--ease-spring); }
 .cbox .icon { width: 16px; height: 16px; stroke-width: 3.2; stroke-dasharray: 30; stroke-dashoffset: 30; transition: stroke-dashoffset var(--dur-3) var(--ease-out); }
 .shopitem input:checked + .cbox { background: var(--color-accent); border-color: var(--color-accent); color: var(--color-on-accent); transform: scale(1.06); }

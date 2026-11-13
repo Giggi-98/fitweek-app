@@ -68,3 +68,16 @@ export function normalizeTime(v) {
 }
 /** Minuti → "7 h 30". */
 export const fmtDuration = (min) => `${Math.floor(min / 60)} h${min % 60 ? ` ${String(Math.round(min % 60)).padStart(2, "0")}` : ""}`;
+
+/** Toglie da `list` la voce con quell'id. @returns {{list: any[], item: any, index: number}} (item null se assente) */
+export function takeById(list, id) {
+  const index = list.findIndex((x) => x.id === id);
+  return index < 0 ? { list, item: null, index } : { list: list.filter((_, i) => i !== index), item: list[index], index };
+}
+/** Rimette `item` dov'era (posizione `index`, o in fondo se l'elenco nel frattempo si è accorciato).
+ *  Se una voce con lo stesso id c'è già (es. tornata da un altro dispositivo) l'elenco resta com'è: mai doppioni. */
+export function putBack(list, item, index) {
+  if (!item || list.some((x) => x.id === item.id)) return list;
+  const at = Math.max(0, Math.min(index, list.length));
+  return [...list.slice(0, at), item, ...list.slice(at)];
+}
