@@ -3,7 +3,7 @@
 - **Responsabile:** Chat 02 — Audit architetturale
 - **Data iniziale:** 2026-11-13
 - **Codice applicativo preso a riferimento:** `2dac1ab955224228659143f70fff8c01cef01029`
-- **HEAD `main` consultato:** `5e333bd8ca290f96fc81dfddff66934de623614a` (cinque commit dopo la baseline, inclusi fix applicativi; confronto GitHub con main identical)
+- **Ultimo HEAD `main` consultato:** `e014e0da498ffa05d8b0570c76cec2f074224483` (7 commit dopo 5e333bd; storico precedente conservato nelle sezioni datate)
 - **Archivio:** `review/engineering`
 - **Regola di proprietà:** questo documento traccia debito tecnico e dipendenze; i finding FW-REV restano esclusivamente nel Ledger della chat 01. Non avanzare checkpoint o chiudere FW-REV da qui.
 
@@ -66,3 +66,32 @@ Nessun test pytest, JS, Playwright, Android o restore è stato eseguito in quest
 - FW-ARCH-002 resta aperto. Nessun FW-ARCH aggiuntivo per problemi già registrati dalla chat 01.
 - Nessun test applicativo eseguito dalla chat 02; non sono stati verificati produzione, APK né restore reali.
 - Il documento non trasferisce proprietà degli FW-REV, non modifica il Ledger e non autorizza deploy o interventi distruttivi.
+
+## Aggiornamento backlog — 2026-11-13, main e014e0d
+
+**Fonte di coordinamento:** `REVIEW_LEDGER.md` e `docs/reviews/2026-11-13-e014e0d.md` su `review/engineering`. **Checkpoint ufficiale:** `null`; nessuna applicazione di patch sul codice da questa chat. Nessun test eseguito dal reviewer 02. L'HEAD `main` era `e014e0d` nel confronto GitHub.
+
+### Priorità attuali dopo i fix presenti nel repository
+
+| Priorità | Area / owner | Stato a e014e0d | Verifiche e criteri ancora necessari |
+| --- | --- | --- | --- |
+| 1 — Alta | Integrità delle cancellazioni offline — FW-REV-002/009 (chat 01) | Tombstone e millisecondi presenti nel codice, supportati staticamente, runtime mancante | Suite API e test concorrenti per PUT/DELETE out-of-order, dati preesistenti a precisione secondi e stessi millisecondi |
+| 2 — Alta | Logout Android e Keystore — FW-REV-010 (chat 01) | Fix principale presente; il Ledger segnala caso limite `plugin.clear/get` falliti + `storage.set` che restituisce `false` | Test fail-closed simultaneo con riavvio; non riassegnare il finding |
+| 3 — Media / verifica | Restore e comunicazioni — FW-ARCH-001 (chat 02) | **Correzione supportata staticamente**: domini `replaced/kept`, anteprima UI e matrice docs/API.md; non chiuso | Eseguire `tests/test_restore_matrix.py` e `tests/js/backup.test.mjs`, test di restore isolato v1–v4 e guasti, verifica `set_tombstones`/`reminder_acks` |
+| 4 — Media / verifica | Documentazione architetturale — FW-ARCH-002 (chat 02) | **Correzione supportata staticamente**: mappa corrente e storico distinti; non chiuso | Confronto completo con codice, dichiarazioni su LAN/Internet/deploy qualificate come non verificate operativamente |
+| 5 — Media / verifica | APK stable/next e versioni backend (trasversale) | Nessuna prova indipendente su device o deploy | Matrice di compatibilità con versioni realmente installate; test offline, login, logout, notifiche |
+| 6 — Media / documentazione | Confini tra blob e tabelle (trasversale) | Contratti migliorati in docs/ARCHITECTURE.md, migrazioni incrementali ancora necessarie solo per motivi fondati | Verificare proprietà e versioni per ogni dominio; non migrare o riscrivere senza rischio provato |
+| 7 — Condizionale | HTTP LAN / protezione trasporto (rischio già documentato) | Non è un nuovo FW-ARCH, né evidenza di esposizione Internet | Valutare deployment reale e threat model con autorizzazione |
+
+### Stati dei due finding propri
+
+- **FW-ARCH-001 — P2:** da *correzione richiesta* a **correzione staticamente verificata, runtime pendente** (commit `1327e5d`). `app/main.py`, `app/schemas.py`, `static/js/backup.js`, `static/js/views/settings.js`, `docs/API.md` e test dedicati mostrano una comunicazione prima/dopo restore allineata alla semantica legacy. Il JSON non è un backup integrale del database. Chiudere solo dopo prova di restore isolata e test indipendenti.
+- **FW-ARCH-002 — P2:** da *correzione richiesta* a **correzione documentale staticamente verificata, verifica conclusiva pendente** (commit `e014e0d`). `docs/ARCHITECTURE.md` presenta schema 9, auth, Android stable/next, sync e persistenza, con sezione storica. Verificare e qualificare le affermazioni operative non dimostrate.
+- **Nuovi ID FW-ARCH:** nessuno. Le proprietà FW-REV/UX/PROD restano alle rispettive chat.
+
+### Regole per la prossima verifica
+
+1. Rileggere Ledger, ultimo report della chat 01, HEAD `main` e i due documenti dell'area 02.
+2. Se `main` è avanzato, esaminare il diff dal precedente SHA architetturale `e014e0d`; non usare automaticamente il checkpoint ufficiale della chat 01.
+3. Distinguere file, codice presente, test scritti, test eseguiti e APK/deploy reali.
+4. Non modificare `main`, Ledger, issue o PR. Aggiornare questi due documenti solo dopo autorizzazione e lettura dei blob SHA correnti.
