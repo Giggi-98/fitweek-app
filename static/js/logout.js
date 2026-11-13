@@ -2,7 +2,9 @@
 // ancora arrivate al server andrebbero perse: prima si prova a inviarle, e se ne restano l'utente deve
 // confermare esplicitamente di volerle eliminare. Senza conferma non si esce e non si tocca nulla.
 // L'uscita non si dà mai per riuscita se non lo è (FW-REV-010): se il server non revoca la sessione o il
-// Keystore non elimina il token, l'utente lo viene a sapere.
+// Keystore non elimina il token, l'utente lo viene a sapere. Se il token non è eliminato e nessun canale
+// registra l'uscita (memoria del dispositivo piena), l'avviso dice che alla riapertura l'app potrebbe
+// rientrare da sola e che la sessione va revocata da Impostazioni.
 import { request } from "./api.js";
 import { setToken, standalone } from "./platform.js";
 import { clearLocalState, syncState, unsentStateCount } from "./store.js";
@@ -17,6 +19,10 @@ const NOT_REVOKED = "Il server non ha risposto: la sessione di questo dispositiv
   + "sessione, quando il server è raggiungibile revocala da Impostazioni → Dati e accesso.\n\nUscire comunque?";
 const TOKEN_NOT_WIPED = "Sei uscito, ma l'accesso salvato non è stato eliminato dall'archivio sicuro di Android. "
   + "L'app non lo userà più e riproverà a eliminarlo a ogni avvio.";
+const TOKEN_UNPROTECTED = "Sei uscito, ma l'accesso salvato non è stato eliminato dall'archivio sicuro di Android "
+  + "e il dispositivo non ha potuto registrare l'uscita (memoria piena?).\n\n"
+  + "Se alla riapertura l'app dovesse rientrare da sola, la sessione è ancora valida: revocala da "
+  + "Impostazioni → Dati e accesso appena possibile.";
 const TOKEN_STILL_VALID = "\n\nLa sessione è ancora valida sul server: revocala da Impostazioni → Dati e accesso "
   + "appena possibile.";
 
@@ -41,10 +47,10 @@ export async function signOut({ all = false } = {}) {
     return false;
   }
   if (!revoked && !confirm(NOT_REVOKED)) return false;
-  const wiped = await setToken(null);
+  const outcome = await setToken(null); // true = eliminazione confermata; "marked" = uscita registrata; false = nessun canale
   clearQueue();
   clearLocalState();
-  if (!wiped) alert(TOKEN_NOT_WIPED + (revoked ? "" : TOKEN_STILL_VALID));
+  if (outcome !== true) alert((outcome === "marked" ? TOKEN_NOT_WIPED : TOKEN_UNPROTECTED) + (revoked ? "" : TOKEN_STILL_VALID));
   location.reload();
   return true;
 }
