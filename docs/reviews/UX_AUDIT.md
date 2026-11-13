@@ -121,3 +121,39 @@ Verificare i quattro commit successivi a `70f7607` prima di aggiornare stato dei
 - **Prossima azione:** priorità ai problemi di integrità serie e logout di proprietà chat 01, quindi tre finding FW-UX con prove di interazione; non assegnare duplicati né avanzare il checkpoint.
 
 Questa appendice riflette il codice fino a `5e333bd`; la sezione iniziale conserva intenzionalmente il contesto storico precedente.
+
+
+---
+
+## Aggiornamento incrementale UX — 2026-11-13 — `5e333bd..e014e0d`
+
+- **HEAD main verificato:** `e014e0da498ffa05d8b0570c76cec2f074224483`.
+- **Intervallo:** sette commit `9c5f20d`, `1418d74`, `d57212b`, `b8fa875`, `1e7702d`, `1327e5d`, `e014e0d` (compare GitHub).
+- **Metodo:** revisione statica del compare, dei sorgenti applicativi interessati e dei test aggiunti; **nessun test Node/Python/Playwright eseguito dal reviewer**, nessuna prova visuale, screen reader o APK Android.
+- **Verdetto:** **CORREZIONI UX SUPPORTATE STATICAMENTE, VERIFICA RUNTIME NECESSARIA**. Il verdetto globale di sicurezza/affidabilità e il checkpoint ufficiale restano esclusivi della chat 01; secondo il Ledger letto prima della scrittura, checkpoint `null`.
+- **Contesto:** le sezioni precedenti registrano lo stato agli SHA precedenti; questa è la valutazione successiva, non la cancellazione dello storico.
+
+### Stato aggiornato dei tre finding UX
+
+| Finding | Valutazione indipendente a `e014e0d` | Evidenza e prova mancante |
+| --- | --- | --- |
+| **FW-UX-001 (P2)** — Eliminazione accidentale | **Fix presente, verifica runtime pendente; non chiuso** | `static/js/views/shopping.js:21,232-264` inserisce `removeWithUndo()` per `groceries` e `inventory`; toast "Annulla" per 7 s e ripristino con `putBack()` stesso ID/posizione (`static/js/util.js`). `tests/js/ui.test.mjs` include casi di doppio annullamento/idempotenza; `tests/e2e/ux.e2e.js:60-107` descrive offline, persistenza, reload e dispensa. Test NON eseguiti; verificare che toast concorrenti non facciano sparire prematuramente Undo e che errori/ritardi di persistState non ne impediscano l'uso. |
+| **FW-UX-002 (P2)** — Tabs ARIA | **Fix parziale, aperto** | `static/js/ui.js:33-45` aggiunge roving `tabindex` e helper per frecce/Home/End; `static/js/main.js:173-192` attiva la scheda e recupera il focus dopo il render. `tests/js/ui.test.mjs:11-41`, `tests/e2e/ux.e2e.js:109-155` contengono scenari da eseguire. **Mancano ancora associazioni tab/pannello** (es. `aria-controls`, `role="tabpanel"`) per il pattern ARIA dichiarato; occorre decidere se completarlo o usare pulsanti semantici, provando la navigazione con screen reader. |
+| **FW-UX-003 (P2)** — Bottoni dentro label spesa | **Fix presente, verifica runtime pendente; non chiuso** | `static/js/views/shopping.js:52-53`: `<div class="shoprow">` contiene `<label class="shopitem">` per la checkbox, mentre i pulsanti ricorrenza e rimozione sono fratelli esterni alla label, dotati di nomi accessibili. `tests/e2e/ux.e2e.js:36-58` descrive controlli indipendenti. Non eseguito con browser o lettore schermo. |
+
+### Altre modifiche di interfaccia rilevanti (finding già di altre aree)
+
+- **FW-REV-009/002 (P1, chat 01):** `app/workouts.py` conserva ora la precisione in millisecondi; correzione da verificare dalla chat 01 con scenari out-of-order, non chiusa da questa chat.
+- **FW-REV-010 (P2, chat 01):** `static/js/logout.js:28-49` distingue fallimento revoca HTTP e uscita non possibile, richiede conferma del rischio nel client standalone e mostra messaggio su cancellazione Keystore non confermata. `static/js/platform.js:35-46,53-60,84-105` rilegge il Keystore e conserva un marcatore di uscita impedendo ri-autenticazione silenziosa. Nessun test di dispositivo, offline reale o rilancio APK.
+- **FW-ARCH-001 (P2, chat 02):** `static/js/backup.js:19-44` e `static/js/views/settings.js:284-288` mostrano ora, prima di ripristinare, quali domini vengono sostituiti e quali mantenuti. I test `tests/js/backup.test.mjs`, `tests/test_restore_matrix.py`, `tests/e2e/ux.e2e.js` sono presenti ma non eseguiti dal reviewer.
+- **FW-ARCH-002 (P2, chat 02):** `docs/ARCHITECTURE.md` aggiornato; verifica/chiusura di competenza esclusiva chat 02.
+
+### Rischi UX residui e test obbligatori
+
+1. **FW-UX-002:** completare semantica dei pannelli o adottare un modello navigazionale alternativo correttamente accessibile. Verificare tastiera, focus, tasti freccia, Home/End, associazione al contenuto, screen reader e mobile.
+2. **FW-UX-001:** eseguire E2E Undo, persistenza, offline/online, reload e **toast concorrenti**; le due chiamate `persistState()` non sono attese dalla funzione.
+3. **FW-UX-003:** E2E indipendenza ricorrenza/checkbox/rimozione; tastiera e lettore schermo.
+4. Eseguire realmente `tests/js/ui.test.mjs` e `tests/e2e/ux.e2e.js`, annotando comando, exit code e risultato; nessun risultato di suite del maker viene assunto come prova del reviewer.
+5. Eseguire QA responsive 320/360/390/768 px e APK Android stable/next, con screenshot, touch target e scenari offline.
+
+**Nuovi finding esclusivi UX:** nessuno supportato da evidenza sufficiente in questo intervallo. **Finding UX formalmente chiusi:** nessuno; due fix staticamente supportati, un fix parziale.
