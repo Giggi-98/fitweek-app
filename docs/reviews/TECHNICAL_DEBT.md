@@ -123,3 +123,17 @@ Nessun test pytest, JS, Playwright, Android o restore è stato eseguito in quest
 - Maker dichiara 105 pytest, 83 JS, 169 e2e e deploy live successivo alla pubblicazione dell'handoff. **Nessun test applicativo, deploy, APK o dato reale è stato verificato direttamente dal reviewer 02.** Conservare questa distinzione anche se il maker dichiara successo.
 - Alla prossima revisione rileggere nuovi HEAD, Ledger, report, handoff e i due documenti propri, poi verificare i test e il comportamento effettivo. Non avanzare checkpoint, non cambiare stati FW-REV e non dedurre approvazione operativa.
 - Nessun nuovo framework, migrazione generalizzata o riscrittura richiesti: chiudere prima le verifiche residue di sicurezza e integrità.
+
+## Nuovo triage operativo — download APK su VPN ufficio — 2026-11-13
+
+**Tipo:** segnalazione operativa riferita dall'utente; causa non diagnosticata, non bug applicativo dimostrato. **Priorità di triage suggerita:** P2 (da rivedere dopo misure). **Nessun nuovo FW-ARCH assegnato** fino a evidenza distinta; registrazione tecnica completa in `ARCHITECTURE_AUDIT.md` §11.
+
+- **Scenario:** sul solo PC dell'ufficio via VPN, l'avvio del download APK dal browser FitWeek coincide con la perdita di SSH, ping e accesso web verso l'host domestico; dalla LAN il download funziona. Non è noto se cada il tunnel, l'intero server o il solo percorso VPN.
+- **Baseline codice:** `main` `439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7`. Endpoint `/api/v1/app/android/download` usa `FileResponse`; la UI usa un link diretto; binding Docker `192.168.222.200:8088:8080`, APK in bind mount di sola lettura.
+- **Ipotesi da discriminare:** upload domestico saturo/bufferbloat; MTU-MSS/PMTUD del tunnel; limiti o guasto VPN/router/firewall; comportamento HTTP, disconnessioni e carico server. Nessuna ipotesi è verificata.
+- **Lavoro da eseguire con autorizzazione per prove di rete:** confronto stabilità da LAN e VPN durante download a velocità limitata; test con file comparabile; dimensioni APK, traffico, latenza, perdita pacchetti, log VPN/router/kernel/Docker/SSH; verifica header HTTP, Range e trasferimento interrotto. Registrare orari, comandi e risultati; privilegiare prove non distruttive e interromperle se la connettività cade.
+- **Criteri di accettazione:** riproduzione controllata o esclusione motivata; identificazione del segmento interessato; causa verificata oppure incertezza tracciata; solo dopo eventuale mitigazione minima e test che durante il download SSH/ping/web rimangano accessibili dall'ufficio.
+- **Vincoli:** nessun tuning MTU/MSS, limitazione banda, restart, deploy o intervento su rete live senza consenso esplicito. Non usare il download in ufficio come test ripetitivo finché non è nota la portata della disconnessione. Non toccare `main`, Ledger o backlog di altre aree.
+- **Coordinamento con maker:** Claude deve leggere autonomamente `ARCHITECTURE_AUDIT.md` §11 e questo backlog; consegnare nell'handoff risultati, SHA, comandi/test, log pertinenti e rischi residui; non richiedere modifiche preventive al codice solo sulla base delle ipotesi.
+
+**Verifiche indipendenti disponibili:** lettura statica del percorso download e della configurazione nel repository; nessuna prova di rete, VPN, upload o APK sul server reale eseguita dalla chat 02.
