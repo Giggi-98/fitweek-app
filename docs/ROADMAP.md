@@ -21,13 +21,22 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 
 Stato ufficiale dei finding: solo nel Ledger su `origin/review/engineering`. Qui c'è soltanto l'avanzamento del lavoro del maker.
 
-Baseline su `2dac1ab` (2026-11-13): verdetto riferito dall'utente **MODIFICHE RICHIESTE**, otto finding da analisi statica (nessun test eseguito dal reviewer). Il report e il Ledger aggiornato **non sono ancora pubblicati** su GitHub (verificato il 2026-11-13: il Ledger remoto dice ancora `PENDING_INITIAL_REVIEW`), quindi i riferimenti al codice vanno riletti dal report quando esce.
+Baseline su `2dac1ab` (2026-11-13): verdetto **MODIFICHE RICHIESTE**, otto finding da analisi statica; report `docs/reviews/2026-11-13-2dac1ab.md` pubblicato su `review/engineering` (`b09e7ca`).
 
-| Ordine | Finding | Lavoro del maker |
-|---|---|---|
-| 1 | FW-REV-001, 002, 003 (P1: serie e pasti, concorrenza e scritture offline obsolete) | ⬜ da riprodurre con test |
-| 2 | FW-REV-004, 005, 006, 008 (P2: export, token legacy, logout con coda, conflitto elimina/modifica) | ⬜ |
-| 3 | FW-REV-007 (P3: documentazione delle progressioni rispetto a seed e PDF) | ⬜ |
+Ciclo 1 (1.10.3, 2026-11-13) — per tutti: **correzione implementata, in attesa di verifica indipendente**. Scelte in D-026.
+
+| Finding | Riprodotto dal maker | Correzione | Test |
+|---|---|---|---|
+| FW-REV-001 (P1) | sì, test JS con rete comandata | `queue.js`: si toglie solo l'operazione inviata | `tests/js/queue.test.mjs`, e2e `reliability` §8 |
+| FW-REV-002 (P1) | sì, pytest | `set_tombstones` (migrazione 9) + confronto in `put_set` | `tests/test_edit_time.py`, `tests/test_migrations.py` |
+| FW-REV-003 (P1) | sì, test JS | `sync.js`: piano per giorno → pasto → ingrediente | `tests/js/sync.test.mjs` |
+| FW-REV-004 (P2) | sì, pytest con scrittura a metà export | `db.snapshot()` in `GET /api/backup` | `tests/test_api.py` |
+| FW-REV-005 (P2) | sì, test JS con Keystore finto guasto | `platform.js`: rimozione solo a scrittura confermata | `tests/js/platform.test.mjs` |
+| FW-REV-006 (P2) | sì, test JS + e2e | `logout.js`: ultimo invio, poi conferma esplicita | `tests/js/queue.test.mjs`, e2e `reliability` §9 |
+| FW-REV-008 (P2) | sì, test JS | `sync.js`: la voce resta, avviso dedicato | `tests/js/sync.test.mjs` |
+| FW-REV-007 (P3) | confermato leggendo doc e seed | `docs/TRAINING_PROGRAM.md` riscritto; nessuna migrazione | `test_seed_progressions_match_the_pdf_table` |
+
+Non fatto in questo ciclo: deploy (lo schema 9 arriva sull'istanza in uso solo al deploy, con backup pre-migrazione automatico), APK `next` ricompilato, prova su telefono reale.
 
 ## M1 — Stabilizzazione, protezione dati, sicurezza
 
@@ -171,6 +180,10 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.10.3 (2026-11-13) — correzioni della prima review indipendente
+
+Otto finding del reviewer (FW-REV-001…008) corretti con test di riproduzione: vedi la sezione "Review indipendente" in cima e D-026. Nessuna funzione nuova. Stato: nel repository, **non in produzione**.
 
 ## 1.10.2 (2026-11-12) — token nel Keystore, sessioni a scorrimento, backup fuori disco, scheda "Adesso" e lista dal piano
 

@@ -26,12 +26,17 @@ Stato: `[ ]` da provare · `[x]` superato · `[!]` anomalia rilevata
 
 ## 4. Conflitti PC / telefono e uscita
 - [ ] **Modifica dal PC durante l'offline**: mentre il telefono è in modalità aereo con una pesata o un prodotto aggiunto, aggiungendo un altro alimento in dispensa dal PC e poi riconnettendo il telefono, entrambe le modifiche sono presenti senza sovrascritture silenziose (e se è stata toccata la stessa voce compare l'avviso con il nome della voce).
+- [ ] **Eliminata sul telefono, modificata dal PC**: in modalità aereo eliminare un articolo della dispensa; dal PC cambiarne la quantità; riconnettendo, l'articolo resta con la quantità del PC e compare l'avviso "Eliminato qui ma modificato su un altro dispositivo".
+- [ ] **Pranzo e cena dello stesso giorno**: in modalità aereo cambiare il pranzo di un giorno del piano; dal PC cambiare la cena dello stesso giorno; riconnettendo ci sono entrambe.
+- [ ] **Serie corretta al volo**: con rete lenta, spuntare una serie e correggerne subito il carico (o toglierla): sul PC compare l'ultimo valore.
+- [ ] **Serie eliminata dal PC**: registrare una serie e aspettare `Sincronizzato`; in modalità aereo correggerne il carico sul telefono; qualche minuto dopo eliminare quella serie dal PC (Progressi → modifica seduta); riattivando la rete sul telefono la serie non ricompare sul PC.
+- [ ] **Uscita con modifiche non inviate**: in modalità aereo registrare una serie e toccare *Esci*: compare la richiesta di conferma con il numero di modifiche; con *Annulla* si resta dentro e la serie parte al rientro in rete.
 - [ ] **Uscita pulita**: toccando *Esci* in *Impostazioni → Dati e accesso*, l'app torna alla schermata di accesso e la copia locale viene cancellata.
 
 ---
 
 ### Note / esito della prova
 - Data prova:
-- Versione APK provata: `1.10.2` (`next`)
+- Versione APK provata: `1.10.2` (`next`) — le voci aggiunte con la 1.10.3 richiedono un APK `next` ricompilato dopo il deploy
 - Osservazioni:
 

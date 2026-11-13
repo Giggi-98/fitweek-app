@@ -47,12 +47,12 @@ Quando accedi tramite un indirizzo `http://`:
 - **Webapp (browser)**: usa un cookie `HttpOnly`, `SameSite=Lax`. Il token non viene mai restituito nel corpo JSON del login web né letto da JavaScript.
 - **App Android autonoma**:
   - Usa il plugin nativo Capacitor **`SecureToken`** (`SecureTokenPlugin.java`), che cifra il token con una chiave AES‑256‑GCM custodita nell'**Android Keystore** hardware del telefono (`fitweek_token_key`), salvando solo il testo cifrato e l'IV nelle `SharedPreferences` private dell'app.
-  - All'avvio, un eventuale token salvato in passato in `localStorage` (`fitweek.token.v1`) viene migrato automaticamente nel Keystore e rimosso da `localStorage`.
+  - All'avvio, un eventuale token salvato in passato in `localStorage` (`fitweek.token.v1`) viene migrato automaticamente nel Keystore e rimosso da `localStorage` **solo dopo che la scrittura nel Keystore è confermata**: se il Keystore fallisce il vecchio valore resta (altrimenti al riavvio si perderebbe la sessione) e la migrazione si ritenta all'avvio successivo. Un token nuovo (accesso o rinnovo) non viene mai scritto in chiaro: con il Keystore guasto vale solo finché l'app resta aperta.
 - **Rinnovo scorrevole**:
   - Ogni sessione registra `last_seen_at` sul server: finché l'app viene usata almeno una volta entro `SESSION_MAX_AGE_S` (30 giorni), la sessione resta attiva senza interrompere l'utente.
   - Dopo 24 ore dall'emissione della firma, il server emette un token rinnovato (`X-Renewed-Token` per l'app, cookie aggiornato per il browser).
   - Le sessioni inattive da oltre 30 giorni vengono eliminate automaticamente.
 - **Controllo dei dispositivi e uscita pulita**:
   - In *Impostazioni → Dati e accesso → Sessione* è visibile l'elenco dei dispositivi attivi con la data di ultima attività e il pulsante **Revoca** per invalidare un singolo dispositivo senza disconnettere gli altri.
-  - Il pulsante **Esci** revoca la sessione sul server e cancella sul dispositivo il token nel Keystore, la copia locale delle risposte (`cache`), la coda inviata e gli stati temporanei.
+  - Il pulsante **Esci** revoca la sessione sul server e cancella sul dispositivo il token nel Keystore, la copia locale delle risposte (`cache`), la coda e gli stati temporanei. Se sul dispositivo ci sono modifiche non ancora arrivate al server (coda, modifiche rifiutate, stato in attesa), prima si tenta un ultimo invio e poi l'uscita chiede conferma dicendo quante sono: senza conferma non si esce e nulla viene toccato; con la conferma vengono eliminate davvero e non ripartono al prossimo accesso (`static/js/logout.js`).
 

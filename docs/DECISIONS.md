@@ -105,3 +105,15 @@ Decisione: Claude Code è il **maker** (codice, test, documentazione applicativa
 - Niente force push né riscrittura della storia di `main`: le review ragionano per intervalli di SHA.
 Procedura operativa: `CLAUDE.md`, sezione "Independent Engineering Review Workflow".
 Alternativa scartata: tenere le review in `main` (mescola codice e giudizio sul codice, e il maker potrebbe modificarle).
+
+## D-026 — Correzioni della prima review indipendente (FW-REV-001…008) · Implementata, in attesa di verifica indipendente (1.10.3, 2026-11-13)
+Contesto: audit statico del reviewer su `2dac1ab` (report `docs/reviews/2026-11-13-2dac1ab.md` nel branch `review/engineering`). Lo stato ufficiale dei finding è nel Ledger; qui restano le scelte fatte dal maker.
+- **Coda (001)**: alla risposta del server si toglie dalla coda solo l'operazione effettivamente inviata, riconosciuta per identità. Se nel frattempo è stata sostituita da una più recente con la stessa chiave, quella resta e parte subito dopo; l'esito di quella superata (anche un rifiuto) non conta più.
+- **Serie eliminate (002)**: segno di eliminazione per posizione (`set_tombstones`, migrazione 9 additiva) confrontato con `X-Edited-At`. Alternativa scartata: eliminazione logica dentro `set_logs` (tocca tutte le letture, i grafici e il formato di backup).
+- **Piano pasti (003)**: fusione per giorno → pasto → ingrediente. Gli ingredienti non hanno id: l'identità è pasto + nome; con due voci uguali nello stesso pasto vale l'elenco locale intero, segnalato.
+- **Eliminata qui, modificata altrove (008)**: la voce **resta**, con un avviso dedicato. Corregge D-022 ("le eliminazioni locali valgono"): un'eliminazione locale vale solo se l'altro dispositivo non ha toccato la voce. È la regola simmetrica a "modificata qui, eliminata altrove → tenuta", e il recupero è immediato (basta eliminarla di nuovo). Alternativa scartata: far vincere l'eliminazione mostrando solo un avviso (la modifica remota sarebbe persa e non recuperabile dall'app).
+- **Esportazione (004)**: una sola transazione di lettura per tutto il file.
+- **Token (005)**: il valore in `localStorage` si toglie solo a scrittura nel Keystore confermata; un token nuovo non viene mai scritto in chiaro come ripiego.
+- **Uscita (006)**: resta "l'uscita cancella tutto dal dispositivo" (D-024), ma con modifiche non inviate serve una conferma esplicita dopo un ultimo tentativo di invio. Alternativa scartata: conservare la coda per l'accesso successivo (è ciò che il finding segnala come comportamento inatteso).
+- **Progressioni (007)**: solo documentazione e un test sul seed; nessuna migrazione.
+Rischi residui dichiarati: orari al secondo e fidati dal dispositivo; i segni di eliminazione non sono nel backup JSON; con il Keystore guasto dopo un nuovo accesso la sessione non sopravvive al riavvio; nessuna prova su telefono reale.
