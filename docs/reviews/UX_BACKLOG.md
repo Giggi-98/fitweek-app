@@ -108,3 +108,31 @@ Questa sezione **sostituisce l'ordinamento operativo corrente** delle precedenti
 - Segnalare l'eventuale sostituzione del toast Undo come rischio da **provare**, non come bug confermato.
 - Non confondere test Playwright su emulazione Pixel 7 con test su APK/dispositivo Android fisico.
 - Non modificare Ledger, documenti dell'area 01/02, `main`, Issues o PR senza autorizzazione specifica.
+
+
+---
+
+## Backlog UX aggiornato — 2026-11-13 — `439dc83`
+
+**Baseline incrementale di questa sezione:** `e014e0da498ffa05d8b0570c76cec2f074224483..439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7` (4 commit). Il backlog precedente resta come cronologia; **questa è la sequenza operativa più recente**. Verifica solo statica GitHub, nessuna suite del reviewer eseguita, checkpoint ufficiale `null` nel Ledger consultato.
+
+| Ordine | Finding / verifica | Priorità | Stato evidenza | Criterio di accettazione |
+| --- | --- | --- | --- | --- |
+| 1 | **FW-UX-002** — completare tab secondari e selettori | P2 | Fix parziale; **aperto** | Per ogni `role=tablist`, tab ↔ pannello corretto, oppure semantica alternativa coerente. Intervenire su `meals.js:113,150`, `settings.js:44,209`; tastiera e screen reader; estendere E2E oltre `[role=tab][aria-controls]` |
+| 2 | **FW-UX-001** — più eliminazioni e toast concorrenti | P2 | Fix Undo presente; limite UX confermato | Rimozione rapida di due articoli: ogni azione recuperabile almeno nella finestra UX promessa; toast rete non deve nascondere l'unico Undo; test unitari e browser |
+| 3 | **FW-UX-003** — validazione assistiva lista spesa | P2 | Markup corretto staticamente, test mancanti | Tastiera, reader, touch e clic su checkbox, ricorrenza/rimozione senza attivazioni collaterali |
+| 4 | **UX-QA-002** — prove responsive e accessibilità | QA | Non eseguito | 320/360/390/768 px, focus, zoom, contrasto, tablist, screenshot, lettore schermo |
+| 5 | **UX-QA-003** — Android reale e offline | QA | Non eseguito | APK next 1.10.6 su device, rete assente/ripristinata, perdita dati, riavvio, logout e avvisi |
+| 6 | **UX-QA-001** — efficienza dei flussi | QA | Non misurato | Tap count obiettivi precedenti su telefono reale |
+| 7 | **FW-REV-010** — logout sicuro | P2 / chat 01 | Nuovo codice presente; stato di terzi invariato | Fallimenti combinati Keystore/localStorage/cookie e riavvio; comunicazione corretta |
+| 8 | **FW-REV-002/009** — serie offline | P1 / chat 01 | Modifiche precedenti, stato di terzi invariato | Test out-of-order entro stesso secondo sul backend e Android |
+| 9 | **FW-ARCH-001** — restore atomico e UX conferma | P2 / chat 02 | Nuova gestione 422; stato di terzi invariato | Prova su DB isolato con backup legacy, valido e malformato |
+| 10 | Verifica indipendente test del maker | QA | Solo dichiarazioni nel handoff | Rilanciare `scripts/check.sh` / `scripts/e2e.sh`; documentare output e exit code |
+
+### Test e rischi specifici
+
+- Il maker ha aggiunto `tests/js/store.test.mjs` con casi per PUT concorrenti, merge 409 e doppia rimozione: **file verificato; esiti non verificati**. Il test toast attuale `tests/js/ui.test.mjs:85-100` registra la sostituzione del toast precedente, **non** la possibilità di annullare entrambe le rimozioni.
+- `tests/e2e/ux.e2e.js:161-171` controlla solo le tab con `aria-controls`: l'asserzione va estesa a **tutti** i tab con semantica dichiarata o bisogna escludere i selettori di preferenza dalla tablist.
+- Evitare redesign, dipendenze, migrazioni e alterazioni del backend non giustificati; i cambi frontend nell'APK next richiedono ricompilazione e verifica sul dispositivo.
+- Handoff `docs/reviews/2026-11-13-439dc83.maker.md`: dichiarazioni di deploy 1.10.6 e APK next pronto, **da verificare indipendentemente**. Nessuna attribuzione individuale dimostrabile tra Claude e Kimi in base ai commit.
+- Non modificare `REVIEW_LEDGER.md`, audit di altre aree, `main`, issue o PR. Nessuna chiusura senza prove di codice **e** test appropriati.
