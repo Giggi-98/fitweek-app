@@ -3,7 +3,7 @@
 - **Responsabile:** Chat 02 — Audit architetturale
 - **Data iniziale:** 2026-11-13
 - **Codice applicativo preso a riferimento:** `2dac1ab955224228659143f70fff8c01cef01029`
-- **HEAD `main` consultato:** `70f7607a923c36e476ef833aa7cb270c870dd05e` (commit documentale rispetto alla baseline)
+- **HEAD `main` consultato:** `5e333bd8ca290f96fc81dfddff66934de623614a` (cinque commit dopo la baseline, inclusi fix applicativi; confronto GitHub con main identical)
 - **Archivio:** `review/engineering`
 - **Regola di proprietà:** questo documento traccia debito tecnico e dipendenze; i finding FW-REV restano esclusivamente nel Ledger della chat 01. Non avanzare checkpoint o chiudere FW-REV da qui.
 
@@ -11,22 +11,23 @@
 
 | Rank | Tema | Riferimenti | Stato / evidenza | Azione minima verificabile |
 | --- | --- | --- | --- | --- |
-| 1 — Alta | Integrità offline e multi-dispositivo | FW-REV-001, FW-REV-002, FW-REV-003, FW-REV-008 | Finding baseline aperti, evidenza statica; owner chat 01 | Fix mirati e test di enqueue mentre drain è in volo, PUT dopo DELETE, merge slot e delete-vs-update |
-| 2 — Alta | Coerenza esportazione e semantica ripristino | FW-REV-004; FW-ARCH-001 (P2) | Export noto nel Ledger; comportamento condizionale restore letto in `app/main.py` | Snapshot transazionale export; matrice formati/ domini restore; prova restore isolato con verifica di ogni dominio |
-| 3 — Media | Lifecycle Android, queue, token e compatibilità | FW-REV-005, FW-REV-006; attività trasversale senza nuovo finding | APK/device non provati; test mancanti | Verifica errori Keystore, logout con queue, matrix APK stable/next contro backend, test su device reale |
-| 4 — Media | Ownership dei dati e contratti del modello ibrido | Attività di documentazione/verification, nessun ID bug | Blob versionato e tabelle dedicate osservati | Tabella per dominio: fonte di verità, writer, versioning, merge, cancellazione, restore, migrazione |
-| 5 — Media | Documentazione architetturale corrente | FW-ARCH-002 (P2), collegato solo tematicamente a FW-REV-007 | Disallineamento confermato | Aggiornare `docs/ARCHITECTURE.md`, preservare cronologia, confrontare con codice |
-| 6 — Condizionale | Sicurezza trasporto LAN | Rischio documentato in Ledger/SECURITY; nessun nuovo finding | HTTP sulla LAN documentato; esposizione Internet non dimostrata | Rivedere modello di minaccia, preferire VPN/HTTPS dove necessario; verificare configurazione reale solo con autorizzazione |
+| 1 — Alta | Integrità offline e multi-dispositivo | FW-REV-002, FW-REV-009 (P1); FW-REV-001/003/008 | Tombstone introdotte, ma timestamp troncati a secondi; altri fix supportati staticamente, test indipendenti pendenti; owner chat 01 | Correggere precisione/ordinamento timestamp e test PUT stale dopo DELETE nello stesso secondo; poi verificare le altre regressioni |
+| 2 — Alta | Sicurezza logout Android | FW-REV-010 (P2), collegato a FW-REV-005/006 | Rischio di token persistente dopo doppio fallimento HTTP/Keystore; chat 01 | Test fail-clear/fail-revoke, nessun logout falsamente riuscito o ri-autenticazione silenziosa |
+| 3 — Media | Contratto restore per backup legacy | FW-ARCH-001 (P2), collegato a FW-REV-004 | Backend/schema preservano tabelle assenti nei vecchi backup, ma UI dichiara sostituzione di tutti i dati; snapshot export fix supportato staticamente | Matrice v1–v4 per dominio, conferma UI coerente, test restore isolati con dati sentinella e verifica set_tombstones |
+| 4 — Media | Compatibilità APK/backend e test device | FW-REV-005/006/010; attività trasversale senza nuovo finding | Nessun APK/device verificato indipendentemente | Matrice APK stable/next e versione minima server, test riavvio/rete/login; non presumere deploy del codice GitHub |
+| 5 — Media | Ownership dei dati e contratti del modello ibrido | Attività trasversale, nessun nuovo finding | Blob versionato e tabelle dedicate osservati | Tabella per dominio: fonte autorevole, API, versioning, merge, cancellazione, restore, migrazione |
+| 6 — Media | Documentazione architetturale corrente | FW-ARCH-002 (P2), collegato tematicamente a FW-REV-007 | Disallineamento confermato | Aggiornare `docs/ARCHITECTURE.md` senza perdere cronologia, confrontare con codice |
+| 7 — Condizionale | Sicurezza trasporto LAN | Rischio già documentato, nessun nuovo finding | HTTP LAN noto; esposizione Internet non dimostrata | Rivalutare modello di minaccia; preferire VPN/HTTPS dove necessario |
 
 ## Schede debito proprie dell'area 02
 
 ### FW-ARCH-001 — P2 — Contratto restore per versioni e domini
 - **Problema:** `app/main.py` sostituisce sempre stato e sedute, ma altri domini solo se presenti nel backup.
-- **Da accertare:** modelli `BackupRestore`, UX di conferma, trattamento effettivo dei backup v1–v4, test esistenti.
-- **Deliverable minimo:** matrice `versione × dominio × azione`; comportamento esplicito e comunicato; test su database temporaneo con dati sentinella.
+- **Evidenza confermata:** `BackupRestore` in `app/schemas.py` tratta campi v3/v4 assenti come `None` = non toccare le tabelle; `settings.js` avverte invece che il ripristino sostituisce *tutti* i dati. Resta da testare la matrice v1–v4 end-to-end.
+- **Deliverable minimo:** matrice `versione × dominio × azione`; mantenere i dati dei domini assenti nei backup legacy e rendere la UI esplicita; test su database temporaneo con dati sentinella. Verificare anche `reminder_acks` e `set_tombstones` della migrazione 9 durante il restore.
 - **Accettazione:** nessuna conservazione o eliminazione implicita che contraddica la semantica esposta all'utente; backup pre-restore verificato; nessun restore sulla produzione.
 - **Dipendenza:** coordinare l'export transazionale FW-REV-004, senza duplicarne il finding.
-- **Stato:** proposto/aperto, test runtime mancanti.
+- **Stato:** aperto, mismatch backend/UI confermato staticamente; test runtime mancanti.
 
 ### FW-ARCH-002 — P2 — Specifica architetturale verificata
 - **Problema:** `docs/ARCHITECTURE.md` è datato e non rappresenta tutte le evoluzioni attuali.
@@ -56,3 +57,12 @@ Oltre a `integrity_check`, verificare restore isolato di backup SQLite e JSON co
 ## Verifiche ancora mancanti
 
 Nessun test pytest, JS, Playwright, Android o restore è stato eseguito in questa sessione. Le sole evidenze sono la lettura di repository e documentazione e il confronto GitHub della baseline con HEAD. Nessun avanzamento checkpoint o giudizio sul runtime è autorizzato da questo documento.
+
+## Aggiornamento coordinato — 2026-11-13, main 5e333bd
+
+- Riletto `REVIEW_LEDGER.md` e il report `2026-11-13-5e333bd.md` sul branch `review/engineering`. Dieci FW-REV registrati; nessuno formalmente chiuso; checkpoint ufficiale ancora `null`.
+- Correzioni di FW-REV-001/003/004/005/006/008 supportate staticamente dalla chat 01, ma non convalidate qui in esecuzione. FW-REV-002 incompleto e FW-REV-009 nuovo (P1) restano prima priorità. FW-REV-010 nuovo (P2) è rischio residuo logout Android.
+- FW-ARCH-001 resta distinto da FW-REV-004: non riguarda lo snapshot export, ma il contratto di restore v1–v4 e la discrepanza fra la conservazione backend dei domini opzionali assenti e la conferma UI «sostituisce tutti i dati».
+- FW-ARCH-002 resta aperto. Nessun FW-ARCH aggiuntivo per problemi già registrati dalla chat 01.
+- Nessun test applicativo eseguito dalla chat 02; non sono stati verificati produzione, APK né restore reali.
+- Il documento non trasferisce proprietà degli FW-REV, non modifica il Ledger e non autorizza deploy o interventi distruttivi.
