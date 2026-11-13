@@ -65,6 +65,7 @@ Moduli che fanno da contratto: `api.js` (unico punto HTTP, tempi massimi e stato
 - **Stato a blob**: resta in attesa sul dispositivo finché il server non lo accetta; su 409 il client rilegge, fonde (elenchi per id, piano pasti per giorno → pasto → ingrediente) e segnala i conflitti; una voce eliminata da una parte e modificata dall'altra resta (D-026).
 - **Solo nell'app `next`**: le letture senza rete rispondono con l'ultima copia locale e l'app lo segnala. La webapp nel browser non ha copia offline delle pagine né delle letture: ha solo le due code qui sopra.
 - **Promemoria**: con l'app aperta li controlla `reminders.js` ogni minuto; a schermo spento esistono solo come notifiche locali programmate dalle app Android (`native.js`, `schedule.js`).
+- **Aggiornamento dell'app Android** (1.11, D-033): `update.js` confronta la versione installata con l'APK dello stesso canale esposto da `GET /api/v1/app/android`; su richiesta dell'utente il plugin nativo `AppUpdate` scarica il file con la sessione, ne verifica lo SHA-256 e lo passa all'installatore di Android. Nessun endpoint nuovo; mai provato su un telefono.
 
 ### Backup e ripristino
 

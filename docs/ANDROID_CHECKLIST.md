@@ -34,6 +34,15 @@ Stato: `[ ]` da provare · `[x]` superato · `[!]` anomalia rilevata
 - [ ] **Uscita pulita**: toccando *Esci* in *Impostazioni → Dati e accesso*, l'app torna alla schermata di accesso e la copia locale viene cancellata.
 - [ ] **Uscita senza server** (1.10.4): in modalità aereo toccare *Esci*: compare l'avviso che la sessione resta valida sul server; con *Annulla* si resta dentro, con *OK* si torna all'accesso. Riaprendo l'app (anche con la rete) non si rientra da soli. Dal PC, in *Dati e accesso*, la sessione del telefono è ancora in elenco e si può revocare.
 
+## 5. Aggiornamento dell'app (1.11.0)
+Premessa: sul telefono c'è un'app **dalla 1.11.0 in su** (la prima va installata a mano dal browser) e sul server è stato compilato un APK più recente dello stesso canale.
+- [ ] **Avviso**: aprendo l'app in Wi‑Fi compare "FitWeek X è disponibile" con il pulsante **Aggiorna**; in *Impostazioni → App Android* si leggono versione installata e versione disponibile.
+- [ ] **Installazione**: toccando **Aggiorna** compare "Scarico l'aggiornamento…" e poi la finestra di Android. La prima volta Android chiede di consentire a FitWeek di *installare app sconosciute*: dopo il consenso, tornando indietro, l'installazione prosegue (se non prosegue, toccare di nuovo **Aggiorna**).
+- [ ] **Dopo l'installazione**: l'app si riapre già con l'accesso fatto, i dati locali e le notifiche programmate; in *App Android* compare "App aggiornata" con la versione nuova.
+- [ ] **Canali separati**: l'app di prova (β) propone solo la versione di prova, quella normale solo la normale.
+- [ ] **Senza rete**: in modalità aereo non compare nessun avviso né errore; "Cerca aggiornamenti" dice che il controllo non è riuscito.
+- [ ] **Via VPN** (solo dopo la diagnosi del blocco durante il download dal PC dell'ufficio): l'aggiornamento scarica senza far cadere la connessione.
+
 ---
 
 ### Note / esito della prova

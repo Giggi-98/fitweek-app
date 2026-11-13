@@ -220,7 +220,11 @@ Criteri di accettazione:
 - [ ] Prova su S25 Ultra reale: installazione, notifiche ad app chiusa, battery optimization Samsung.
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
-Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
+
+## 1.11.0 (2026-11-13) — l'app Android si aggiorna da sé
+
+Richiesta dell'utente (D-033). L'app (canali `stable` e `next`) rileva che sul server c'è un APK più recente dello stesso canale, lo dice con un avviso e in *Impostazioni → App Android*, e al tocco lo scarica, ne verifica l'impronta e apre l'installatore di Android (che chiede conferma). Nessuna API nuova, nessun cambio di schema. Verificato: 105 pytest, 101 test JS (13 nuovi in `tests/js/update.test.mjs`), 179 controlli e2e (5 nuovi nel file `native`, con bridge simulato), compilazione dei due APK con il plugin `AppUpdate` e il permesso `REQUEST_INSTALL_PACKAGES`. **Non verificato: nulla su un telefono reale.** Stato: nel repository, **non in produzione**; le app già installate vanno aggiornate a mano una volta (non hanno ancora il plugin).
 
 ## 1.10.7 (2026-11-13) — uscita non conclusa, schede e opzioni, annullo di più rimozioni
 
