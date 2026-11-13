@@ -95,3 +95,31 @@ Nessun test pytest, JS, Playwright, Android o restore è stato eseguito in quest
 2. Se `main` è avanzato, esaminare il diff dal precedente SHA architetturale `e014e0d`; non usare automaticamente il checkpoint ufficiale della chat 01.
 3. Distinguere file, codice presente, test scritti, test eseguiti e APK/deploy reali.
 4. Non modificare `main`, Ledger, issue o PR. Aggiornare questi due documenti solo dopo autorizzazione e lettura dei blob SHA correnti.
+
+## Aggiornamento backlog — 2026-11-13, ciclo 5, main 439dc83
+
+- **Intervallo:** `e014e0da498ffa05d8b0570c76cec2f074224483..439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7` (quattro commit GitHub). `main` confermato a `439dc83`. Ledger/review chat 01 ancora al candidato statico `e014e0d`; checkpoint ufficiale `null`, non modificato.
+- **Fonti:** codice e test a HEAD; `docs/reviews/MAKER_HANDOFF.md`, `docs/reviews/2026-11-13-439dc83.maker.md` (dichiarazioni maker da verificare), `docs/reviews/REVIEW_LEDGER.md`, `docs/reviews/2026-11-13-e014e0d.md`.
+
+### Priorità di verifica aggiornate (senza nuovi finding)
+
+| Priorità | Finding / owner | Stato dopo ispezione statica | Test / gate prima della chiusura |
+| --- | --- | --- | --- |
+| 1 — Alta | FW-REV-010 / chat 01 | Nuovo handling Keystore + marcatori in localStorage/cookie e percorso fail-closed presenti a `9ba8b7c`; maker riferisce rischio residuo se entrambi i marcatori non persistono e lo storage torna disponibile | Riproduzione indipendente con errori Keystore/cookie/localStorage, riavvio e revoca server; test su Android reale; non duplicare FW-REV |
+| 2 — Alta | FW-REV-002/009 / chat 01 | Tombstone/millisecondi già supportati staticamente; non modificati in questo ciclo | Eseguire regressioni stesso secondo, ordine inverso, precisione dati precedenti e prova su dispositivo/rete offline |
+| 3 — Media / verifica | FW-ARCH-001 (P2) / chat 02 | `f2bf1e6`: gestione `sqlite3.IntegrityError -> 422` e test di rollback completo presenti; contratto replaced/kept e matrice v1–v4 già supportati staticamente | Verificare con esecuzione indipendente test Python/JS e restore isolato, inclusi rollback dopo violazione chiave, pre-restore SQLite, `reminder_acks` e `set_tombstones` |
+| 4 — Media / verifica | FW-ARCH-002 (P2) / chat 02 | Documento architetturale invariato in ciclo 5, riallineato staticamente | Controllare dichiarazioni di produzione/rete/APK contro evidenza operativa; evitare fatti non verificati |
+| 5 — Media / verifica | APK stable/next e deploy (trasversale) | Handoff maker afferma deploy 1.10.6 schema 9 e APK next ricompilato; non certificati dal reviewer | Verificare health dell'istanza, checksum/metadati APK, compatibilità server/APK e Android reale senza presumere il risultato |
+| 6 — Media / coordinamento | FW-UX-002 e undo/409 / chat 03, chat 01 | Codice UI e test modificati a `cfb68d8`; risultati dichiarati dal maker | Eseguire test e QA visiva/accessibilità; rispettare proprietà degli ID |
+
+### Stato dei finding architetturali e rischi residui
+
+- **FW-ARCH-001 — aperto, correzione staticamente supportata:** il test nuovo in `tests/test_restore_matrix.py` simula due notti con stessa chiave e verifica risposta 422 + export invariato; `app/main.py` gestisce `IntegrityError` esternamente alla transazione. Questo non è un test eseguito dal reviewer. JSON e SQLite non sono equivalenti: il backup JSON non comprende tombstone, acknowledge, sedute eliminate e sessioni; `docs/API.md` ne esplicita l'effetto.
+- **FW-ARCH-002 — aperto, documentazione statica riallineata:** nessun cambiamento applicativo nel ciclo 5 richiede una nuova riscrittura. Resta la qualificazione delle affermazioni di infrastruttura effettiva.
+- **Nuovi ID FW-ARCH:** nessuno. I problemi FW-REV e FW-UX restano nelle rispettive aree; l'autore Kimi non è verificabile sulla base dei file/commit consultati.
+
+### Verifiche mancanti e disciplina dell'evidenza
+
+- Maker dichiara 105 pytest, 83 JS, 169 e2e e deploy live successivo alla pubblicazione dell'handoff. **Nessun test applicativo, deploy, APK o dato reale è stato verificato direttamente dal reviewer 02.** Conservare questa distinzione anche se il maker dichiara successo.
+- Alla prossima revisione rileggere nuovi HEAD, Ledger, report, handoff e i due documenti propri, poi verificare i test e il comportamento effettivo. Non avanzare checkpoint, non cambiare stati FW-REV e non dedurre approvazione operativa.
+- Nessun nuovo framework, migrazione generalizzata o riscrittura richiesti: chiudere prima le verifiche residue di sicurezza e integrità.
