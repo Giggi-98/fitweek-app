@@ -51,7 +51,7 @@ Il campo `workouts` del blob è congelato: la migrazione 4 lo ha copiato in tabe
 3. Ogni richiesta autenticata verifica firma e riga in `sessions`; la sessione scade dopo 30 giorni senza uso. Dopo 24 ore il server emette un token con firma fresca (cookie nuovo, oppure intestazione `X-Renewed-Token` per l'app).
 4. Le scritture controllano `Origin`: deve coincidere con l'host servito oppure essere una delle `APP_ORIGINS`.
 5. Le sessioni sono **revocabili**: `POST /api/logout` (questa), `POST /api/logout-all`, `GET`/`DELETE /api/v1/sessions` (elenco dei dispositivi e revoca di uno).
-6. Uscita lato client (`static/js/logout.js`, `platform.js`): elimina token, copia locale e coda; non si dà per riuscita se il server non ha revocato o il Keystore non ha eliminato (D-028).
+6. Uscita lato client (`static/js/logout.js`, `platform.js`): elimina token, copia locale e coda; non si dà per riuscita se il server non ha revocato o il Keystore non ha eliminato (D-028). Se non c'è né revoca, né eliminazione confermata, né marcatore di uscita registrato, l'uscita non si conclude e l'utente resta collegato (D-032).
 
 ### Frontend
 

@@ -60,6 +60,14 @@ Ciclo 4 (1.10.5, 2026-11-13), da `ARCHITECTURE_AUDIT.md`/`TECHNICAL_DEBT.md` —
 | FW-ARCH-001 (P2) | sì: pytest con dati sentinella per v1–v4 conferma la matrice; il testo della conferma prometteva "tutti i dati" | `main.py`: `replaced`/`kept` nella risposta; `backup.js` + `settings.js`: conferma e messaggio; matrice in `docs/API.md` | `tests/test_restore_matrix.py`, `tests/js/backup.test.mjs`, e2e `ux` |
 | FW-ARCH-002 (P2) | confermato leggendo il documento | `docs/ARCHITECTURE.md` riscritto, storico in fondo | nessun test automatico (documento) |
 
+Ciclo 6 (1.10.7, 2026-11-13), dal report `docs/reviews/2026-11-13-439dc83.md` (chat 01) e dagli aggiornamenti UX (chat 03) — **correzione implementata, in attesa di verifica indipendente**. Scelte in D-032.
+
+| Finding | Riprodotto dal maker | Correzione | Test |
+|---|---|---|---|
+| FW-REV-010 (P2), residuo | sì: uscita data per fatta e rientro al riavvio con memoria tornata scrivibile | senza revoca, eliminazione né marcatore l'uscita non si conclude (`keepToken()`); avviso corretto se la sessione è revocata | `tests/js/logout.test.mjs` (2 nuovi, falliti prima) |
+| FW-UX-002 (P2), completamento | sì: 5 elenchi con `role=tab` senza pannello, più la giornata in Palestra | pannelli per diario, piano, abituali, promemoria; `choices()` per tema e giornata | `tests/js/ui.test.mjs`, `tests/e2e/ux.e2e.js` (ogni scheda di ogni vista) |
+| FW-UX-001 (P2), più rimozioni | sì: la seconda rimozione toglieva l'"Annulla" della prima | `removalToast()`: "N voci rimosse · Annulla tutte"; un avviso semplice non porta via l'azione | `tests/js/ui.test.mjs` (4, 2 falliti prima), `tests/e2e/ux.e2e.js` |
+
 Ciclo 5 (1.10.6, 2026-11-13), dal report `docs/reviews/2026-11-13-e014e0d.md` (chat 01) e dagli aggiornamenti UX (chat 03) e architettura (chat 02) — **correzione implementata, in attesa di verifica indipendente**. Scelte in D-031.
 
 | Finding | Riprodotto dal maker | Correzione | Test |
@@ -213,6 +221,10 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.10.7 (2026-11-13) — uscita non conclusa, schede e opzioni, annullo di più rimozioni
+
+Residuo di FW-REV-010 (l'uscita non si conclude se non c'è revoca, eliminazione né marcatore), FW-UX-002 completato su ogni `role=tab` con `choices()` per tema e giornata, FW-UX-001 con più rimozioni annullabili insieme: vedi la sezione "Review indipendente" in cima e D-032. Nessun cambio di schema né di API. Stato: nel repository, **non in produzione**; APK `next` da ricompilare (solo frontend: non dipende dal deploy).
 
 ## 1.10.6 (2026-11-13) — caso limite dell'uscita, schede complete, ripristino atomico
 
