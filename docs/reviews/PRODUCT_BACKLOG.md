@@ -55,3 +55,33 @@
 ## Regole di modifica e storico
 
 Prima di pubblicare: rileggere HEAD `main`, `PRODUCT_REVIEW.md` e `PRODUCT_BACKLOG.md` se esistono, Ledger, audit chat 02/03 e roadmap. Non sovrascrivere contributi concorrenti. Scrivere soltanto questi due file su `review/engineering` con autorizzazione esplicita e rileggere dopo la pubblicazione. Il checkpoint ufficiale resta esclusivamente della chat 01.
+---
+
+## Aggiornamento backlog — 2026-11-13 — e014e0d
+
+- **Baseline product aggiornata:** `e014e0da498ffa05d8b0570c76cec2f074224483`, sette commit successivi a `5e333bd`.
+- **Stato ufficiale chat 01:** review statica del delta `APPROVATO CON RISERVE`; checkpoint pienamente verificato `null`; FW-REV-001…010 non formalmente chiusi. Le correzioni dichiarate dal maker non equivalgono a test del reviewer.
+- **Altri owner:** chat 02 mantiene aperti FW-ARCH-001/002; chat 03 mantiene FW-UX-001/002/003 (001/003 con fix statico, 002 parziale). Nessun finding tecnico duplicato.
+
+### Ordine operativo (ID esistenti preservati)
+
+| Rank | ID | Stato dopo verifica | Dipendenze/criterio per avanzare |
+| --- | --- | --- | --- |
+| 1 | **FW-PROD-001 — P1** | **BLOCCATO / DA VERIFICARE**; correzioni di sicurezza e serie in `main`, runtime e APK non certificati | FW-REV-001/002/005/006/009/010; verificare subsecondo out-of-order, stesso millisecondo, coda persistente, fallimenti Keystore + marcatore localStorage, logout/riavvio, test su Android reale e versione APK/backend |
+| 2 | **FW-PROD-002 — P1** | **BLOCCATO / DA VERIFICARE**; semantica UI restore più chiara | FW-REV-004; FW-ARCH-001. Test isolato v1–v4, `replaced`/`kept`, `reminder_acks`, `set_tombstones`, rollback; JSON non è ripristino completo SQLite |
+| 3 | **FW-PROD-003 — P2** | **PRONTO PER ANALISI, NON PER SVILUPPO** | Eseguire tre settimane tipo piano testuale/ingredienti → lista e contare prodotti mancanti, correzioni e minuti. Fix solo se beneficio misurato; nessun parser automatico |
+| 4 | **FW-PROD-004 — P2** | **DA VERIFICARE** | Percorso mensa→secondo asporto→cena con modifiche e nutrienti senza doppio conteggio; legame FW-REV-003 |
+| 5 | **FW-PROD-005 — P2** | **DA VERIFICARE** | UX-QA-001/003; FW-UX-002 parziale; misurazioni su telefono, focus/tastiera/screen reader prima di ulteriori UI |
+| 6 | **FW-PROD-006 — P2** | **DA VERIFICARE** | FW-UX-001/003 con correzioni in codice e test pendenti; Undo con toast concorrenti, offline/reload, sync FW-REV-008; lista e prezzi ignoti |
+| 7 | **FW-PROD-007 — P3** | **PIANIFICATO / NON AUTORIZZATO** | Decidere prima esigenze reali del programma dopo settimana 8; nessuna implementazione avviata |
+| 8 | **FW-PROD-008 — P3** | **RINVIATO** | AI solo dopo affidabilità Android, dati e beneficio misurabile |
+
+### Gate e verifica della proposta
+
+**Ciclo 0:** non promuovere Android `next` né attribuire recuperabilità completa finché mancano test indipendenti e prova su dispositivo/restore isolato. La roadmap dichiara 1.10.5 presente nel repository, non in produzione; APK `next` da ricompilare.
+
+**Attività consentita in parallelo:** ricerca/QA di FW-PROD-003 (tre settimane tipo), senza modifiche applicative, evitando interferenze con le aree 01/02/03.
+
+**Cicli successivi:** interventi minimi solo su frizioni validate; AI e nuove funzionalità non giustificate al momento.
+
+**Misure richieste:** serie corrette dopo offline/riavvio 100% nei casi di test; nessuna ri-autenticazione silenziosa dopo logout non riuscito; restore isolato con conteggi per dominio; lista generata con ingredienti mancanti, correzioni manuali e tempo di preparazione settimanale. Si tratta di criteri proposti, **non risultati osservati**.
