@@ -3,7 +3,7 @@ import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
 import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
 import { app, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
-import { applyDynamicStyles, initModal, tabKey, toast } from "./ui.js";
+import { applyDynamicStyles, initModal, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
@@ -170,25 +170,25 @@ document.addEventListener("click", async (e) => {
   }
 });
 
-// Schede (role=tablist): frecce, Inizio e Fine scelgono e attivano la scheda, come un tocco. La vista viene
+// Schede e gruppi di opzioni (role=tablist, role=radiogroup): frecce, Inizio e Fine scelgono e attivano la scheda, come un tocco. La vista viene
 // ridisegnata, quindi il fuoco va rimesso sulla scheda attiva dello stesso elenco (vedi `refocusTab`).
 let tabToRefocus = null;
 document.addEventListener("keydown", (e) => {
-  if (e.altKey || e.ctrlKey || e.metaKey || !e.target.matches?.("[role=tab]")) return;
+  if (e.altKey || e.ctrlKey || e.metaKey || !e.target.matches?.(TAB_ITEMS)) return;
   const next = tabKey(e.target, e.key);
   if (!next) return;
   e.preventDefault();
   if (next === e.target) return;
-  tabToRefocus = e.target.closest("[role=tablist]").getAttribute("aria-label");
+  tabToRefocus = e.target.closest(TAB_LISTS).getAttribute("aria-label");
   next.focus();
   next.click();
   setTimeout(() => (tabToRefocus = null), 2000); // se la vista non si ridisegna, niente fuoco spostato più tardi
 });
 function refocusTab() {
   if (tabToRefocus == null) return;
-  const list = [...document.querySelectorAll("[role=tablist]")].find((l) => l.getAttribute("aria-label") === tabToRefocus);
+  const list = [...document.querySelectorAll(TAB_LISTS)].find((l) => l.getAttribute("aria-label") === tabToRefocus);
   tabToRefocus = null;
-  list?.querySelector('[role=tab][aria-selected="true"]')?.focus({ preventScroll: true });
+  list?.querySelector('[aria-selected="true"], [aria-checked="true"]')?.focus({ preventScroll: true });
 }
 
 // Elementi cliccabili non-button (es. voci del diario): Invio/Spazio come un click.

@@ -139,36 +139,64 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.click('[data-tab=pantry]');
   s = await tabState();
   check('schede: il tocco funziona come prima', s.selected === 'pantry' && s.stops === 'pantry', JSON.stringify(s));
-  const everyList = await page.evaluate(async () => {
-    const bad = [];
-    for (const view of ['dashboard', 'training', 'meals', 'shopping', 'progress', 'settings']) {
-      location.hash = view;
-      await new Promise((r) => setTimeout(r, 400));
+  // Ogni vista, e dentro la vista ogni scheda principale: così si incontrano anche gli elenchi di schede
+  // secondari (giorni del piano, pasti abituali, giorni dei promemoria) e i gruppi di opzioni (tema, giornata).
+  const semantics = await page.evaluate(async () => {
+    const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+    const bad = { stops: [], panels: [], radios: [] };
+    const seen = { lists: new Set(), groups: new Set() };
+    const inspect = (where) => {
       for (const list of document.querySelectorAll('#content [role=tablist]')) {
+        const name = `${where}/${list.getAttribute('aria-label')}`;
+        seen.lists.add(list.getAttribute('aria-label'));
         const tabs = [...list.querySelectorAll('[role=tab]')];
         const stops = tabs.filter((t) => t.tabIndex === 0 && !t.disabled).length;
-        if (!tabs.length || stops !== 1) bad.push(`${view}/${list.getAttribute('aria-label')}: ${tabs.length} schede, ${stops} soste`);
+        if (!tabs.length || stops !== 1) bad.stops.push(`${name}: ${tabs.length} schede, ${stops} soste`);
+        for (const tab of tabs) {
+          const panel = document.getElementById(tab.getAttribute('aria-controls') || '');
+          if (!panel || panel.getAttribute('role') !== 'tabpanel') { bad.panels.push(`${name}: ${tab.id || tab.textContent.trim()} senza tabpanel`); continue; }
+          const by = panel.getAttribute('aria-labelledby');
+          if (!by || !document.getElementById(by)) bad.panels.push(`${name}: ${panel.id} etichetta rotta (${by})`);
+          if (tab.getAttribute('aria-selected') === 'true' && by !== tab.id) bad.panels.push(`${name}: ${panel.id} etichettato da ${by}, scheda attiva ${tab.id}`);
+        }
       }
-    }
-    return bad;
-  });
-  check('schede: in ogni vista ogni elenco di schede ha una sola sosta per Tab', everyList.length === 0, everyList.join(' | '));
-  const panelsOk = await page.evaluate(async () => {
-    const bad = [];
+      for (const group of document.querySelectorAll('#content [role=radiogroup]')) {
+        const name = `${where}/${group.getAttribute('aria-label')}`;
+        seen.groups.add(group.getAttribute('aria-label'));
+        const radios = [...group.querySelectorAll('[role=radio]')];
+        const on = radios.filter((r) => r.getAttribute('aria-checked') === 'true');
+        if (!radios.length || on.length !== 1 || radios.filter((r) => r.tabIndex === 0).length !== 1 || on[0].tabIndex !== 0) bad.radios.push(`${name}: ${radios.length} opzioni, ${on.length} scelte`);
+        if (group.querySelector('[role=tab], [aria-selected], [aria-controls]')) bad.radios.push(`${name}: attributi da scheda in un gruppo di opzioni`);
+      }
+    };
     for (const view of ['dashboard', 'training', 'meals', 'shopping', 'progress', 'settings']) {
       location.hash = view;
-      await new Promise((r) => setTimeout(r, 400));
-      for (const tab of document.querySelectorAll('#content [role=tab][aria-controls]')) {
-        const panel = document.getElementById(tab.getAttribute('aria-controls'));
-        if (!panel || panel.getAttribute('role') !== 'tabpanel') { bad.push(`${view}: ${tab.id} senza tabpanel`); continue; }
-        const by = panel.getAttribute('aria-labelledby');
-        if (!by || !document.getElementById(by)) bad.push(`${view}: ${panel.id} etichetta rotta (${by})`);
-        if (tab.getAttribute('aria-selected') === 'true' && by !== tab.id) bad.push(`${view}: ${panel.id} etichettato da ${by}, scheda attiva ${tab.id}`);
+      await wait(400);
+      const keys = [...document.querySelectorAll('#content [role=tablist] [data-tab]')].map((t) => t.dataset.tab);
+      if (!keys.length) inspect(view);
+      for (const key of keys) {
+        document.querySelector(`#content [role=tablist] [data-tab="${key}"]`).click();
+        await wait(500);
+        inspect(`${view}:${key}`);
       }
     }
-    return bad;
+    return { ...bad, lists: [...seen.lists].sort(), groups: [...seen.groups].sort() };
   });
-  check('schede: aria-controls risolve un tabpanel esistente, etichettato dalla scheda attiva', panelsOk.length === 0, panelsOk.join(' | '));
+  check('schede: in ogni vista ogni elenco di schede ha una sola sosta per Tab', semantics.stops.length === 0, semantics.stops.join(' | '));
+  check('schede: OGNI scheda (non solo quelle con aria-controls) comanda un tabpanel esistente, etichettato dalla scheda attiva', semantics.panels.length === 0, semantics.panels.join(' | '));
+  const expectedLists = ['Giorno', 'Giorno del piano', 'Momento del giorno', 'Pasti', 'Impostazioni', 'Spesa e dispensa', 'Progressi', 'Oggi'];
+  check('schede: il controllo ha davvero incontrato gli elenchi secondari', expectedLists.every((l) => semantics.lists.includes(l)), semantics.lists.join(', '));
+  check('opzioni: tema e giornata sono gruppi di opzioni con una sola scelta e una sola sosta', semantics.radios.length === 0 && ['Giornata', 'Tema'].every((g) => semantics.groups.includes(g)), `${semantics.radios.join(' | ')} [${semantics.groups.join(', ')}]`);
+  // gruppo di opzioni da tastiera: le frecce scelgono il tema e il fuoco resta sull'opzione scelta
+  await page.evaluate(() => (location.hash = 'settings'));
+  await page.click('[data-tab=general]');
+  await page.focus('[role=radiogroup][aria-label="Tema"] [role=radio][aria-checked=true]');
+  const themeBefore = await page.evaluate(() => document.activeElement.dataset.themeSet);
+  await page.keyboard.press('ArrowRight');
+  await page.waitForTimeout(300);
+  const themeAfter = await page.evaluate(() => ({ focus: document.activeElement?.dataset?.themeSet, checked: document.querySelector('[role=radiogroup][aria-label="Tema"] [aria-checked=true]')?.dataset.themeSet }));
+  check('opzioni: freccia destra sceglie il tema successivo e tiene il fuoco', themeAfter.checked !== themeBefore && themeAfter.focus === themeAfter.checked, `${themeBefore} → ${JSON.stringify(themeAfter)}`);
+  await page.click(`[data-theme-set=${themeBefore}]`);
   // ---- FW-ARCH-001: la conferma del ripristino dice cosa viene sostituito e cosa resta
   const full = await api('/api/backup');
   const legacy = { format: 'fitweek-backup-v2', version: full.version, data: full.data, workout_sessions: full.workout_sessions };

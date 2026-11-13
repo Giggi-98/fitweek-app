@@ -2,7 +2,7 @@
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
 import { app, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
-import { panel, tabpanel, tabs, toast } from "../ui.js";
+import { choices, panel, tabpanel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
 import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
@@ -41,8 +41,8 @@ function remindersPanel() {
   return panel(
     `${icon("bell")}Promemoria`,
     `<p class="subtle">Con l'app aperta compare un popup all'orario; con l'app Android arriva anche la notifica.</p>
-    ${tabs(DAYS.map((d, i) => [String(i), d.slice(0, 3), null, rem.items.filter((r) => r.weekday === i && r.enabled).length]), String(rem.day), "Giorno", "rem-day")}
-    <div class="rem-list">${list
+    ${tabs(DAYS.map((d, i) => [String(i), d.slice(0, 3), null, rem.items.filter((r) => r.weekday === i && r.enabled).length]), String(rem.day), "Giorno", "rem-day", "rem-day-panel")}
+    ${tabpanel("rem-day-panel", "Giorno", String(rem.day), `<div class="rem-list">${list
       .map(
         (r) => `<form class="rem-row ${r.enabled ? "" : "off"}" data-rem-form="${esc(r.id)}">
         <input class="time24" name="time" inputmode="numeric" maxlength="5" pattern="([01][0-9]|2[0-3]):[0-5][0-9]" placeholder="HH:MM" value="${esc(r.time)}" aria-label="Orario (24 ore)" required>
@@ -59,7 +59,7 @@ function remindersPanel() {
         <div class="field"><label for="rn-slot">Pasto (se tipo Pasto)</label><select id="rn-slot" name="slot">${Object.entries(SLOTS).map(([k, l]) => `<option value="${k}">${l}</option>`).join("")}</select></div>
         <div class="field"><label for="rn-title">Titolo</label><input id="rn-title" name="title" required maxlength="120" placeholder="es. Prepara la borsa della palestra"></div>
       </div><button class="btn primary" type="submit">Aggiungi</button></form>
-    </details>`,
+    </details>`)}`,
     "", "", "reminders-panel",
   );
 }
@@ -206,7 +206,7 @@ export function render() {
       `<form id="prefs-form" class="stack"><div class="form-grid two"><div class="field"><label for="rest">Recupero predefinito</label><select id="rest" name="restSeconds">${[60, 75, 90, 120, 150, 180].map((s) => opt(s, pr.restSeconds, `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")} min`)).join("")}</select></div><div class="field"><label for="kgstep">Incremento peso (+/−)</label><select id="kgstep" name="kgStep">${[0.5, 1, 1.25, 2, 2.5, 5].map((s) => opt(s, pr.kgStep, `${String(s).replace(".", ",")} kg`)).join("")}</select></div></div><label class="check"><input type="checkbox" name="sound" ${pr.sound ? "checked" : ""}> Suono a fine recupero (oltre alla vibrazione)</label><div class="field-row"><p class="subtle">Preferenze salvate su questo dispositivo.</p><button class="btn" type="submit">Salva preferenze</button></div></form>`,
     )}${panel(
       `${icon("sun-moon")}Aspetto`,
-      tabs([["auto", "Automatico", "sun-moon"], ["light", "Chiaro", "sun"], ["dark", "Scuro", "moon"]], theme, "Tema", "theme-set"),
+      choices([["auto", "Automatico", "sun-moon"], ["light", "Chiaro", "sun"], ["dark", "Scuro", "moon"]], theme, "Tema", "theme-set"),
     )}</div></div>`;
   const data = () =>
     `<div class="grid3 even">${panel(

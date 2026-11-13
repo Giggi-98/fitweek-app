@@ -6,7 +6,7 @@ import { openComposer } from "../composer.js";
 import { guessSlot } from "../reminders.js";
 import { app, persistState, refreshDaily } from "../store.js";
 import { formatQty, parseQty } from "../stats.js";
-import { empty, panel, tabpanel, tabs, toast } from "../ui.js";
+import { empty, panel, tabId, tabpanel, tabs, toast } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
 import { openPlanProposal } from "./shopping.js";
 import { enqueue, flush } from "../workout/queue.js";
@@ -67,7 +67,7 @@ function diary() {
     .map((d, i) => {
       const eaten = eatenOn(d);
       const kcal = sum(eaten, "kcal");
-      return `<button type="button" class="day-tab ${d === day ? "active" : ""} ${d === today ? "today" : ""}" role="tab" aria-selected="${d === day}" tabindex="${d === day ? 0 : -1}" data-day="${d}" ${d > today ? "disabled" : ""} aria-label="${esc(fmtDate(d))}${eaten.length ? `, circa ${fmtNum(kcal, 0)} kcal` : ""}">
+      return `<button type="button" class="day-tab ${d === day ? "active" : ""} ${d === today ? "today" : ""}" role="tab" id="${tabId("Diario", d)}" aria-controls="diary-day-panel" aria-selected="${d === day}" tabindex="${d === day ? 0 : -1}" data-day="${d}" ${d > today ? "disabled" : ""} aria-label="${esc(fmtDate(d))}${eaten.length ? `, circa ${fmtNum(kcal, 0)} kcal` : ""}">
         <span>${DAYSHORT[i]}</span><strong>${Number(d.slice(8))}</strong><small>${eaten.length ? `~${fmtNum(kcal, 0)}` : "—"}</small>
       </button>`;
     })
@@ -85,7 +85,7 @@ function diary() {
     <div class="week-nav"><button class="icon-btn" data-week-shift="-1" aria-label="Settimana precedente">${icon("chevron-left")}</button><strong>${esc(fmtDate(days[0]))} – ${esc(fmtDate(days[6]))}</strong><button class="icon-btn" data-week-shift="1" ${ui.weekOffset >= 0 ? "disabled" : ""} aria-label="Settimana successiva">${icon("chevron-right")}</button></div>
     <div class="day-tabs" role="tablist" aria-label="Giorno">${strip}</div>
   </section>
-  <div class="split wide-left">
+  <div class="split wide-left" role="tabpanel" id="diary-day-panel" aria-labelledby="${tabId("Diario", day)}">
     ${panel(
       `${icon("utensils")}${esc(fmtDate(day))}${day === today ? " · oggi" : ""}`,
       `${logs.length ? logs.map((m) => `<div class="entry ${m.status} clickable" data-edit-log="${esc(m.id)}" role="button" tabindex="0" aria-label="Modifica pasto"><div class="entry-main"><span class="slot-ic">${icon(SLOT_ICON[m.slot] || "utensils")}</span><div><div class="entry-title">${m.status === "skipped" ? "Saltato" : esc(m.description || "—")}</div><div class="entry-sub">${esc(SLOTS[m.slot] || m.slot)}${m.status === "skipped" ? "" : ` · ${esc(kcalLabel(m))}`}</div></div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
@@ -110,12 +110,12 @@ const PLAN_SLOTS = [
 /** Piano ricorrente: su schermo largo l'intera settimana in una griglia, su telefono un giorno alla volta. */
 function plan() {
   const slotShort = { lunch: "Pranzo", pre: "Spuntino", dinner: "Cena" };
-  return `<div class="plan-days">${tabs(DAYS.map((d, i) => [String(i), DAYSHORT[i]]), String(ui.planDay), "Giorno del piano", "plan-day")}</div>
+  return `<div class="plan-days">${tabs(DAYS.map((d, i) => [String(i), DAYSHORT[i]]), String(ui.planDay), "Giorno del piano", "plan-day", Object.fromEntries(DAYS.map((d, i) => [String(i), `plan-day-${i}`])))}</div>
   <div class="plan-grid">${DAYS.map((day, i) => {
     const m = app.state.meals[day] || {};
     const items = m.items || [];
     const weekday = i < 5;
-    return `<section class="meal-card ${i === ui.planDay ? "on" : ""}"><h3>${esc(day)} ${GYM[day] ? `<span class="pill accent">${icon("dumbbell", "sm")}${GYM[day]}</span>` : ""}</h3>${PLAN_SLOTS.map(
+    return `<section class="meal-card ${i === ui.planDay ? "on" : ""}" role="tabpanel" id="plan-day-${i}" aria-labelledby="${tabId("Giorno del piano", String(i))}"><h3>${esc(day)} ${GYM[day] ? `<span class="pill accent">${icon("dumbbell", "sm")}${GYM[day]}</span>` : ""}</h3>${PLAN_SLOTS.map(
       ([k, label]) =>
         `<div class="field"><label for="meal-${esc(day)}-${k}">${label}</label><textarea id="meal-${esc(day)}-${k}" rows="2" maxlength="1000" data-meal-day="${esc(day)}" data-meal-key="${k}">${esc(m[k] || "")}</textarea></div>`,
     ).join("")}
@@ -147,13 +147,13 @@ function templates() {
   const sources = (cur) => Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}" ${cur === k ? "selected" : ""}>${l}</option>`).join("");
   return panel(
     `${icon("sparkles")}Pasti abituali`,
-    `${tabs(Object.entries(SLOTS).map(([k, l]) => [k, l, null, app.templates.filter((t) => t.slot === k).length]), slot, "Momento del giorno", "tpl-slot")}
-    ${items.length
+    `${tabs(Object.entries(SLOTS).map(([k, l]) => [k, l, null, app.templates.filter((t) => t.slot === k).length]), slot, "Momento del giorno", "tpl-slot", "tpl-slot-panel")}
+    ${tabpanel("tpl-slot-panel", "Momento del giorno", slot, `${items.length
       ? `<div class="tpl-list">${items.map((t) => `<form class="tpl-row" data-tpl-form="${esc(t.id)}"><input name="name" value="${esc(t.name)}" maxlength="120" aria-label="Nome"><input name="kcal" inputmode="numeric" value="${esc(t.kcal ?? "")}" placeholder="kcal" aria-label="Calorie"><input name="protein_g" inputmode="numeric" value="${esc(t.protein_g ?? "")}" placeholder="prot. g" aria-label="Proteine"><select name="nutrition_source" aria-label="Fonte">${sources(t.nutrition_source)}</select><input type="hidden" name="slot" value="${esc(t.slot)}"><input type="hidden" name="position" value="${esc(t.position)}"><button class="btn small" type="submit">Salva</button><button type="button" class="icon-btn" data-del-tpl="${esc(t.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button>${t.nutrition_note ? `<small class="tpl-note">${esc(t.nutrition_note)}</small>` : ""}</form>`).join("")}</div>`
       : empty("Nessun pasto abituale", "Aggiungine uno qui sotto.")}
     <details class="free"><summary>${icon("plus", "sm")}Nuovo pasto abituale</summary>
       <form id="tpl-new" class="stack"><div class="form-grid four"><div class="field"><label for="tn-name">Nome</label><input id="tn-name" name="name" required maxlength="120" placeholder="es. Mandorle (30 g)"></div><div class="field"><label for="tn-kcal">Calorie (facoltativo)</label><input id="tn-kcal" name="kcal" inputmode="numeric"></div><div class="field"><label for="tn-prot">Proteine g (facoltativo)</label><input id="tn-prot" name="protein_g" inputmode="numeric"></div><div class="field"><label for="tn-src">Fonte dei valori</label><select id="tn-src" name="nutrition_source">${sources("")}</select></div></div><input type="hidden" name="slot" value="${esc(slot)}"><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi a ${esc(SLOTS[slot].toLowerCase())}</button></form>
-    </details>
+    </details>`)}
     <p class="subtle">Scelte rapide nei promemoria. I valori iniziali sono stime generiche: con l'etichetta in mano, correggili.</p>`,
   );
 }

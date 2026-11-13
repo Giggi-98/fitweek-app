@@ -5,7 +5,7 @@ import { bump, confetti, haptic, pop, ring } from "../motion.js";
 import { standalone } from "../platform.js";
 import { bestLoads, isRecord } from "../stats.js";
 import { app, refreshWorkouts } from "../store.js";
-import { openModal, tabs, toast } from "../ui.js";
+import { choices, openModal, toast } from "../ui.js";
 import { $, clamp, esc, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
@@ -151,7 +151,7 @@ function renderStart() {
   ${doneToday ? `<div class="inline-note ok">${icon("circle-check")}<div>Giorno ${esc(routine)} già completato oggi (${doneToday.sets.filter((x) => x.completed).length} serie).</div></div>` : ""}
   ${!t.routine && !ui.routine ? `<div class="inline-note">${icon("info")}<div>Oggi è giorno di riposo: puoi comunque recuperare una seduta saltata.</div></div>` : ""}
   <div class="train-bar">
-    ${tabs(Object.keys(ROUTINES).map((r) => [r, `Giorno ${r}`, null, ROUTINES[r].day.slice(0, 3)]), routine, "Giornata", "pick-routine")}
+    ${choices(Object.keys(ROUTINES).map((r) => [r, `Giorno ${r}`, null, ROUTINES[r].day.slice(0, 3)]), routine, "Giornata", "pick-routine")}
     <div class="chips scroll week-chips" role="group" aria-label="Settimana">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => i + 1)
       .map((w) => `<button class="chip ${w === week ? "active" : ""} ${w === t.program_week ? "current" : ""}" data-pick-week="${w}">W${w}</button>`)
       .join("")}</div>

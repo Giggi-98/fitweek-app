@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 import { fakeBrowser } from "./helpers.mjs";
 
 fakeBrowser();
-const { tabs, tabKey, tabpanel } = await import("../../static/js/ui.js");
+const { choices, removalToast, tabs, tabKey, tabpanel, toast } = await import("../../static/js/ui.js");
 const { takeById, putBack } = await import("../../static/js/util.js");
 
 test("FW-UX-002: una sola scheda raggiungibile con Tab, quella attiva", () => {
@@ -29,10 +29,12 @@ test("FW-UX-002: pannello diverso per scheda (dashboard): mappa chiave → panne
   assert.match(html, /id="tab-oggi-week" aria-controls="dash-week"/);
 });
 
-test("FW-UX-002: senza pannello (selettore del tema) nessun aria-controls, ma la scheda ha un id", () => {
-  const html = tabs([["auto", "Automatico"], ["dark", "Scuro"]], "auto", "Tema", "theme-set");
-  assert.match(html, /id="tab-tema-auto"/);
-  assert.doesNotMatch(html, /aria-controls/);
+test("FW-UX-002: una scelta senza pannello (tema, giornata) è un gruppo di opzioni, non un elenco di schede", () => {
+  const html = choices([["auto", "Automatico"], ["dark", "Scuro"]], "dark", "Tema", "theme-set");
+  assert.match(html, /role="radiogroup" aria-label="Tema"/);
+  assert.doesNotMatch(html, /role="tab"|aria-selected|aria-controls/);
+  const stops = [...html.matchAll(/role="radio" aria-checked="(true|false)" tabindex="(-?\d)" data-theme-set="(\w+)"/g)].map((m) => m.slice(1));
+  assert.deepEqual(stops, [["false", "-1", "auto"], ["true", "0", "dark"]]);
 });
 
 /** Elenco di schede finto, quanto basta a `tabKey` (closest + querySelectorAll). */
