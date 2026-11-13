@@ -129,16 +129,16 @@ Dal 2026-11-13 (D-025) ogni commit pubblicato su `main` passa da una revisione t
 
 **Ruoli**
 - **MAKER = Claude Code**: sviluppo, correzioni, test di regressione, documentazione applicativa, commit su `main` (quando autorizzato).
-- **REVIEWER = ChatGPT**: analizza i commit pubblicati, apre i finding con ID stabili `FW-REV-NNN` (severità P0–P3), verifica le correzioni, mantiene il Ledger. Non scrive codice applicativo.
+- **REVIEWER = ChatGPT**: analizza i commit pubblicati, apre i finding con ID stabili `FW-REV-NNN` (severità P0–P3), verifica le correzioni, mantiene il Ledger. Non scrive codice applicativo. Dal 2026-11-13 (D-027) è diviso in quattro chat specializzate: vedi "Multi-Reviewer Coordination & Mandatory Handoff".
 
 **Branch**
 - `main`: applicazione, del maker (sola lettura per il reviewer).
-- `review/engineering`: archivio delle review e **canale di comunicazione asincrono** tra reviewer e maker (decisione dell'utente del 2026-11-13: l'utente non fa da tramite, i due si parlano attraverso i file di questo branch). Contiene `docs/reviews/REVIEW_POLICY.md`, `docs/reviews/REVIEW_LEDGER.md`, i report `docs/reviews/YYYY-MM-DD-SHA.md` e le risposte del maker `docs/reviews/YYYY-MM-DD-SHA.maker.md`.
-- **Cosa può scrivere il maker su `review/engineering`** (solo in `docs/reviews/`, mai codice):
-  - la propria risposta a un report, in un file nuovo `YYYY-MM-DD-SHA.maker.md` accanto al report;
-  - in fondo al Ledger, solo dentro la sezione `## Maker notes`, una riga per ciclo che punta alla risposta e agli SHA (in aggiunta, mai riscrivendo righe precedenti).
-- **Cosa resta del reviewer**: Policy, report, e tutto il resto del Ledger (stato dei finding, checkpoint, verdetti, storico). Il maker non li modifica, nemmeno per correggere un refuso: lo segnala nella propria risposta.
-- Prima di ogni scrittura: `git fetch` e ripartire dall'`HEAD` remoto del branch; mai force push; se il reviewer ha scritto nel frattempo, si rifà il commit sopra il suo. Nessun merge di `review/engineering` in `main` (né il contrario) e nessuna copia dei suoi documenti in `main`.
+- `review/engineering`: archivio delle review e **canale di comunicazione asincrono** tra maker e reviewer (decisione dell'utente del 2026-11-13, confermata con D-027: l'utente non fa da tramite e non incolla messaggi, ognuno scrive nei **propri** file in `docs/reviews/`).
+- **File del maker su `review/engineering`** (gli unici che scrive, mai codice):
+  - `docs/reviews/YYYY-MM-DD-SHA.maker.md`: un handoff per ciclo, file nuovo ogni volta (data e SHA corto finale di `main`);
+  - `docs/reviews/MAKER_HANDOFF.md`: indice degli handoff, una riga per ciclo in cima, con le chat destinatarie. È il punto d'ingresso dei reviewer.
+- **File dei reviewer**: tutto il resto (Policy, Ledger, report, audit, backlog). Il maker non li modifica, nemmeno per un refuso: lo segnala nel proprio handoff. La riga già presente in `## Maker notes` del Ledger (commit `28e6f98`) resta com'è e non se ne aggiungono altre.
+- Prima di ogni scrittura: `git fetch` e ripartire dall'`HEAD` remoto del branch; mai force push; se un reviewer ha scritto nel frattempo, si rifà il commit sopra il suo. Nessun merge di `review/engineering` in `main` (né il contrario) e nessuna copia dei documenti dei reviewer in `main`.
 
 **Dove leggere (sempre la versione remota, mai una copia locale vecchia)**
 ```bash
@@ -164,11 +164,52 @@ Ordine di priorità: P0/P1 prima (integrità dei dati e affidabilità offline), 
 
 **Implementato ≠ verificato**: il maker non dichiara mai un finding chiuso. La formula è "correzione implementata, in attesa di verifica indipendente"; "verificato/chiuso" lo scrive solo il reviewer nel Ledger. Lo stesso vale per i test: quelli eseguiti dal maker sono "dichiarati dal maker" finché il reviewer non li riesegue.
 
-**Consegna al reviewer (fine di ogni ciclo)**, scritta in `docs/reviews/YYYY-MM-DD-SHA.maker.md` su `review/engineering` più la riga in `## Maker notes` del Ledger, dopo aver pubblicato i commit su `main`: finding affrontati · riprodotto o no (con motivo) · file modificati · soluzione · test aggiunti · test eseguiti con risultati reali · rischi residui · **SHA completi (40 caratteri) dei commit pubblicati su `main`**, con l'intervallo `SHA_precedente..SHA_nuovo` e il finding associato a ciascuno · cosa va verificato a mano (telefono reale, APK, deploy).
+**Consegna al reviewer (fine di ogni ciclo)**: è il REVIEW HANDOFF descritto nella sezione seguente, scritto nei file del maker su `review/engineering` dopo aver pubblicato i commit su `main`. Contenuto minimo per ogni finding: riprodotto o no (con motivo) · file modificati · soluzione · test aggiunti · test eseguiti con risultati reali · rischi residui · **SHA completi (40 caratteri) dei commit pubblicati su `main`**, con l'intervallo `SHA_precedente..SHA_nuovo` e il finding associato a ciascuno · cosa va verificato a mano (telefono reale, APK, deploy).
+
+## Multi-Reviewer Coordination & Mandatory Handoff
+
+Dal 2026-11-13 (D-027) il reviewer è composto da **quattro chat indipendenti** del Project ChatGPT "FitWeek — Engineering Review". Il maker non legge le chat: legge i loro documenti su `origin/review/engineering` e risponde nei propri file sullo stesso branch. **L'utente non fa da tramite**: nella risposta in chat l'handoff non va ripetuto, bastano poche righe (cosa è stato fatto, SHA, file dell'handoff, eventuale azione che solo l'utente può fare). Le regole della sezione precedente restano valide; dove parlano di "reviewer" per i finding `FW-REV` e il checkpoint si intende la chat 01.
+
+| Chat | Area | Documenti in `docs/reviews/` | Namespace | Quando coinvolgerla |
+|---|---|---|---|---|
+| **01 — Review incrementali** | commit, bug e regressioni, sicurezza e integrità dati, test, verifica delle correzioni. **Unica** a gestire checkpoint ufficiale e stato dei `FW-REV` | `REVIEW_POLICY.md`, `REVIEW_LEDGER.md`, report `YYYY-MM-DD-SHA.md` | `FW-REV-NNN` | **sempre**, dopo modifiche applicative pubblicate su `main` |
+| **02 — Audit architetturale** | backend, database e migrazioni, contratti API, autenticazione, backup/ripristino, Docker/deploy, debito tecnico | `ARCHITECTURE_AUDIT.md`, `TECHNICAL_DEBT.md` | `FW-ARCH-NNN` | architettura, persistenza, migrazioni, autenticazione, API, deploy, confini tra componenti |
+| **03 — Frontend & UX** | interfaccia, navigazione, responsive/mobile, accessibilità, esperienza Android, feedback visivo, regressioni UX | `UX_AUDIT.md`, `UX_BACKLOG.md` | `FW-UX-NNN` (`UX-QA-NNN` = verifica da fare, non bug) | schermate, componenti, CSS, interazioni, flussi, comportamento percepibile su Android |
+| **04 — Product Strategy** | utilità delle funzioni, coerenza con i requisiti, roadmap e priorità, complessità non necessaria | `PRODUCT_REVIEW.md`, `PRODUCT_BACKLOG.md` | `FW-PROD-NNN` (P1–P3 = priorità di prodotto, non severità) | funzioni nuove, modificate o rimosse; comportamento di prodotto; attività di roadmap. **Non** per refactoring interni |
+
+Finding e backlog vivono solo in quei documenti: non copiarli qui né in `docs/`. Ogni area cita i finding delle altre senza duplicarli: usare sempre l'ID originale.
+
+**Prima di ogni attività**
+1. `git status` e `git fetch origin`; annotare gli SHA completi di `main` e `origin/review/engineering`.
+2. Leggere il Ledger e i documenti delle aree toccate (`git show origin/review/engineering:docs/reviews/<FILE>`), controllando nell'intestazione su quale SHA di `main` sono basati: un audit fatto su uno SHA più vecchio non dice nulla sui commit successivi.
+3. Cercare finding aperti pertinenti e verificare se l'attività è già in un backlog o già implementata (un commit che dichiara una correzione **non** rende risolto il finding).
+4. Individuare dipendenze e rischi tra aree (es. integrità dati che blocca una funzione) e decidere quali chat coinvolgere alla fine.
+
+Una richiesta che nasce da una review si lavora con gli ID originali, i passi di "Gestione di un finding" e, se tocca più aree, una sola correzione coordinata, non interventi contraddittori.
+
+**A fine di OGNI attività: REVIEW HANDOFF** in `docs/reviews/YYYY-MM-DD-SHA.maker.md` + riga in `MAKER_HANDOFF.md` (obbligatorio anche senza modifiche al codice, salvo attività senza alcun commit su `main`: in quel caso non c'è nulla da revisionare e lo si dice all'utente in una riga). Schema fisso del file:
+
+```
+REVIEW HANDOFF
+MAKER SUMMARY            attività · SHA iniziale · SHA finale o "non pubblicato" · file modificati · finding affrontati ·
+                         test eseguiti con risultati · test non eseguiti · rischi residui · deploy sì/no · dati e migrazioni
+CHAT 01 — REVIEW INCREMENTALI    messaggio completo per la chat (se necessaria; altrimenti "non richiesta" e perché)
+CHAT 02 — AUDIT ARCHITETTURALE   idem
+CHAT 03 — FRONTEND & UX          idem
+CHAT 04 — PRODUCT STRATEGY       idem
+ORDINE CONSIGLIATO       sequenza motivata; segnalare se un problema di un'area ne blocca un'altra
+PROSSIMA AZIONE          cosa resta all'utente (prova manuale, autorizzare un deploy, oppure nulla e perché)
+```
+
+- Ogni messaggio è **autonomo e completo** (non "chiedi una review"): chat destinataria · repository e branch · SHA iniziale e finale · modifiche · file importanti · ID dei finding · test eseguiti dal maker · test mancanti · rischi · verifiche indipendenti richieste · documento di competenza da aggiornare. Deve chiedere esplicitamente di **verificare il codice senza fidarsi delle dichiarazioni del maker** e non chiede mai un'approvazione.
+- Instradamento: chat 01 sempre per modifiche applicative pubblicate; + 02, 03, 04 secondo la tabella. Più aree = più messaggi. Nessuna review inutile.
+- **SHA verificati**: solo SHA completi letti da `git rev-parse` dopo `git fetch`, e controllando che lo SHA finale sia davvero su `origin/main`. L'handoff si scrive solo dopo il push di `main`: un lavoro non pubblicato non è verificabile su GitHub e non va presentato come tale.
+- **Implementato ≠ approvato**: il maker scrive "correzione implementata, in attesa di verifica indipendente". Chiuso, verificato, approvato e avanzamento del checkpoint li scrive solo la chat proprietaria nel proprio documento. Il maker non modifica Ledger, audit o backlog e non dichiara approvati i propri commit.
+- **Risposte dei reviewer**: a inizio sessione il maker le cerca da solo (`git fetch`, poi `git log origin/review/engineering` dall'ultimo handoff in `MAKER_HANDOFF.md`), senza farsi incollare nulla.
 
 ## Stato e roadmap
 
 - Audit iniziale: `docs/AUDIT-2026-11-09.md`.
 - Milestone e avanzamento: `docs/ROADMAP.md`.
-- Review indipendenti: stato dei finding nel Ledger su `origin/review/engineering` (vedi "Independent Engineering Review Workflow"); l'avanzamento delle correzioni lato maker è in `docs/ROADMAP.md`.
+- Review indipendenti: stato dei finding `FW-REV` nel Ledger e di `FW-ARCH`/`FW-UX`/`FW-PROD` nei documenti delle rispettive chat su `origin/review/engineering` (vedi "Independent Engineering Review Workflow" e "Multi-Reviewer Coordination & Mandatory Handoff"); l'avanzamento delle correzioni lato maker è in `docs/ROADMAP.md`.
 - Problemi noti aperti: traffico HTTP non cifrato in LAN (documentato in `docs/SECURITY.md` con avviso in app e opzioni Tailscale HTTPS / reverse proxy locale); destinazione esterna `OFFSITE_DEST` da configurare per `scripts/backup-offsite.sh`; server raggiungibile solo in LAN (l'app autonoma lavora senza rete e invia al rientro; per sincronizzare fuori casa serve una VPN, l'indirizzo si cambia dalla schermata di accesso); nessun APK provato su un telefono reale (checklist pronta in `docs/ANDROID_CHECKLIST.md`); tappa 2 (modello IA sul telefono per il menu della mensa) da fare; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche per i piatti della mensa; sonno solo a mano (importazione dall'orologio via Health Connect da valutare, D-019); prezzi reali per articolo da inserire a mano la prima volta (la lista generata dal piano lascia il prezzo vuoto se non già noto); grafico del girovita e confronto tra settimane (M3); link video `b4` da verificare.

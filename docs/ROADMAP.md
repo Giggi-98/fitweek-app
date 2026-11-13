@@ -21,6 +21,8 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 
 Stato ufficiale dei finding: solo nel Ledger su `origin/review/engineering`. Qui c'è soltanto l'avanzamento del lavoro del maker.
 
+Dal 2026-11-13 i reviewer sono quattro (D-027): oltre ai `FW-REV` del Ledger esistono `FW-ARCH` (`ARCHITECTURE_AUDIT.md`, `TECHNICAL_DEBT.md`), `FW-UX` (`UX_AUDIT.md`, `UX_BACKLOG.md`) e `FW-PROD` (`PRODUCT_REVIEW.md`, `PRODUCT_BACKLOG.md`), tutti sullo stesso branch e non copiati qui. Alla data, nessun `FW-ARCH`/`FW-UX`/`FW-PROD` è stato affrontato dal maker.
+
 Baseline su `2dac1ab` (2026-11-13): verdetto **MODIFICHE RICHIESTE**, otto finding da analisi statica; report `docs/reviews/2026-11-13-2dac1ab.md` pubblicato su `review/engineering` (`b09e7ca`).
 
 Ciclo 1 (1.10.3, 2026-11-13) — per tutti: **correzione implementata, in attesa di verifica indipendente**. Scelte in D-026.
