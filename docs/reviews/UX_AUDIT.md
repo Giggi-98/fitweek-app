@@ -76,3 +76,48 @@ Gli stati citati appartengono al Ledger/audit di area 02 consultati, **non** son
 ## Prossimi passi
 
 Verificare i quattro commit successivi a `70f7607` prima di aggiornare stato dei problemi correlati. Eseguire QA visiva e Android. Correggere FW-UX-001/002/003 con test specifici. Nessuna modifica a main, codice, issue, PR, REVIEW_LEDGER o documenti di altre aree è autorizzata da questo audit.
+
+
+---
+
+## Aggiornamento incrementale UX — 2026-11-13 — `70f7607..5e333bd`
+
+**HEAD applicativo staticamente esaminato:** `5e333bd8ca290f96fc81dfddff66934de623614a`. Questa sezione aggiorna, senza riscriverle, le osservazioni della baseline riportate sopra. **Verdetto UX: MODIFICHE RICHIESTE.** Checkpoint ufficiale del Ledger: `null`, invariato.
+
+### Commit e cambiamenti verificati
+
+- `b0f78d2`: introduzione tombstone delle serie, snapshot coerente per backup ed aggiornamento documentazione. Effetti UX indiretti sulla fiducia nei dati.
+- `79304c6`: nuova gestione coda di operazioni in volo, merge del piano pasti per slot, avvisi di conflitto, migrazione token e logout centralizzato con avviso di modifiche non inviate.
+- `d8817c4` e `5e333bd`: documentazione/versionamento e coordinamento maker/reviewer; nessun intervento visuale significativo individuato.
+- I file di layout e stile non sono stati ridisegnati in questo intervallo. Nessuna QA visiva o test runtime eseguito.
+
+### Miglioramenti UX supportati staticamente, NON certificati runtime
+
+1. `static/js/workout/queue.js`: la risposta di una richiesta in volo rimuove soltanto la stessa operazione tramite controllo di identità; riduce la possibilità che una seconda correzione di carico/ripetizioni venga eliminata dalla coda. **Collegamento: FW-REV-001**, ancora aperto per test.
+2. `static/js/sync.js`: piano pasti fuso per giorno e slot, con trattamento degli ingredienti e conflitti; migliora la conservazione di correzioni indipendenti. **FW-REV-003** ancora in verifica; limitazione residuale ingredienti con identità ambigua.
+3. `static/js/store.js`: `conflictNotice()` distingue versione locale conservata e voce remota mantenuta dopo cancellazione locale, con istruzione esplicita di eliminarla nuovamente se necessario. **FW-REV-008**; rimane un avviso temporaneo da valutare su dispositivo.
+4. `static/js/logout.js:15-30`: tentativo di flush prima di uscire, conteggio delle modifiche pendenti, richiesta di conferma prima dello scarto e pulizia effettiva della coda. **FW-REV-006**: fix staticamente supportato, non chiuso.
+
+### Rischi prioritari già registrati, senza nuovi ID UX
+
+- **FW-REV-009 (P1), con FW-REV-002:** timestamp delle serie normalizzati al secondo consentono collisioni tra DELETE e PUT offline nello stesso secondo; non presumere integrità delle serie.
+- **FW-REV-010 (P2):** `static/js/logout.js:25-29` ignora errore HTTP di revoca e `static/js/platform.js:65-68` ignora errore Keystore clear; l'app può riavviarsi pur mantenendo un token recuperabile. Non è dimostrata un'occorrenza in produzione.
+- **FW-ARCH-001 (P2):** resta necessario chiarire il messaggio di ripristino rispetto ai domini realmente sostituiti. Proprietà chat 02.
+
+### Rivalutazione dei finding UX proprietari
+
+| Finding | Stato a `5e333bd` | Evidenza |
+| --- | --- | --- |
+| **FW-UX-001 (P2)** | **Aperto** | `static/js/views/shopping.js:242-250`: rimozione immediata senza Undo |
+| **FW-UX-002 (P2)** | **Aperto** | `static/js/ui.js:32-35`: semantica tab senza navigazione completa da tastiera |
+| **FW-UX-003 (P2)** | **Aperto** | `static/js/views/shopping.js:51-52`: bottoni annidati nel label della checkbox |
+
+### Test, regressioni e prossima verifica
+
+- **Test eseguiti dal reviewer UX:** nessuno; solo ispezione di diff e file GitHub.
+- **Test aggiunti dal maker:** sorgenti di test JS, Python e Playwright presenti nei commit; nessuna attestazione di esito da parte di questa chat.
+- **Test mancanti:** Undo della rimozione, indipendenza checkbox/pulsanti, accessibilità tab da tastiera, viewport e schermate reali, APK Android e ciclo offline→online→riavvio, errori HTTP+Keystore, timestamp subsecondo.
+- **Regressioni UX nuove accertate:** nessuna oltre ai rischi registrati dalla chat 01; assenza di QA runtime impedisce di escluderle.
+- **Prossima azione:** priorità ai problemi di integrità serie e logout di proprietà chat 01, quindi tre finding FW-UX con prove di interazione; non assegnare duplicati né avanzare il checkpoint.
+
+Questa appendice riflette il codice fino a `5e333bd`; la sezione iniziale conserva intenzionalmente il contesto storico precedente.
