@@ -3,10 +3,12 @@
 // confermare esplicitamente di volerle eliminare. Senza conferma non si esce e non si tocca nulla.
 // L'uscita non si dà mai per riuscita se non lo è (FW-REV-010): se il server non revoca la sessione o il
 // Keystore non elimina il token, l'utente lo viene a sapere. Se il token non è eliminato e nessun canale
-// registra l'uscita (memoria del dispositivo piena), l'avviso dice che alla riapertura l'app potrebbe
-// rientrare da sola e che la sessione va revocata da Impostazioni.
+// registra l'uscita (memoria del dispositivo piena) conta la revoca: con la sessione revocata il token rimasto
+// non vale più e l'uscita si conclude con un avviso; senza revoca nulla impedirebbe all'app di rientrare da
+// sola alla riapertura, quindi l'uscita NON si conclude: l'utente resta collegato, i dati sul dispositivo non
+// vengono toccati e un avviso dice cosa fare.
 import { request } from "./api.js";
-import { setToken, standalone } from "./platform.js";
+import { keepToken, setToken, standalone, token } from "./platform.js";
 import { clearLocalState, syncState, unsentStateCount } from "./store.js";
 import { clearQueue, flush, pendingCount, rejected } from "./workout/queue.js";
 
@@ -19,17 +21,21 @@ const NOT_REVOKED = "Il server non ha risposto: la sessione di questo dispositiv
   + "sessione, quando il server è raggiungibile revocala da Impostazioni → Dati e accesso.\n\nUscire comunque?";
 const TOKEN_NOT_WIPED = "Sei uscito, ma l'accesso salvato non è stato eliminato dall'archivio sicuro di Android. "
   + "L'app non lo userà più e riproverà a eliminarlo a ogni avvio.";
-const TOKEN_UNPROTECTED = "Sei uscito, ma l'accesso salvato non è stato eliminato dall'archivio sicuro di Android "
-  + "e il dispositivo non ha potuto registrare l'uscita (memoria piena?).\n\n"
-  + "Se alla riapertura l'app dovesse rientrare da sola, la sessione è ancora valida: revocala da "
-  + "Impostazioni → Dati e accesso appena possibile.";
+const TOKEN_DEAD_NOT_WIPED = "Sei uscito e il server ha revocato la sessione: l'accesso salvato non è più valido. "
+  + "Non è stato però eliminato dall'archivio sicuro di Android e il dispositivo non ha potuto registrare l'uscita "
+  + "(memoria piena?).";
+const SIGN_OUT_INCOMPLETE = "Uscita non riuscita: sei ancora collegato.\n\n"
+  + "Il server non ha revocato la sessione, l'accesso salvato non è stato eliminato dall'archivio sicuro di Android "
+  + "e il dispositivo non ha potuto registrare l'uscita (memoria piena?). Uscendo così, alla riapertura l'app "
+  + "potrebbe rientrare da sola.\n\nNulla è stato eliminato da questo dispositivo. Riprova quando il server è "
+  + "raggiungibile o dopo aver liberato spazio.";
 const TOKEN_STILL_VALID = "\n\nLa sessione è ancora valida sul server: revocala da Impostazioni → Dati e accesso "
   + "appena possibile.";
 
 /** Quante modifiche esistono solo su questo dispositivo (coda, scarti, stato in attesa o rifiutato). */
 export const unsentCount = () => pendingCount() + rejected().length + unsentStateCount();
 
-/** @returns false se l'utente ha rinunciato o se l'uscita non è possibile (nulla è cambiato); altrimenti
+/** @returns false se l'utente ha rinunciato o se l'uscita non è possibile (resta collegato); altrimenti
  *  ricarica la pagina */
 export async function signOut({ all = false } = {}) {
   if (unsentCount()) {
@@ -47,10 +53,17 @@ export async function signOut({ all = false } = {}) {
     return false;
   }
   if (!revoked && !confirm(NOT_REVOKED)) return false;
+  const held = token();
   const outcome = await setToken(null); // true = eliminazione confermata; "marked" = uscita registrata; false = nessun canale
+  if (outcome === false && !revoked) {
+    keepToken(held); // né revocato, né eliminato, né registrato: l'uscita non è avvenuta
+    alert(SIGN_OUT_INCOMPLETE);
+    return false;
+  }
   clearQueue();
   clearLocalState();
-  if (outcome !== true) alert((outcome === "marked" ? TOKEN_NOT_WIPED : TOKEN_UNPROTECTED) + (revoked ? "" : TOKEN_STILL_VALID));
+  if (outcome === "marked") alert(TOKEN_NOT_WIPED + (revoked ? "" : TOKEN_STILL_VALID));
+  else if (outcome === false) alert(TOKEN_DEAD_NOT_WIPED);
   location.reload();
   return true;
 }

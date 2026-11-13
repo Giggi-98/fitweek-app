@@ -7,6 +7,8 @@
 // l'uscita viene registrata in localStorage e, se anche quello non scrive, su un cookie della WebView (canale
 // indipendente). Se non funziona nessun canale, all'avvio l'app non rientra da sola: senza memoria scrivibile
 // non si può verificare lo stato di uscita, e il token rimasto viene eliminato senza essere usato (fail-closed).
+// Se all'uscita non riesce nulla (né revoca sul server, né eliminazione, né marcatore) l'uscita non si
+// conclude: `logout.js` rimette in uso il token con `keepToken()` e l'utente resta collegato, sapendolo.
 import { storage } from "./util.js";
 
 const config = globalThis.FITWEEK_APP || null;
@@ -144,7 +146,8 @@ export const token = () => (standalone ? (memToken !== undefined ? memToken : st
 
 /** Uscita (`value` null): @returns true solo se l'eliminazione dal Keystore è confermata; "marked" se non lo
  *  è ma l'uscita è registrata su almeno un canale (l'app non rientrerà da sola); false se nessun canale ha
- *  registrato nulla — resta il controllo all'avvio, ma chi chiama deve avvisare l'utente più a fondo. */
+ *  registrato nulla: resta solo il controllo all'avvio, che non basta se la memoria torna scrivibile prima
+ *  della riapertura. Chi chiama non deve dare l'uscita per conclusa se la sessione non è revocata sul server. */
 export async function setToken(value) {
   memToken = value || null;
   const plugin = secureStore();
@@ -168,6 +171,12 @@ export async function setToken(value) {
   if (value) storage.set(TOKEN_KEY, value);
   else storage.remove(TOKEN_KEY);
   return true;
+}
+
+/** Uscita non conclusa (FW-REV-010): la sessione continua con il token di prima, solo in memoria.
+ *  Nulla viene scritto: nel Keystore il token c'è ancora, proprio perché l'eliminazione non è riuscita. */
+export function keepToken(value) {
+  if (standalone && value) memToken = value;
 }
 
 export const apiUrl = (path) => serverUrl() + path;

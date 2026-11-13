@@ -103,17 +103,57 @@ test("FW-REV-010: clear() silenzioso viene neutralizzato dalla sovrascrittura �
   assert.equal(await restart(), null);
 });
 
-test("FW-REV-010: Keystore guasto e memoria del dispositivo piena → l'avviso dice che l'app potrebbe rientrare da sola", async () => {
+test("FW-REV-010: Keystore guasto e memoria del dispositivo piena, sessione revocata → avviso, e nessun rientro al riavvio", async () => {
   await reset({ broken: true });
   cookieFail = true; // la WebView non memorizza i cookie
   const realSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
   globalThis.localStorage.setItem = () => { throw new Error("QuotaExceededError"); };
   assert.equal(await signOut(), true);
   assert.equal(ui.alerts.length, 1);
-  assert.match(ui.alerts[0], /memoria piena|potrebbe rientrare da sola/);
-  assert.match(ui.alerts[0], /Dati e accesso/);
+  assert.match(ui.alerts[0], /memoria piena/);
   assert.equal(await restart(), null, "all'avvio niente rientro mentre la memoria resta piena");
   globalThis.localStorage.setItem = realSetItem;
   cookieFail = false;
   assert.equal(await restart(), null, "il token è stato eliminato all'avvio fail-closed: non torna nemmeno a memoria ripristinata");
+});
+
+test("FW-REV-010: niente revoca, niente eliminazione, nessun canale registra l'uscita → l'uscita NON si conclude e l'utente resta collegato", async () => {
+  await reset({ up: false, broken: true, answer: true });
+  stored.set("fitweek.workoutQueue.sentinel", "1"); // dati locali: non vanno toccati se l'uscita non si conclude
+  cookieFail = true;
+  const realSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  globalThis.localStorage.setItem = () => { throw new Error("QuotaExceededError"); };
+  assert.equal(await signOut(), false, "l'uscita non è riuscita e non viene presentata come tale");
+  assert.equal(ui.reloads, 0, "nessun ritorno alla schermata di accesso");
+  assert.equal(ui.alerts.length, 1);
+  assert.match(ui.alerts[0], /Uscita non riuscita/);
+  assert.match(ui.alerts[0], /ancora collegato/);
+  assert.equal(token(), "tok-attivo", "la sessione locale resta in uso: nulla è cambiato");
+  assert.equal(stored.has("fitweek.workoutQueue.sentinel"), true);
+  // la memoria torna scrivibile PRIMA del riavvio: l'app riparte collegata, come è stato detto all'utente,
+  // e non dopo un'uscita creduta completata
+  globalThis.localStorage.setItem = realSetItem;
+  cookieFail = false;
+  assert.equal(await restart(), "tok-attivo");
+  // adesso l'uscita si può rifare e riesce davvero
+  Object.assign(server, { up: true });
+  Object.assign(ui, { alerts: [], confirms: [] });
+  assert.equal(await signOut(), true);
+  assert.equal(ui.reloads, 1);
+  assert.equal(await restart(), null);
+});
+
+test("FW-REV-010: sessione revocata ma token non eliminato e uscita non registrata → l'avviso non promette ciò che non è avvenuto; il token rimasto non vale più", async () => {
+  await reset({ broken: true });
+  cookieFail = true;
+  const realSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  globalThis.localStorage.setItem = () => { throw new Error("QuotaExceededError"); };
+  assert.equal(await signOut(), true);
+  assert.deepEqual(server.calls, ["POST /api/logout"], "premessa: il server ha revocato la sessione");
+  assert.equal(ui.alerts.length, 1);
+  assert.match(ui.alerts[0], /ha revocato la sessione/);
+  assert.doesNotMatch(ui.alerts[0], /ancora valida/);
+  assert.equal(token(), null);
+  globalThis.localStorage.setItem = realSetItem;
+  cookieFail = false;
 });
