@@ -42,3 +42,40 @@ In `static/js/views/shopping.js` separare checkbox e sua label dai button ricorr
 ## Coordinamento e aggiornamenti
 
 Prima di cambiare gli stati, rileggere su GitHub HEAD main, `REVIEW_LEDGER.md`, ultimo report, `ARCHITECTURE_AUDIT.md`, questo backlog e il codice pertinente. Non chiudere FW-UX soltanto per affermazioni del developer. Non duplicare FW-REV/FW-ARCH, non avanzare checkpoint. Solo i due file UX possono essere aggiornati dalla chat 03 con autorizzazione esplicita; verificare sempre la persistenza rileggendo da GitHub.
+
+
+---
+
+## Aggiornamento backlog UX — 2026-11-13 — HEAD applicativo `5e333bd`
+
+Revisione statica incrementale di `70f7607..5e333bd`. La tabella iniziale rimane come storico della baseline; **questa sezione rappresenta l'ordinamento operativo corrente per il codice esaminato**, senza chiudere finding di altri owner. Nessun test browser, APK o Android è stato eseguito. Checkpoint ufficiale Ledger: `null`.
+
+| Ordine attuale | Attività | Priorità | Owner | Stato statico e accettazione |
+| --- | --- | --- | --- | --- |
+| 1 | Proteggere le serie eliminate da scritture offline precedenti nello stesso secondo | P1 | FW-REV-002 / FW-REV-009, chat 01 | **Aperto**; precisione subsecondo e test out-of-order obbligatori |
+| 2 | Logout affidabile quando falliscono revoca HTTP e clear Keystore | P2 | FW-REV-010, chat 01 | **Aperto**; non presentare logout riuscito né ri-autenticare silenziosamente |
+| 3 | Undo eliminazione accidentale di lista e dispensa | P2 | FW-UX-001, chat 03 | **Aperto**; Undo robusto contro persistenza asincrona, reload e rete instabile |
+| 4 | Separare checkbox, etichetta e pulsanti nella lista spesa | P2 | FW-UX-003, chat 03 | **Aperto**; tastiera/tocco/reader, nessun toggle collaterale |
+| 5 | Completa semantica e navigazione tastiera delle schede | P2 | FW-UX-002, chat 03 | **Aperto**; focus, frecce, Home/End, aria-controls/panel o pattern alternativo valido |
+| 6 | Verifica effettiva fix coda e merge | P1/P2 | FW-REV-001/003/006/008, chat 01 | Fix **supportati staticamente**, test e UX Android non eseguiti |
+| 7 | Chiarire restore domini e conferma | P2 | FW-ARCH-001, chat 02 | **Aperto**; UI aderente alla matrice dei dati |
+| 8 | Tap count flussi quotidiani Android | Verifica | UX-QA-001 | Non misurato |
+| 9 | Responsive, focus e accessibilità reale | Verifica | UX-QA-002 | Non misurato |
+| 10 | Offline→online→riavvio APK stable/next | Verifica | UX-QA-003 | Non testato |
+
+### Stato dopo il diff
+
+- **FW-UX-001/002/003:** tutti aperti; nessuna modifica risolutiva nei file pertinenti a `5e333bd`.
+- **FW-REV-001:** identity settlement della queue; miglioramento statico, test indipendenti pendenti.
+- **FW-REV-003:** merge slot pasti; miglioramento statico, test indipendenti pendenti.
+- **FW-REV-006:** preavviso/scarto esplicito della queue al logout; miglioramento statico; distinguere FW-REV-010.
+- **FW-REV-008:** avviso di conflitto delete/update; miglioramento statico, ancora da provare su Android.
+- **FW-REV-009/010:** finding ufficiali della chat 01, **non duplicare** nel namespace FW-UX.
+
+### Indicazioni al maker
+
+1. Correggere prima i rischi di integrità dei dati e falsa uscita, coordinandosi con chat 01.
+2. Implementare FW-UX-001 e FW-UX-003 insieme in `static/js/views/shopping.js`; riusare componenti esistenti e includere test di Undo, checkbox e bottoni.
+3. Implementare FW-UX-002 con semantica tastiera corretta e test delle viste che usano il componente `tabs()`.
+4. Eseguire e riportare test effettivi, separando screenshot/browser da Android reale; evitare redesign, dipendenze o migrazioni non necessari.
+5. Prima di qualsiasi futura scrittura rileggere l'HEAD branch, il Ledger e gli SHA dei due file UX; preservare storia, contributi concorrenti e proprietà documentali.
