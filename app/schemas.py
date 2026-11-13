@@ -173,8 +173,16 @@ class ProgramWeekPut(Strict):
     week: int = Field(ge=1, le=52)
 
 
+# Domini facoltativi di un backup JSON, nell'ordine in cui sono stati aggiunti al formato (v3, poi v4).
+# Stato a blob e sedute ci sono sempre. Vedi `BackupRestore` e il contratto del ripristino in docs/API.md.
+BACKUP_OPTIONAL_DOMAINS = ("meal_templates", "meal_logs", "reminders", "foods",
+                           "sleep_logs", "exercise_notes", "grocery_spend")
+
+
 class BackupRestore(BaseModel):
-    """Backup v1 (solo stato) o v2 (stato + sedute). Le sedute sono validate qui sotto."""
+    """Backup v1 (solo stato), v2 (stato + sedute), v3 e v4 (più i domini facoltativi). Conta la presenza del
+    campo, non l'etichetta del formato: un dominio assente (o `null`) NON viene toccato dal ripristino, uno
+    presente, anche vuoto, viene sostituito. Le sedute sono validate qui sotto."""
     model_config = ConfigDict(extra="ignore")
     format: Literal["fitweek-backup-v1", "fitweek-backup-v2", "fitweek-backup-v3", "fitweek-backup-v4"]
     data: AppState

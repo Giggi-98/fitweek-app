@@ -6,6 +6,7 @@ import { panel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
 import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
+import { isBackup, restoreConfirmText, restoreDoneText } from "../backup.js";
 import { signOut } from "../logout.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
@@ -212,7 +213,7 @@ export function render() {
       `${icon("download")}Backup`,
       standalone
         ? `<p class="subtle">Backup automatico ogni notte sul server (${esc(serverUrl())}). Per scaricare o ripristinare una copia apri FitWeek dal browser.</p>`
-        : `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia completa in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
+        : `<p class="subtle">Backup automatico ogni notte sul server. Qui scarichi una copia dei tuoi dati in JSON.</p><a class="btn primary" href="/api/backup" download>${icon("download")}Scarica backup</a><hr class="separator"><div class="field"><label for="import-file">Ripristina da file</label><input id="import-file" type="file" accept="application/json,.json"></div><button class="btn danger" data-import-backup>Ripristina (sostituisce i dati attuali)</button>`,
     )}${notSentPanel()}${sessionPanel()}${panel(
       `${icon("info")}Privacy`,
       `<div class="summary-list"><div class="summary-row"><i>${icon("package", "sm")}</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker.</small></div></div><div class="summary-row"><i>${icon("utensils", "sm")}</i><div><strong>Ricerca prodotti</strong><small>Quando cerchi un alimento, il solo testo cercato va a Open Food Facts. Nient'altro esce dal server.</small></div></div><div class="summary-row"><i>${icon("user", "sm")}</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">Uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
@@ -279,12 +280,12 @@ export async function onClick(t) {
     } catch {
       return toast("File non leggibile"), false;
     }
-    if (!/^fitweek-backup-v[1234]$/.test(obj?.format || "")) return toast("Non è un backup FitWeek"), false;
-    if (!confirm("Il ripristino sostituisce tutti i dati attuali (il server ne conserva una copia). Continuare?")) return false;
+    if (!isBackup(obj)) return toast("Non è un backup FitWeek"), false;
+    if (!confirm(restoreConfirmText(obj))) return false;
     try {
       const out = await request("/api/v1/restore", { method: "POST", body: obj });
       await loadAll();
-      toast(`Backup ripristinato (${out.sessions} sedute)`);
+      toast(restoreDoneText(out), { timeout: 7000 });
     } catch (e) {
       toast(`Ripristino rifiutato: ${e.message}${e.field ? ` (${e.field})` : ""}`, { timeout: 7000 });
     }

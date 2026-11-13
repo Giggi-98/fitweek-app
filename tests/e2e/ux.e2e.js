@@ -1,5 +1,5 @@
 // Test end-to-end dei finding UX: rimozione annullabile in lista e dispensa (FW-UX-001), schede da tastiera
-// (FW-UX-002), riga della lista senza pulsanti dentro la label (FW-UX-003).
+// (FW-UX-002), riga della lista senza pulsanti dentro la label (FW-UX-003), conferma del ripristino (FW-ARCH-001).
 // Esecuzione: scripts/e2e.sh (oppure E2E_ONLY=ux scripts/e2e.sh)
 const { chromium, devices } = require('playwright');
 const B = process.env.E2E_URL || 'http://127.0.0.1:18088';
@@ -153,6 +153,32 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
     return bad;
   });
   check('schede: in ogni vista ogni elenco di schede ha una sola sosta per Tab', everyList.length === 0, everyList.join(' | '));
+  // ---- FW-ARCH-001: la conferma del ripristino dice cosa viene sostituito e cosa resta
+  const full = await api('/api/backup');
+  const legacy = { format: 'fitweek-backup-v2', version: full.version, data: full.data, workout_sessions: full.workout_sessions };
+  await api('/api/v1/meal-logs/e2e-keep', 'PUT', { date: full.data.profile.programStart || '2026-11-10', slot: 'lunch', description: 'Resta dopo il ripristino' });
+  const mealsBefore = (await api('/api/backup')).meal_logs.length;
+  const restoreWith = async (obj, accept) => {
+    await page.click('.topbar [data-view=settings]');
+    await page.click('[data-tab=data]');
+    await page.setInputFiles('#import-file', { name: 'backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(obj)) });
+    let asked = '';
+    page.once('dialog', (d) => { asked = d.message(); accept ? d.accept() : d.dismiss(); });
+    await page.click('[data-import-backup]');
+    for (let i = 0; i < 100 && !asked; i++) await page.waitForTimeout(50);
+    return asked;
+  };
+  let asked = await restoreWith(legacy, false);
+  check('ripristino di un backup vecchio: la conferma elenca cosa viene sostituito e cosa resta', /SOSTITUISCE/.test(asked) && /sedute e serie/.test(asked) && /RESTANO come sono ora/.test(asked) && /diario dei pasti/.test(asked) && /sonno/.test(asked), asked.replace(/\n/g, ' ').slice(0, 160));
+  check('ripristino annullato: nulla è cambiato', (await api('/api/backup')).meal_logs.length === mealsBefore);
+  asked = await restoreWith(legacy, true);
+  await page.waitForSelector('#toast:not(.hidden)');
+  for (let i = 0; i < 100 && !/Backup ripristinato/.test(await page.textContent('#toast')); i++) await page.waitForTimeout(50);
+  const done = await page.textContent('#toast');
+  check('ripristino di un backup vecchio: il diario dei pasti resta e il messaggio lo dice', /Non toccati: .*diario dei pasti/.test(done) && (await api('/api/backup')).meal_logs.length === mealsBefore, done);
+  asked = await restoreWith(full, false);
+  check('ripristino di un backup completo: la conferma non parla di dati che restano', /SOSTITUISCE/.test(asked) && !/RESTANO/.test(asked) && /copia di tutti i dati attuali/.test(asked), asked.replace(/\n/g, ' ').slice(0, 120));
+
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();
   console.log(out.join('\n'));

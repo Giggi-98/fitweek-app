@@ -2,13 +2,13 @@
 
 Base: stessa origine della SPA. Formato JSON. Errori: `{"detail": "messaggio"}`. OpenAPI/Swagger disabilitati in produzione (`docs_url=None`).
 
-## Endpoint attuali (verificati 2026-11-09)
+## Endpoint al 2026-11-09 (storico: le sezioni successive, in ordine di versione, li aggiornano)
 
 | Metodo | Path | Auth | Origin check | Descrizione |
 |---|---|---|---|---|
 | GET | `/api/health` | no | — | `{"ok": true}`; usato dall'healthcheck Docker |
 | POST | `/api/login` | no | sì | body `{password}` → 200 + cookie `fitweek_session`; 401 se errata |
-| POST | `/api/logout` | no | sì | cancella il cookie (il token resta valido, vedi audit) |
+| POST | `/api/logout` | no | sì | cancella il cookie; **da M1 revoca anche la sessione sul server** (al 2026-11-09 il token restava valido) |
 | GET | `/api/state` | sì | — | `{version, data}` |
 | PUT | `/api/state` | sì | sì | body `{version, data}`; 409 se versione obsoleta; 400 se mancano chiavi; 413 se > 2 MB → `{ok, version}` |
 | GET | `/api/backup` | sì | — | `{format: "fitweek-backup-v1", version, data}` come allegato |
@@ -54,7 +54,7 @@ Tutte richiedono login; le scritture verificano `Origin`. Errori di validazione:
 | DELETE | `/api/v1/workout-sessions/{id}` | eliminazione logica (`deleted_at`) |
 | PUT | `/api/v1/workout-sessions/{id}/sets/{exercise_id}/{set_index}` | `{kg, reps, rir, completed}`; upsert sulla chiave naturale |
 | DELETE | `/api/v1/workout-sessions/{id}/sets/{exercise_id}/{set_index}` | rimuove la serie |
-| POST | `/api/v1/restore` | backup `fitweek-backup-v1` o `v2`; sostituisce stato e sedute dopo un backup SQLite `pre-restore-*` |
+| POST | `/api/v1/restore` | backup `fitweek-backup-v1`…`v4`; sostituisce stato e sedute dopo un backup SQLite `pre-restore-*`; per gli altri domini vedi "API 1.10.5" |
 
 `GET /api/backup` ora produce `fitweek-backup-v2`: `{format, version, data, workout_sessions[]}`.
 
@@ -110,6 +110,33 @@ Modifiche a endpoint esistenti:
 - Tutte le rotte autenticate accettano il token sia dal cookie sia da `Authorization: Bearer <token>`; `POST /api/logout` revoca la sessione in entrambi i casi.
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
+
+## API 1.10.5 (2026-11-13) — contratto del ripristino da backup JSON (FW-ARCH-001)
+
+`POST /api/v1/restore` non cambia comportamento: lo dichiara. La risposta ora contiene anche `replaced` e `kept` (chiavi dei domini), e l'app mostra lo stesso elenco **prima** della conferma (`static/js/backup.js`).
+
+Regola: conta la **presenza del campo** nel file, non l'etichetta `format`. Campo presente, anche se elenco vuoto → il dominio viene sostituito (svuotato, se vuoto). Campo assente o `null` → il dominio resta com'è.
+
+| Dominio (chiave) | Tabelle | v1 | v2 | v3 | v4 |
+|---|---|---|---|---|---|
+| `state` | `app_state` (profilo, scheda, piano pasti, lista spesa, dispensa, pesate) | sostituito | sostituito | sostituito | sostituito |
+| `workouts` | `workout_sessions`, `set_logs` | sostituito (convertito da `data.workouts`) | sostituito | sostituito | sostituito |
+| `meal_templates`, `meal_logs`, `reminders`, `foods` | omonime | resta | resta | sostituito | sostituito |
+| `sleep_logs`, `exercise_notes`, `grocery_spend` | omonime | resta | resta | resta | sostituito |
+
+La colonna indica i file prodotti da quella versione dell'app; un file modificato a mano segue la regola della presenza del campo.
+
+Dati che il backup JSON **non contiene** e cosa ne fa il ripristino:
+
+| Dato | Effetto del ripristino |
+|---|---|
+| `set_tombstones` (segni di eliminazione delle serie) | azzerati sempre, insieme alle sedute |
+| `reminder_acks` (fatto / non oggi / posticipa) | azzerati se `reminders` viene sostituito, altrimenti restano |
+| voci eliminate (sedute, pasti, alimenti, sonno con `deleted_at`) | non sono nel file; spariscono dai domini sostituiti |
+| `sessions` (accessi dei dispositivi) | mai toccati |
+| orari tecnici (`updated_at`, `created_at` di pasti abituali, alimenti, promemoria, sonno, note, spese) | riscritti con l'ora del ripristino |
+
+Prima di ogni ripristino il server salva l'intero database in `/data/backups/pre-restore-*.sqlite`; tutte le sostituzioni avvengono in una sola transazione. Per riavere esattamente lo stato di un momento passato serve il backup SQLite (`scripts/restore.sh`), non il JSON. Test: `tests/test_restore_matrix.py`, `tests/js/backup.test.mjs`, e2e `ux`.
 
 ## API 1.10.4 (2026-11-13) — orari delle modifiche al millisecondo (FW-REV-009)
 

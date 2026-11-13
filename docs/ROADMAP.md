@@ -53,6 +53,13 @@ Ciclo 3 (1.10.5, 2026-11-13), da `UX_AUDIT.md`/`UX_BACKLOG.md` — **correzione 
 | FW-UX-003 (P2) | sì, e2e `ux`: 30 pulsanti dentro le label | `shopping.js` + `app.css`: `.shoprow` | e2e `ux` |
 | FW-UX-002 (P2) | confermato leggendo `ui.js` | `ui.js`: sosta unica e `tabKey`; `main.js`: tasti e fuoco. **Parziale**: nessun `tabpanel` | `tests/js/ui.test.mjs`, e2e `ux` |
 
+Ciclo 4 (1.10.5, 2026-11-13), da `ARCHITECTURE_AUDIT.md`/`TECHNICAL_DEBT.md` — **correzione implementata, in attesa di verifica indipendente**. Scelte in D-030.
+
+| Finding | Riprodotto dal maker | Correzione | Test |
+|---|---|---|---|
+| FW-ARCH-001 (P2) | sì: pytest con dati sentinella per v1–v4 conferma la matrice; il testo della conferma prometteva "tutti i dati" | `main.py`: `replaced`/`kept` nella risposta; `backup.js` + `settings.js`: conferma e messaggio; matrice in `docs/API.md` | `tests/test_restore_matrix.py`, `tests/js/backup.test.mjs`, e2e `ux` |
+| FW-ARCH-002 (P2) | confermato leggendo il documento | `docs/ARCHITECTURE.md` riscritto, storico in fondo | nessun test automatico (documento) |
+
 Non fatto in questo ciclo: deploy (lo schema 9 arriva sull'istanza in uso solo al deploy, con backup pre-migrazione automatico), APK `next` ricompilato, prova su telefono reale.
 
 ## M1 — Stabilizzazione, protezione dati, sicurezza
@@ -200,7 +207,7 @@ Non fatto: offline completo (registrare senza server: oggi la coda locale copre 
 
 ## 1.10.5 (2026-11-13) — finding UX della chat 03
 
-FW-UX-001 (rimozione annullabile in lista e dispensa), FW-UX-003 (riga della lista senza pulsanti nella label), FW-UX-002 (schede da tastiera; collegamento scheda–pannello non fatto): vedi la sezione "Review indipendente" in cima e D-029. Solo frontend: nessun cambio a server, API o schema. Stato: nel repository, **non in produzione**; APK `next` da ricompilare.
+FW-UX-001 (rimozione annullabile in lista e dispensa), FW-UX-003 (riga della lista senza pulsanti nella label), FW-UX-002 (schede da tastiera; collegamento scheda–pannello non fatto): vedi la sezione "Review indipendente" in cima e D-029. Poi FW-ARCH-001 (il ripristino dichiara cosa sostituisce e cosa lascia: due campi in più nella risposta, nessun cambio di comportamento) e FW-ARCH-002 (`docs/ARCHITECTURE.md` riscritto sul codice): D-030. Nessun cambio di schema. Stato: nel repository, **non in produzione**; APK `next` da ricompilare.
 
 ## 1.10.4 (2026-11-13) — correzioni della seconda review
 

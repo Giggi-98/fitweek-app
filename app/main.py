@@ -15,7 +15,7 @@ from .config import BASE_DIR, Settings, load_settings
 from .db import backup_to, connect, snapshot, transaction
 from .logging_setup import setup_logging
 from .migrations import run_migrations
-from .schemas import BackupRestore, LoginBody, StatePut
+from .schemas import BACKUP_OPTIONAL_DOMAINS, BackupRestore, LoginBody, StatePut
 from .security import (
     BASE_HEADERS,
     COOKIE_NAME,
@@ -216,7 +216,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     @app.post("/api/v1/restore", dependencies=[Depends(check_origin), Depends(require_session)])
     def restore(body: BackupRestore):
         """Sostituisce stato e sedute con il contenuto del backup, dopo un backup SQLite automatico.
-        Un backup v1 (sedute dentro data.workouts) viene convertito nelle tabelle dedicate."""
+        Un backup v1 (sedute dentro data.workouts) viene convertito nelle tabelle dedicate.
+        I domini facoltativi sono sostituiti solo se presenti nel file; quelli assenti restano com'erano.
+        La risposta elenca gli uni (`replaced`) e gli altri (`kept`): è il contratto mostrato all'utente."""
+        present = [d for d in BACKUP_OPTIONAL_DOMAINS if getattr(body, d) is not None]
         sessions_in = [s.model_dump() for s in body.workout_sessions]
         if body.format == "fitweek-backup-v1":
             now = now_iso()
@@ -291,7 +294,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     for r in body.reminders:
                         c.execute("INSERT INTO reminders VALUES (?,?,?,?,?,?,?,?,?,?)",
                                   (r.id, r.weekday, r.time, r.kind, r.slot, r.title, r.action, int(r.enabled), now, now))
-        return {"ok": True, "version": version + 1, "sessions": len(sessions_in)}
+        return {"ok": True, "version": version + 1, "sessions": len(sessions_in),
+                "replaced": ["state", "workouts", *present],
+                "kept": [d for d in BACKUP_OPTIONAL_DOMAINS if d not in present]}
 
     # ---- app Android ----------------------------------------------------------------------
     def apk_meta(channel: str = "stable") -> dict | None:
