@@ -100,3 +100,19 @@ def test_restore_reminder_acks_follow_reminders(auth_client, settings):
     assert count() == 1, "promemoria non nel file: restano, con le loro risposte"
     assert auth_client.post("/api/v1/restore", json=backup).status_code == 200
     assert count() == 0, "promemoria sostituiti: le risposte, che il backup non contiene, vengono azzerate"
+
+
+def test_restore_rolls_back_completely_when_a_domain_fails(auth_client):
+    """Un file con due notti nella stessa data viola la chiave primaria a metà ripristino, dopo che blob e
+    sedute sono già stati riscritti: la transazione annulla TUTTO e il server risponde 422, non 500."""
+    new_session(auth_client)
+    write_all(auth_client, "prima")
+    backup = auth_client.get("/api/backup").json()
+    backup["sleep_logs"] = [
+        {"date": DAY, "bed_time": "23:00", "wake_time": "07:00", "source": "manual", "note": "prima"},
+        {"date": DAY, "bed_time": "23:30", "wake_time": "07:30", "source": "manual", "note": "duplicata"},
+    ]
+    before = auth_client.get("/api/backup").json()
+    r = auth_client.post("/api/v1/restore", json=backup)
+    assert r.status_code == 422, "input malformato → errore 4xx esplicito, mai 500"
+    assert auth_client.get("/api/backup").json() == before, "nessun dominio cambiato: il ripristino è atomico"

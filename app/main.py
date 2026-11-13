@@ -234,66 +234,70 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         blob = json.dumps(body.data.model_dump(mode="json"), ensure_ascii=False)
         with connect(settings.db_path) as c:
             backup_to(c, settings.backup_dir / f"pre-restore-{time.strftime('%Y%m%d-%H%M%S')}.sqlite")
-            with transaction(c):
-                version = c.execute("SELECT version FROM app_state WHERE id=1").fetchone()[0]
-                c.execute("UPDATE app_state SET version=?, json=? WHERE id=1", (version + 1, blob))
-                c.execute("DELETE FROM set_logs")
-                c.execute("DELETE FROM workout_sessions")
-                for s in sessions_in:
-                    sets = s.pop("sets")
-                    cols = ", ".join(s)
-                    c.execute(f"INSERT OR REPLACE INTO workout_sessions ({cols}) VALUES ({','.join('?' * len(s))})",
-                              tuple(s.values()))
-                    for x in sets:
-                        c.execute(
-                            "INSERT OR REPLACE INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir,"
-                            " completed, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                            (s["id"], x["exercise_id"], x["set_index"], x["kg"], x["reps"], x["rir"],
-                             int(x["completed"]), x["logged_at"]),
-                        )
-                now = now_iso()
-                if body.meal_templates is not None:
-                    c.execute("DELETE FROM meal_templates")
-                    for t in body.meal_templates:
-                        c.execute("INSERT INTO meal_templates (id, slot, name, kcal, protein_g, nutrition_source,"
-                                  " nutrition_note, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                                  (t.id, t.slot, t.name, t.kcal, t.protein_g, t.nutrition_source,
-                                   t.nutrition_note or "", t.position, now, now))
-                if body.meal_logs is not None:
-                    c.execute("DELETE FROM meal_logs")
-                    for m in body.meal_logs:
-                        items = json.dumps([i.model_dump() for i in m.items], ensure_ascii=False) if m.items else None
-                        c.execute("INSERT INTO meal_logs (id, date, slot, status, description, template_id, kcal,"
-                                  " protein_g, nutrition_source, note, logged_at, updated_at, items)"
-                                  " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
-                                  (m.id, m.date, m.slot, m.status, m.description, m.template_id, m.kcal,
-                                   m.protein_g, m.nutrition_source, m.note, m.logged_at, now, items))
-                if body.foods is not None:
-                    c.execute("DELETE FROM foods")
-                    for f in body.foods:
-                        c.execute("INSERT INTO foods (id, category, name, kcal, protein_g, nutrition_source, note,"
-                                  " use_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
-                                  (f.id, f.category, f.name, f.kcal, f.protein_g, f.nutrition_source, f.note or "",
-                                   f.use_count, now, now))
-                if body.sleep_logs is not None:
-                    c.execute("DELETE FROM sleep_logs")
-                    for s in body.sleep_logs:
-                        c.execute("INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, updated_at)"
-                                  " VALUES (?,?,?,?,?,?)", (s.date, s.bed_time, s.wake_time, s.source, s.note, now))
-                if body.exercise_notes is not None:
-                    c.execute("DELETE FROM exercise_notes")
-                    for n in body.exercise_notes:
-                        c.execute("INSERT INTO exercise_notes VALUES (?,?,?)", (n.exercise_id, n.note, now))
-                if body.grocery_spend is not None:
-                    c.execute("DELETE FROM grocery_spend")
-                    for g in body.grocery_spend:
-                        c.execute("INSERT INTO grocery_spend VALUES (?,?,?,?)", (g.week_start, g.amount, g.note, now))
-                if body.reminders is not None:
-                    c.execute("DELETE FROM reminder_acks")
-                    c.execute("DELETE FROM reminders")
-                    for r in body.reminders:
-                        c.execute("INSERT INTO reminders VALUES (?,?,?,?,?,?,?,?,?,?)",
-                                  (r.id, r.weekday, r.time, r.kind, r.slot, r.title, r.action, int(r.enabled), now, now))
+            try:
+                with transaction(c):
+                    version = c.execute("SELECT version FROM app_state WHERE id=1").fetchone()[0]
+                    c.execute("UPDATE app_state SET version=?, json=? WHERE id=1", (version + 1, blob))
+                    c.execute("DELETE FROM set_logs")
+                    c.execute("DELETE FROM workout_sessions")
+                    for s in sessions_in:
+                        sets = s.pop("sets")
+                        cols = ", ".join(s)
+                        c.execute(f"INSERT OR REPLACE INTO workout_sessions ({cols}) VALUES ({','.join('?' * len(s))})",
+                                  tuple(s.values()))
+                        for x in sets:
+                            c.execute(
+                                "INSERT OR REPLACE INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir,"
+                                " completed, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                (s["id"], x["exercise_id"], x["set_index"], x["kg"], x["reps"], x["rir"],
+                                 int(x["completed"]), x["logged_at"]),
+                            )
+                    now = now_iso()
+                    if body.meal_templates is not None:
+                        c.execute("DELETE FROM meal_templates")
+                        for t in body.meal_templates:
+                            c.execute("INSERT INTO meal_templates (id, slot, name, kcal, protein_g, nutrition_source,"
+                                      " nutrition_note, position, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                      (t.id, t.slot, t.name, t.kcal, t.protein_g, t.nutrition_source,
+                                       t.nutrition_note or "", t.position, now, now))
+                    if body.meal_logs is not None:
+                        c.execute("DELETE FROM meal_logs")
+                        for m in body.meal_logs:
+                            items = json.dumps([i.model_dump() for i in m.items], ensure_ascii=False) if m.items else None
+                            c.execute("INSERT INTO meal_logs (id, date, slot, status, description, template_id, kcal,"
+                                      " protein_g, nutrition_source, note, logged_at, updated_at, items)"
+                                      " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                                      (m.id, m.date, m.slot, m.status, m.description, m.template_id, m.kcal,
+                                       m.protein_g, m.nutrition_source, m.note, m.logged_at, now, items))
+                    if body.foods is not None:
+                        c.execute("DELETE FROM foods")
+                        for f in body.foods:
+                            c.execute("INSERT INTO foods (id, category, name, kcal, protein_g, nutrition_source, note,"
+                                      " use_count, created_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                      (f.id, f.category, f.name, f.kcal, f.protein_g, f.nutrition_source, f.note or "",
+                                       f.use_count, now, now))
+                    if body.sleep_logs is not None:
+                        c.execute("DELETE FROM sleep_logs")
+                        for s in body.sleep_logs:
+                            c.execute("INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, updated_at)"
+                                      " VALUES (?,?,?,?,?,?)", (s.date, s.bed_time, s.wake_time, s.source, s.note, now))
+                    if body.exercise_notes is not None:
+                        c.execute("DELETE FROM exercise_notes")
+                        for n in body.exercise_notes:
+                            c.execute("INSERT INTO exercise_notes VALUES (?,?,?)", (n.exercise_id, n.note, now))
+                    if body.grocery_spend is not None:
+                        c.execute("DELETE FROM grocery_spend")
+                        for g in body.grocery_spend:
+                            c.execute("INSERT INTO grocery_spend VALUES (?,?,?,?)", (g.week_start, g.amount, g.note, now))
+                    if body.reminders is not None:
+                        c.execute("DELETE FROM reminder_acks")
+                        c.execute("DELETE FROM reminders")
+                        for r in body.reminders:
+                            c.execute("INSERT INTO reminders VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                      (r.id, r.weekday, r.time, r.kind, r.slot, r.title, r.action, int(r.enabled), now, now))
+            except sqlite3.IntegrityError as e:
+                # file malformato (es. due notti nella stessa data): la transazione ha già annullato tutto
+                raise HTTPException(422, f"backup non valido: {e}") from e
         return {"ok": True, "version": version + 1, "sessions": len(sessions_in),
                 "replaced": ["state", "workouts", *present],
                 "kept": [d for d in BACKUP_OPTIONAL_DOMAINS if d not in present]}
