@@ -118,3 +118,56 @@ def test_restore_clears_deletion_marks(auth_client):
     assert [s["kg"] for s in sets(auth_client)] == [50], "il ripristino riporta la serie del backup"
     # il segno dell'eliminazione (1 giorno fa) è sparito con il ripristino: una modifica di 2 giorni fa vale
     assert auth_client.put(SET, json={"kg": 52, "reps": 8}, headers=at(days=2)).json() == {"ok": True}
+
+
+# --- FW-REV-009: due modifiche nello stesso secondo, arrivate in ordine inverso ---------------------------------
+
+def _same_second(*millis: int) -> list[dict]:
+    """Intestazioni con orari nello stesso secondo (un'ora fa), nel formato che manda il telefono
+    (`Date.toISOString()`: UTC con millisecondi e `Z`)."""
+    second = (datetime.now(timezone.utc) - timedelta(hours=1)).replace(microsecond=0)
+    return [{"X-Edited-At": (second + timedelta(milliseconds=ms)).isoformat(timespec="milliseconds").replace("+00:00", "Z")}
+            for ms in millis]
+
+
+def test_earlier_put_in_same_second_does_not_resurrect_deleted_set(auth_client):
+    put_at_100, delete_at_900 = _same_second(100, 900)
+    new_session(auth_client)
+    assert auth_client.put(SET, json={"kg": 50, "reps": 8}, headers=OLD).json() == {"ok": True}
+    assert auth_client.delete(SET, headers=delete_at_900).json() == {"ok": True}
+    late = auth_client.put(SET, json={"kg": 40, "reps": 10}, headers=put_at_100)  # fatta PRIMA, arrivata dopo
+    assert late.json() == {"ok": True, "stale": True}
+    assert sets(auth_client) == []
+
+
+def test_earlier_edit_in_same_second_does_not_overwrite_set(auth_client):
+    at_100, at_900 = _same_second(100, 900)
+    new_session(auth_client)
+    assert auth_client.put(SET, json={"kg": 50, "reps": 8}, headers=at_900).json() == {"ok": True}
+    assert auth_client.put(SET, json={"kg": 40, "reps": 10}, headers=at_100).json() == {"ok": True, "stale": True}
+    assert auth_client.delete(SET, headers=at_100).json() == {"ok": True, "stale": True}
+    assert [s["kg"] for s in sets(auth_client)] == [50]
+
+
+def test_earlier_edit_in_same_second_does_not_overwrite_meal_sleep_note(auth_client):
+    at_100, at_900 = _same_second(100, 900)
+    meal = {"date": "2026-11-09", "slot": "lunch", "description": "Pasta"}
+    auth_client.put("/api/v1/meal-logs/m1", json=meal, headers=at_900)
+    assert auth_client.put("/api/v1/meal-logs/m1", json={**meal, "description": "Riso"}, headers=at_100).json()["stale"] is True
+    night = "/api/v1/sleep/2026-11-10"
+    auth_client.put(night, json={"bed_time": "00:10", "wake_time": "07:30"}, headers=at_900)
+    assert auth_client.put(night, json={"bed_time": "02:00", "wake_time": "07:30"}, headers=at_100).json()["stale"] is True
+    auth_client.put("/api/v1/exercise-notes/a1", json={"note": "sedile 4"}, headers=at_900)
+    assert auth_client.put("/api/v1/exercise-notes/a1", json={"note": "sedile 2"}, headers=at_100).json()["stale"] is True
+
+
+def test_edit_after_a_value_saved_with_whole_seconds_still_applies(auth_client):
+    """Compatibilità: i dati già salvati hanno orari al secondo (prima di FW-REV-009). Una modifica fatta più
+    tardi nello stesso secondo deve passare; a parità esatta di orario vale l'ultima arrivata."""
+    (at_500,) = _same_second(500)
+    whole = {"X-Edited-At": at_500["X-Edited-At"].replace(".500Z", "Z")}
+    new_session(auth_client)
+    assert auth_client.put(SET, json={"kg": 50, "reps": 8}, headers=whole).json() == {"ok": True}
+    assert auth_client.put(SET, json={"kg": 52.5, "reps": 8}, headers=at_500).json() == {"ok": True}
+    assert auth_client.put(SET, json={"kg": 55, "reps": 8}, headers=at_500).json() == {"ok": True}  # stesso istante
+    assert [s["kg"] for s in sets(auth_client)] == [55]

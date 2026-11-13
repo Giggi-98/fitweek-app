@@ -111,12 +111,19 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.10.4 (2026-11-13) — orari delle modifiche al millisecondo (FW-REV-009)
+
+- `X-Edited-At` è conservato e confrontato **al millisecondo** (prima veniva troncato al secondo: due modifiche fatte nello stesso secondo e arrivate in ordine inverso risultavano contemporanee e vinceva la più vecchia, anche sopra un'eliminazione). Vale per tutte le rotte che accettano l'intestazione.
+- A parità esatta di orario (stesso millisecondo) vale l'ultima arrivata.
+- I campi che riportano l'orario della modifica (`logged_at` delle serie, `updated_at`/`deleted_at` di pasti, sonno e note) ora hanno i millisecondi, es. `2026-11-13T12:49:10.900+01:00`. I valori già salvati al secondo restano validi e confrontabili: nessuna migrazione.
+- Nessuna rotta nuova, nessun cambio di schema (resta 9).
+
 ## API 1.10.3 (2026-11-13) — serie eliminate ed esportazione coerente
 
 Nessun contratto cambia; cambiano due comportamenti (finding FW-REV-002 e FW-REV-004).
 
 - `DELETE /api/v1/workout-sessions/{id}/sets/{exercise}/{n}` ricorda l'orario dell'eliminazione (`X-Edited-At`, o adesso) nella tabella `set_tombstones`, anche se la serie non era ancora arrivata al server. Un `PUT` sulla stessa posizione con `X-Edited-At` **precedente** all'eliminazione non ricrea la serie e risponde `200 {"ok": true, "stale": true}`; un `PUT` più recente la ricrea normalmente. Un'eliminazione più vecchia della serie salvata resta `stale` come prima. Per una seduta inesistente il `DELETE` risponde `{"ok": true}` senza scrivere nulla.
-- Limiti: gli orari hanno la precisione del secondo e sono quelli dichiarati dal dispositivo (come per `X-Edited-At`); il ripristino di un backup azzera i segni di eliminazione insieme alle sedute.
+- Limiti: gli orari sono quelli dichiarati dal dispositivo, al millisecondo dalla 1.10.4 (prima al secondo) (come per `X-Edited-At`); il ripristino di un backup azzera i segni di eliminazione insieme alle sedute.
 - `GET /api/backup`: tutte le tabelle sono lette nella stessa transazione di lettura, quindi il file descrive un solo istante anche se intanto un altro dispositivo scrive. Formato invariato (`fitweek-backup-v4`); i segni di eliminazione non fanno parte del file.
 
 ## API 1.10.1 (2026-11-12) — orario della modifica

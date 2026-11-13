@@ -38,15 +38,18 @@ def _moment(value: str | None) -> datetime | None:
 
 def edit_time(request: Request) -> str:
     """Quando è stata fatta la modifica: l'orario dichiarato dal dispositivo (una scrittura rimasta in coda
-    offline arriva più tardi di quando è stata fatta), mai nel futuro; senza intestazione vale adesso."""
+    offline arriva più tardi di quando è stata fatta), mai nel futuro; senza intestazione vale adesso.
+    Al millisecondo, come lo manda il dispositivo: troncato al secondo, due modifiche fatte nello stesso
+    secondo e arrivate in ordine inverso risulterebbero contemporanee e vincerebbe la più vecchia (FW-REV-009)."""
     now = datetime.now(TZ)
     moment = _moment(request.headers.get(EDIT_HEADER))
-    return (min(moment.astimezone(TZ), now) if moment else now).isoformat(timespec="seconds")
+    return (min(moment.astimezone(TZ), now) if moment else now).isoformat(timespec="milliseconds")
 
 
 def is_stale(stored: str | None, edited: str) -> bool:
     """Vero se il dato salvato è stato modificato DOPO la modifica in arrivo: vince l'ultima fatta, non l'ultima
-    arrivata (es. telefono offline da lunedì che sincronizza mercoledì sopra una correzione fatta martedì dal PC)."""
+    arrivata (es. telefono offline da lunedì che sincronizza mercoledì sopra una correzione fatta martedì dal PC).
+    A parità esatta di orario (stesso millisecondo) non c'è un ordine da rispettare: vale l'ultima arrivata."""
     saved, incoming = _moment(stored), _moment(edited)
     return bool(saved and incoming and saved > incoming)
 
