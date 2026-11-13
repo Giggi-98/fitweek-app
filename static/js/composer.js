@@ -152,7 +152,7 @@ function render() {
     </div>
     ${legacy ? `<div class="field"><label for="c-desc">Descrizione (pasto registrato senza voci)</label><input id="c-desc" maxlength="300" value="${esc(st.description || "")}"></div>
       <div class="field"><label for="c-kcal">Calorie (facoltativo)</label><input id="c-kcal" inputmode="numeric" value="${esc(st.kcal ?? "")}"></div>` : ""}
-    <div class="chips scroll cat-tabs" role="tablist" aria-label="Categoria">${CATEGORIES.map(([k, l]) => `<button type="button" class="chip ${k === st.cat ? "active" : ""}" data-cat="${k}">${l}</button>`).join("")}</div>
+    <div class="chips scroll cat-tabs" role="group" aria-label="Categoria">${CATEGORIES.map(([k, l]) => `<button type="button" class="chip ${k === st.cat ? "active" : ""}" aria-pressed="${k === st.cat}" data-cat="${k}">${l}</button>`).join("")}</div>
     <div class="new-food">
       <input id="c-new-name" maxlength="120" value="${esc(st.newName || "")}" placeholder="Cerca o scrivi un piatto…" aria-label="Cerca nel catalogo o scrivi un piatto nuovo" autocomplete="off">
       <input id="c-new-kcal" inputmode="numeric" value="${esc(st.newKcal || "")}" placeholder="kcal" aria-label="Calorie per porzione (facoltativo)">

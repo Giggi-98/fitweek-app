@@ -67,7 +67,7 @@ function diary() {
     .map((d, i) => {
       const eaten = eatenOn(d);
       const kcal = sum(eaten, "kcal");
-      return `<button type="button" class="day-tab ${d === day ? "active" : ""} ${d === today ? "today" : ""}" role="tab" aria-selected="${d === day}" data-day="${d}" ${d > today ? "disabled" : ""} aria-label="${esc(fmtDate(d))}${eaten.length ? `, circa ${fmtNum(kcal, 0)} kcal` : ""}">
+      return `<button type="button" class="day-tab ${d === day ? "active" : ""} ${d === today ? "today" : ""}" role="tab" aria-selected="${d === day}" tabindex="${d === day ? 0 : -1}" data-day="${d}" ${d > today ? "disabled" : ""} aria-label="${esc(fmtDate(d))}${eaten.length ? `, circa ${fmtNum(kcal, 0)} kcal` : ""}">
         <span>${DAYSHORT[i]}</span><strong>${Number(d.slice(8))}</strong><small>${eaten.length ? `~${fmtNum(kcal, 0)}` : "—"}</small>
       </button>`;
     })

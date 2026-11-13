@@ -45,6 +45,14 @@ Ciclo 2 (1.10.4, 2026-11-13), dal report `docs/reviews/2026-11-13-5e333bd.md` �
 | FW-REV-009 (P1), completa FW-REV-002 | sì, pytest (3 test falliti prima) | `app/workouts.py`: `edit_time` al millisecondo | `tests/test_edit_time.py` |
 | FW-REV-010 (P2) | sì, test JS (6 falliti prima) | `platform.js`: eliminazione riletta e segno di uscita; `logout.js`: avvisi e conferma | `tests/js/platform.test.mjs`, `tests/js/logout.test.mjs` |
 
+Ciclo 3 (1.10.5, 2026-11-13), da `UX_AUDIT.md`/`UX_BACKLOG.md` — **correzione implementata, in attesa di verifica indipendente**. Scelte in D-029.
+
+| Finding | Riprodotto dal maker | Correzione | Test |
+|---|---|---|---|
+| FW-UX-001 (P2) | sì, e2e `ux` (fallisce sul codice precedente) | `shopping.js`: `removeWithUndo`; `util.js`: `takeById`/`putBack` | `tests/js/ui.test.mjs`, e2e `ux` |
+| FW-UX-003 (P2) | sì, e2e `ux`: 30 pulsanti dentro le label | `shopping.js` + `app.css`: `.shoprow` | e2e `ux` |
+| FW-UX-002 (P2) | confermato leggendo `ui.js` | `ui.js`: sosta unica e `tabKey`; `main.js`: tasti e fuoco. **Parziale**: nessun `tabpanel` | `tests/js/ui.test.mjs`, e2e `ux` |
+
 Non fatto in questo ciclo: deploy (lo schema 9 arriva sull'istanza in uso solo al deploy, con backup pre-migrazione automatico), APK `next` ricompilato, prova su telefono reale.
 
 ## M1 — Stabilizzazione, protezione dati, sicurezza
@@ -189,6 +197,10 @@ Criteri di accettazione:
 - [ ] Uso fuori casa: richiede VPN o HTTPS pubblico protetto (decisione utente).
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), aggiornamento automatico dell'APK, iOS.
+
+## 1.10.5 (2026-11-13) — finding UX della chat 03
+
+FW-UX-001 (rimozione annullabile in lista e dispensa), FW-UX-003 (riga della lista senza pulsanti nella label), FW-UX-002 (schede da tastiera; collegamento scheda–pannello non fatto): vedi la sezione "Review indipendente" in cima e D-029. Solo frontend: nessun cambio a server, API o schema. Stato: nel repository, **non in produzione**; APK `next` da ricompilare.
 
 ## 1.10.4 (2026-11-13) — correzioni della seconda review
 

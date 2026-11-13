@@ -3,7 +3,7 @@ import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
 import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
 import { app, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
-import { applyDynamicStyles, initModal, toast } from "./ui.js";
+import { applyDynamicStyles, initModal, tabKey, toast } from "./ui.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
@@ -41,6 +41,7 @@ function render() {
   mountCharts($("#content"));
   window.scrollTo({ top: y });
   current().afterRender?.();
+  refocusTab();
 }
 
 /** Sostituisce i segnaposto [data-icon] con le icone SVG (HTML statico e viste). */
@@ -168,6 +169,27 @@ document.addEventListener("click", async (e) => {
     toast("Errore: " + err.message);
   }
 });
+
+// Schede (role=tablist): frecce, Inizio e Fine scelgono e attivano la scheda, come un tocco. La vista viene
+// ridisegnata, quindi il fuoco va rimesso sulla scheda attiva dello stesso elenco (vedi `refocusTab`).
+let tabToRefocus = null;
+document.addEventListener("keydown", (e) => {
+  if (e.altKey || e.ctrlKey || e.metaKey || !e.target.matches?.("[role=tab]")) return;
+  const next = tabKey(e.target, e.key);
+  if (!next) return;
+  e.preventDefault();
+  if (next === e.target) return;
+  tabToRefocus = e.target.closest("[role=tablist]").getAttribute("aria-label");
+  next.focus();
+  next.click();
+  setTimeout(() => (tabToRefocus = null), 2000); // se la vista non si ridisegna, niente fuoco spostato più tardi
+});
+function refocusTab() {
+  if (tabToRefocus == null) return;
+  const list = [...document.querySelectorAll("[role=tablist]")].find((l) => l.getAttribute("aria-label") === tabToRefocus);
+  tabToRefocus = null;
+  list?.querySelector('[role=tab][aria-selected="true"]')?.focus({ preventScroll: true });
+}
 
 // Elementi cliccabili non-button (es. voci del diario): Invio/Spazio come un click.
 document.addEventListener("keydown", (e) => {

@@ -28,11 +28,21 @@ export const empty = (title, text) => `<div class="data-empty"><strong>${title}<
 /**
  * Schede orizzontali, uguali in tutte le viste. `items` = [[chiave, etichetta, icona?, conteggio?]].
  * La vista riceve il click su `data-tab` (o sull'attributo indicato in `attr`).
+ * Da tastiera: Tab si ferma solo sulla scheda attiva; frecce, Inizio e Fine scelgono le altre (`tabKey`).
  */
 export const tabs = (items, active, label, attr = "tab") =>
   `<div class="tabs" role="tablist" aria-label="${esc(label)}">${items
-    .map(([key, text, ic, count]) => `<button type="button" class="tab ${key === active ? "active" : ""}" role="tab" aria-selected="${key === active}" data-${attr}="${esc(key)}">${ic ? icon(ic, "sm") : ""}<span>${esc(text)}</span>${count == null ? "" : `<small>${esc(count)}</small>`}</button>`)
+    .map(([key, text, ic, count]) => `<button type="button" class="tab ${key === active ? "active" : ""}" role="tab" aria-selected="${key === active}" tabindex="${key === active ? 0 : -1}" data-${attr}="${esc(key)}">${ic ? icon(ic, "sm") : ""}<span>${esc(text)}</span>${count == null ? "" : `<small>${esc(count)}</small>`}</button>`)
     .join("")}</div>`;
+/** Tasti di un elenco di schede (`role=tablist`): frecce, Inizio, Fine. Le schede disattivate si saltano.
+ *  @returns la scheda da attivare, o null se il tasto non riguarda le schede */
+export function tabKey(tab, key) {
+  const all = [...(tab.closest("[role=tablist]")?.querySelectorAll("[role=tab]:not([disabled])") || [])];
+  const i = all.indexOf(tab);
+  if (i < 0) return null;
+  const to = { ArrowRight: i + 1, ArrowDown: i + 1, ArrowLeft: i - 1, ArrowUp: i - 1, Home: 0, End: all.length - 1 }[key];
+  return to === undefined ? null : all[(to + all.length) % all.length];
+}
 export const pill = (text, kind = "") => `<span class="pill ${kind}">${esc(text)}</span>`;
 
 /** La CSP vieta gli attributi style: dimensioni e variabili dinamiche viaggiano in data-* e
