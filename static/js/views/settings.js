@@ -9,7 +9,8 @@ import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
 import { isBackup, restoreConfirmText, restoreDoneText } from "../backup.js";
 import { signOut } from "../logout.js";
 import { prefs, setPrefs } from "../workout/timer.js";
-import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
+import { isNative, nativeStatus, openExactAlarmSettings, startUpdate, syncNotifications, testNotification } from "../native.js";
+import { checkForUpdate, updateStatus } from "../update.js";
 import { serverUrl, standalone } from "../platform.js";
 
 export const THEME_KEY = "fitweek.theme.v1";
@@ -65,6 +66,7 @@ function remindersPanel() {
 }
 
 const android = { info: null };
+globalThis.addEventListener?.("fitweek:update-status", () => document.getElementById("android-panel") && refreshPanel("android-panel", androidPanel()));
 /** Aggiorna solo il pannello `id` (dati arrivati in ritardo) senza ridisegnare la pagina. */
 function refreshPanel(id, html) {
   const el = document.getElementById(id);
@@ -74,18 +76,31 @@ window.addEventListener("fitweek:native-synced", () => refreshPanel("android-pan
 const mb = (n) => `${(n / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 1 })} MB`;
 const PERM = { granted: "consentite ✓", denied: "bloccate ✗", prompt: "da consentire", "prompt-with-rationale": "da consentire", unknown: "…" };
 
+/** Versione installata e, se il server ne ha una più recente, il pulsante per installarla (static/js/update.js). */
+function updateRow() {
+  const u = updateStatus;
+  if (!u.installed) return "";
+  const up = u.available;
+  const head = `<div class="summary-row"><i>${icon("download", "sm")}</i><div><strong>${up ? `Versione ${esc(up.version)} disponibile` : "App aggiornata"}</strong><small>Installata: ${esc(u.installed.version)}${up ? ` · download ${mb(up.size)}` : ""}</small></div></div>`;
+  if (!up) return head;
+  const action = u.canInstall
+    ? `<button class="btn primary full" data-native="update" ${u.busy ? "disabled" : ""}>${icon("download")}${u.busy ? "Scarico…" : `Aggiorna alla ${esc(up.version)}`}</button><p class="subtle">L'app scarica il file dal server, lo verifica e apre l'installatore di Android: conferma lì. La prima volta Android chiede di consentire a FitWeek di installare app. I tuoi dati e l'accesso restano.</p>`
+    : `<div class="inline-note">${icon("info")}<div>Questa versione dell'app non sa ancora aggiornarsi da sola: per questa volta apri FitWeek dal browser del telefono, vai in Impostazioni → App Android e scarica l'APK. Dalla prossima basterà un tocco qui.</div></div>`;
+  return `${head}${action}${u.error ? `<div class="inline-note warn">${esc(u.error)}</div>` : ""}`;
+}
+
 function androidPanel() {
   if (isNative()) {
     const st = nativeStatus;
     return panel(
       `${icon("smartphone")}App Android`,
-      `<div class="summary-list">
+      `<div class="summary-list">${updateRow()}
         <div class="summary-row"><i>${icon("bell", "sm")}</i><div><strong>Notifiche: ${esc(PERM[st.permission] || st.permission)}</strong><small>${st.permission === "denied" ? "Abilitale da Impostazioni del telefono → App → FitWeek → Notifiche." : "Arrivano anche ad app chiusa."}</small></div></div>
         <div class="summary-row"><i>${icon("clock", "sm")}</i><div><strong>Orari esatti: ${st.exact === "granted" ? "consentiti ✓" : st.exact === "n/d" ? "non necessari" : "non consentiti"}</strong><small>Senza, Android può ritardare un promemoria di qualche minuto.</small></div></div>
         <div class="summary-row"><i>${icon("calendar", "sm")}</i><div><strong>${st.scheduled} notifiche programmate</strong><small>Prossimi 14 giorni${st.lastSync ? ` · aggiornate alle ${st.lastSync.toLocaleTimeString("it-IT", { hour: "2-digit", minute: "2-digit" })}` : ""}. Si riallineano a ogni apertura.</small></div></div>
       </div>
       ${st.error ? `<div class="inline-note warn">Errore: ${esc(st.error)}</div>` : ""}
-      <div class="button-row"><button class="btn" data-native="test">Notifica di prova</button><button class="btn" data-native="sync">Riprogramma</button>${st.exact !== "granted" && st.exact !== "n/d" ? '<button class="btn" data-native="exact">Consenti orari esatti</button>' : ""}</div>
+      <div class="button-row"><button class="btn" data-native="test">Notifica di prova</button><button class="btn" data-native="sync">Riprogramma</button><button class="btn" data-native="check">Cerca aggiornamenti</button>${st.exact !== "granted" && st.exact !== "n/d" ? '<button class="btn" data-native="exact">Consenti orari esatti</button>' : ""}</div>
       <p class="subtle">Samsung: Impostazioni → App → FitWeek → Batteria → <strong>Senza restrizioni</strong>, altrimenti le notifiche possono arrivare in ritardo.</p>`,
       "", "", "android-panel",
     );
@@ -242,6 +257,12 @@ export async function onClick(t) {
     return true;
   }
   if (t.dataset.native === "exact") return openExactAlarmSettings(), false;
+  if (t.dataset.native === "update") return startUpdate(), false;
+  if (t.dataset.native === "check") {
+    const up = await checkForUpdate();
+    toast(updateStatus.error ? `Controllo non riuscito: ${updateStatus.error}` : up ? `FitWeek ${up.version} è disponibile` : "L'app è aggiornata");
+    return false; // il riquadro si ridisegna da solo quando cambia lo stato dell'aggiornamento
+  }
   if (t.dataset.remDay) return (rem.day = num(t.dataset.remDay)), true;
   if (t.dataset.remDel) {
     if (!confirm("Eliminare questo promemoria?")) return false;

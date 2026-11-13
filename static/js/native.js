@@ -5,6 +5,7 @@ import { request } from "./api.js";
 import { buildSchedule } from "./schedule.js";
 import { app } from "./store.js";
 import { closeModal, modalOpen, toast } from "./ui.js";
+import { checkForUpdate, installUpdate, updateStatus } from "./update.js";
 
 const cap = () => globalThis.Capacitor;
 export const isNative = () => Boolean(cap()?.isNativePlatform?.());
@@ -84,6 +85,23 @@ export async function openExactAlarmSettings() {
   }
 }
 
+/** Scarica l'aggiornamento e apre l'installatore di Android, dicendo all'utente cosa succede. */
+export async function startUpdate() {
+  toast("Scarico l'aggiornamento…", { timeout: 60000 });
+  if (await installUpdate()) toast("Aggiornamento scaricato: conferma l'installazione nella finestra di Android", { timeout: 8000 });
+  else toast(`Aggiornamento non riuscito: ${updateStatus.error || "riprova"}`, { timeout: 8000 });
+}
+
+let announced = 0; // version_code già annunciato in questa apertura dell'app: un avviso per versione, non uno a ogni ritorno
+/** Controlla se il server ha una versione più recente dell'app e lo dice una volta, con il pulsante per installarla. */
+async function announceUpdate(force) {
+  const up = await checkForUpdate({ force });
+  if (!up || announced === up.version_code) return;
+  announced = up.version_code;
+  if (updateStatus.canInstall) toast(`FitWeek ${up.version} è disponibile`, { action: "Aggiorna", timeout: 12000, onAction: startUpdate });
+  else toast(`FitWeek ${up.version} è disponibile: vedi Impostazioni → App Android`, { timeout: 8000 });
+}
+
 /** Da chiamare all'avvio: listener per tocco sulle notifiche, tasto indietro, riallineamento. */
 export function initNative({ openReminderById }) {
   if (!isNative()) return;
@@ -98,8 +116,12 @@ export function initNative({ openReminderById }) {
     if (canGoBack) return history.back();
     AppPlugin().minimizeApp();
   });
-  AppPlugin()?.addListener("resume", () => syncNotifications());
+  AppPlugin()?.addListener("resume", () => {
+    syncNotifications();
+    announceUpdate(false);
+  });
   window.addEventListener("fitweek:changed", () => syncNotifications());
   window.addEventListener("fitweek:reminders-changed", () => syncNotifications());
   syncNotifications({ ask: true });
+  announceUpdate(true);
 }

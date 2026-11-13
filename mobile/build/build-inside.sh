@@ -47,7 +47,12 @@ npx cap add android >/dev/null
 MANIFEST=android/app/src/main/AndroidManifest.xml
 # HTTP verso il server di casa (solo LAN/VPN) + permessi per notifiche e sveglie esatte.
 sed -i 's#<application#<application android:usesCleartextTraffic="true"#' "$MANIFEST"
-sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n</manifest>#' "$MANIFEST"
+sed -i 's#</manifest>#    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />\n    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />\n    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />\n    <uses-permission android:name="android.permission.VIBRATE" />\n    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />\n</manifest>#' "$MANIFEST"
+grep -q 'REQUEST_INSTALL_PACKAGES' "$MANIFEST" || { echo "Manifest non riconosciuto: permesso di installazione non inserito" >&2; exit 1; }
+# L'aggiornamento dell'app (AppUpdatePlugin) consegna l'APK scaricato all'installatore di Android tramite il
+# FileProvider già dichiarato da Capacitor: deve esporre la cartella cache dell'app.
+grep -q 'fileprovider' "$MANIFEST" && grep -q '<cache-path' android/app/src/main/res/xml/file_paths.xml \
+  || { echo "FileProvider di Capacitor non riconosciuto: l'aggiornamento dell'app non funzionerebbe" >&2; exit 1; }
 
 # Plugin nativo SecureToken: custodisce il token di sessione nell'Android Keystore (AES-256-GCM)
 # invece che in chiaro in localStorage.
@@ -152,6 +157,114 @@ public class SecureTokenPlugin extends Plugin {
 }
 JAVA
 
+# Plugin nativo AppUpdate: scarica dal server l'APK più recente, controlla l'impronta SHA-256 attesa e apre
+# l'installatore di Android (che chiede conferma e accetta solo un APK firmato con la stessa chiave).
+cat > "$PKG_DIR/AppUpdatePlugin.java" <<JAVA
+package ${APP_ID};
+
+import android.content.Intent;
+import android.net.Uri;
+import android.webkit.CookieManager;
+import androidx.core.content.FileProvider;
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.net.HttpURLConnection;
+import java.net.URL;
+import java.security.MessageDigest;
+
+@CapacitorPlugin(name = "AppUpdate")
+public class AppUpdatePlugin extends Plugin {
+    private static final long MAX_BYTES = 100L * 1024 * 1024;
+
+    @PluginMethod
+    public void install(final PluginCall call) {
+        final String url = call.getString("url", "");
+        final String expected = call.getString("sha256", "");
+        final String authorization = call.getString("authorization", "");
+        if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))
+                || expected == null || !expected.matches("[0-9a-f]{64}")) {
+            call.reject("Parametri non validi");
+            return;
+        }
+        new Thread(new Runnable() {
+            @Override
+            public void run() {
+                download(call, url, expected, authorization);
+            }
+        }).start();
+    }
+
+    private void download(PluginCall call, String url, String expected, String authorization) {
+        File dir = new File(getContext().getCacheDir(), "update");
+        File apk = new File(dir, "fitweek-update.apk");
+        HttpURLConnection conn = null;
+        try {
+            if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("cartella temporanea non disponibile");
+            conn = (HttpURLConnection) new URL(url).openConnection();
+            conn.setConnectTimeout(15000);
+            conn.setReadTimeout(30000);
+            conn.setInstanceFollowRedirects(false);
+            if (authorization != null && !authorization.isEmpty()) {
+                conn.setRequestProperty("Authorization", authorization);
+            } else {
+                String cookie = CookieManager.getInstance().getCookie(url);
+                if (cookie != null) conn.setRequestProperty("Cookie", cookie);
+            }
+            int status = conn.getResponseCode();
+            if (status != 200) {
+                call.reject("Download non riuscito (HTTP " + status + ")");
+                return;
+            }
+            MessageDigest digest = MessageDigest.getInstance("SHA-256");
+            long total = 0;
+            InputStream in = conn.getInputStream();
+            OutputStream out = new FileOutputStream(apk);
+            try {
+                byte[] buf = new byte[65536];
+                int n;
+                while ((n = in.read(buf)) > 0) {
+                    total += n;
+                    if (total > MAX_BYTES) throw new IOException("file troppo grande");
+                    digest.update(buf, 0, n);
+                    out.write(buf, 0, n);
+                }
+            } finally {
+                out.close();
+                in.close();
+            }
+            StringBuilder hex = new StringBuilder();
+            for (byte b : digest.digest()) hex.append(String.format("%02x", b));
+            if (!hex.toString().equals(expected)) {
+                apk.delete();
+                call.reject("Il file scaricato non corrisponde all'impronta attesa: aggiornamento annullato");
+                return;
+            }
+            Uri uri = FileProvider.getUriForFile(getContext(), getContext().getPackageName() + ".fileprovider", apk);
+            Intent intent = new Intent(Intent.ACTION_VIEW);
+            intent.setDataAndType(uri, "application/vnd.android.package-archive");
+            intent.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION | Intent.FLAG_ACTIVITY_NEW_TASK);
+            getContext().startActivity(intent);
+            JSObject ret = new JSObject();
+            ret.put("started", true);
+            call.resolve(ret);
+        } catch (Exception e) {
+            apk.delete();
+            call.reject("Download o installazione non riusciti: " + e.getMessage(), e);
+        } finally {
+            if (conn != null) conn.disconnect();
+        }
+    }
+}
+JAVA
+
 cat > "$PKG_DIR/MainActivity.java" <<JAVA
 package ${APP_ID};
 
@@ -162,6 +275,7 @@ public class MainActivity extends BridgeActivity {
     @Override
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SecureTokenPlugin.class);
+        registerPlugin(AppUpdatePlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

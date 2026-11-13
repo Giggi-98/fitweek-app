@@ -1,5 +1,6 @@
 // Test e2e dell'integrazione Android: simula il bridge Capacitor nel browser e verifica le notifiche
-// programmate dai promemoria reali del server, il tocco su una notifica e il download dell'APK.
+// programmate dai promemoria reali del server, il tocco su una notifica, il download dell'APK e
+// l'aggiornamento dell'app (versione installata più vecchia di quella sul server → installazione dal plugin).
 // Esecuzione: scripts/e2e.sh
 const { chromium, devices } = require('playwright');
 const B = process.env.E2E_URL || 'http://127.0.0.1:18088';
@@ -33,7 +34,9 @@ const FAKE_CAPACITOR = () => {
         },
         addListener: (evt, cb) => { listeners[evt] = cb; return { remove() {} }; },
       },
-      App: { addListener: (evt, cb) => { listeners['app:' + evt] = cb; return { remove() {} }; }, minimizeApp: async () => { window.__ln.minimized = true; } },
+      // app installata vecchissima: qualunque APK sul server è più recente
+      AppUpdate: { install: async (args) => { (window.__ln.installs ||= []).push(args); if (window.__ln.failInstall) throw new Error(window.__ln.failInstall); return { started: true }; } },
+      App: { getInfo: async () => ({ id: 'app.fitweek.personal', name: 'FitWeek', version: '1.0.0', build: '10000' }), addListener: (evt, cb) => { listeners['app:' + evt] = cb; return { remove() {} }; }, minimizeApp: async () => { window.__ln.minimized = true; } },
     },
   };
 };
@@ -109,7 +112,32 @@ const FAKE_CAPACITOR = () => {
   await page.waitForSelector('[data-native=test]');
   const panelText = await page.textContent('#content');
   check('pannello app: stato notifiche', /consentite ✓/.test(panelText) && /notifiche programmate/.test(panelText));
-  await page.screenshot({ path: `${SHOTS}/m6-native-settings.png` });
+  // Aggiornamento dell'app: rilevato dal confronto tra versione installata e APK sul server
+  const meta = await api('/api/v1/app/android');
+  if (meta.available) {
+    await page.waitForSelector('[data-native=update]');
+    check('aggiornamento: il pannello mostra versione installata e disponibile', new RegExp(`Versione ${meta.version.replace(/\./g, '\\.')} disponibile`).test(await page.textContent('#android-panel')) && /Installata: 1\.0\.0/.test(await page.textContent('#android-panel')), (await page.textContent('#android-panel')).slice(0, 120));
+    await page.screenshot({ path: `${SHOTS}/m6-native-settings.png` });
+    await page.click('[data-native=update]');
+    await page.waitForFunction(() => window.__ln.installs?.length === 1);
+    const sent = await page.evaluate(() => window.__ln.installs[0]);
+    check('aggiornamento: al plugin vanno l\'APK dello stesso canale e l\'impronta dichiarata dal server', sent.url === `${B}/api/v1/app/android/download?channel=stable` && sent.sha256 === meta.sha256 && sent.authorization === '', JSON.stringify(sent));
+    await page.locator('#toast', { hasText: 'conferma l\'installazione' }).waitFor();
+    check('aggiornamento: l\'utente viene mandato alla conferma di Android', true);
+    await page.evaluate(() => { window.__ln.failInstall = 'Il file scaricato non corrisponde all\'impronta attesa'; });
+    await page.click('[data-native=update]');
+    await page.locator('#toast', { hasText: 'Aggiornamento non riuscito' }).waitFor();
+    await page.waitForSelector('#android-panel .inline-note.warn');
+    check('aggiornamento rifiutato dal plugin: errore mostrato, pulsante di nuovo attivo', /impronta/.test(await page.textContent('#android-panel .inline-note.warn')) && !(await page.isDisabled('[data-native=update]')));
+    // app senza il plugin (versioni fino alla 1.10): si vede la versione nuova e come ottenerla, senza pulsante
+    await page.evaluate(() => { delete window.Capacitor.Plugins.AppUpdate; });
+    await page.click('[data-native=check]');
+    await page.waitForSelector('#android-panel .inline-note:not(.warn)');
+    check('app senza plugin di aggiornamento: istruzioni al posto del pulsante', (await page.locator('[data-native=update]').count()) === 0 && /non sa ancora aggiornarsi da sola/.test(await page.textContent('#android-panel')));
+  } else {
+    check('aggiornamento (nessun APK montato nel container di test)', true);
+    await page.screenshot({ path: `${SHOTS}/m6-native-settings.png` });
+  }
 
   // Browser normale: pulsante di download dell'APK reale
   const web = await browser.newContext({ ...devices['Galaxy S9+'], locale: 'it-IT' });
