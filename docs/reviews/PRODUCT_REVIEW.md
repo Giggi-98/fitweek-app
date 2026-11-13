@@ -136,3 +136,52 @@ Eseguiti dal reviewer: sola lettura statica dei documenti GitHub e dei moduli in
 - Prodotti: `CLAUDE.md`, `docs/PRODUCT_REQUIREMENTS.md`, `docs/ROADMAP.md`, `docs/DECISIONS.md` letti sul branch `main`.
 
 **Persistenza:** aggiornamento riservato ai documenti chat 04 su `review/engineering`, senza scrittura su `main`, Ledger o audit di altre aree.
+
+
+---
+
+## Aggiornamento Product Strategy 1.10.6 — 2026-11-13
+
+- **HEAD `main` verificato:** `439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7`.
+- **Intervallo successivo alla review di prodotto:** `e014e0da498ffa05d8b0570c76cec2f074224483..439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7`, **quattro commit consecutivi** secondo GitHub compare: `9ba8b7c`, `cfb68d8`, `f2bf1e6`, `439dc83`.
+- **Metodo:** confronto dei commit, ispezione statica dei sorgenti `platform.js`, `logout.js`, `ui.js`, `shopping.js`, test presenti, Ledger e audit specialistici, `CLAUDE.md`, `ROADMAP.md`, `DECISIONS.md` e handoff maker `docs/reviews/2026-11-13-439dc83.maker.md`.
+- **Stato chat 01:** ultimo report ufficiale `docs/reviews/2026-11-13-e014e0d.md` **non include** questi quattro commit. Checkpoint ufficiale `null`. I finding FW-REV non sono chiusi da questa chat.
+- **Test eseguiti da reviewer 04:** **nessuno**. Il maker dichiara 105 pytest + 83 test JS e 169 controlli E2E, ma questi risultati non sono stati verificati indipendentemente.
+- **Attribuzione:** non emerge evidenza GitHub sufficiente per attribuire a Kimi singoli interventi; evitare attribuzioni personali non verificabili.
+
+### Impatto delle quattro modifiche sul prodotto
+
+| Commit / finding proprietario | Evidenza verificabile nel repository | Impatto e stato dal punto di vista prodotto |
+| --- | --- | --- |
+| `9ba8b7c` — FW-REV-010 | `static/js/platform.js`: controllo eliminazione Keystore, marcatore di logout su localStorage/cookie WebView, avvio fail-closed se lo storage non è scrivibile; `static/js/logout.js`: messaggi distinti secondo esito locale e revoca server. Test JS aggiunti. | Riduce il rischio di accesso non atteso, ma non prova il comportamento su Android reale. **FW-PROD-001 ancora BLOCCATO/DA VERIFICARE**. Il maker documenta un caso residuo se entrambi i marcatori falliscono al logout e lo storage torna disponibile al riavvio: richiede valutazione owner FW-REV-010, avviso comprensibile e test dispositivo. |
+| `cfb68d8` — FW-UX-002 e FW-UX-001 | `static/js/ui.js`: `aria-controls` e `tabpanel()` con `aria-labelledby`, collegamenti nelle viste; test per Undo durante PUT, 409 e due eliminazioni. | Migliora la navigazione. Il toast ha un solo slot: la seconda rimozione sostituisce l'azione **Annulla** precedente. **Non è un bug di perdita dati dimostrato**; è un limite di recuperabilità percepita, da verificare nell'ambito FW-UX-001 e FW-PROD-006. Lettore di schermo non provato. |
+| `f2bf1e6` — FW-ARCH-001 | `app/main.py`: `sqlite3.IntegrityError` restituisce 422 nel restore; transazione preesistente intende fare rollback; `tests/test_restore_matrix.py` aggiunge confronto pre/post con record duplicato. | Riduce il rischio di ripristino parziale non segnalato. **FW-PROD-002 ancora BLOCCATO/DA VERIFICARE** finché un reviewer non esegue restore su DB temporaneo, compresi dati non catturati dal solo export JSON. |
+| `439dc83` — documentazione | Aggiornati `CLAUDE.md`, `docs/ROADMAP.md`, `docs/DECISIONS.md` con ciclo 5 / 1.10.6. | Rende rintracciabili intenzione e test dichiarati; non equivale a validazione del rilascio. |
+
+### Stato del deploy: separare dichiarazione e prova
+
+L'handoff maker `docs/reviews/2026-11-13-439dc83.maker.md` contiene un **aggiornamento operativo successivo** alla sua redazione iniziale: Claude dichiara deploy live 1.10.6, schema 9, health check e frontend servito aggiornato, backup pre-deploy e pre-migrazione, APK `next` versionCode 11006 ricompilato (checksum manifest in `mobile/dist/fitweek-next-apk.json`). **Il reviewer 04 non ha verificato direttamente endpoint live, stato DB, integrità dei backup, artefatto APK né installazione sul dispositivo**. Le sezioni più vecchie della roadmap che indicano «non in produzione» sono storiche rispetto a quell'handoff e non vanno trattate come prova dello stato attuale.
+
+### Verdetto e gate
+
+**VERDETTO PRODUCT STRATEGY: CORREZIONI COERENTI CON LE PRIORITÀ, GATE DI AFFIDABILITÀ NON SUPERATO.** Non emergono nuove funzioni che richiedano ampliamento della roadmap. Le correzioni riducono la complessità percepita e affrontano problemi esistenti; i test indipendenti e la verifica del dispositivo restano necessari.
+
+1. **FW-PROD-001, P1:** prima del via libera all'uso dell'APK `next` come stabile, ottenere dalla chat 01 la review dei quattro commit, la riesecuzione indipendente di test serie offline/logout e un test Android reale offline→riavvio→online (inclusi Keystore/storage e compatibilità versione).
+2. **FW-PROD-002, P1:** prova indipendente di restore isolato (formati legacy e nuovo, 422 e rollback, domini `replaced/kept`), senza toccare dati live; chiarire limiti dell'export JSON rispetto a SQLite.
+3. **FW-PROD-006, P2, collegato a FW-UX-001:** far valutare alla chat 03 se il limite del toast unico sia accettabile nel flusso spesa. Test d'uso: eliminare due articoli rapidamente, tentare di annullare entrambi, contare articoli da ricreare. Una coda Undo si giustifica **solo se** il fastidio è riproducibile e significativo; non aggiungere UI a priori.
+4. **FW-PROD-005, P2:** completare test di focus, tastiera e screen reader di FW-UX-002; non attribuire chiusura alla sola presenza di `tabpanel`.
+5. **FW-PROD-003, P2:** confermare che resta pronto **solo per analisi** di tre settimane alimentari realistiche; il ciclo 1 non è autorizzato a partire senza gate 0.
+
+**Nessun nuovo finding FW-PROD:** si aggiornano attività e dipendenze già registrate. Proprietà, ID, checkpoint e stati ufficiali delle altre chat restano invariati.
+
+### Attività operative per Claude / coordinamento tra owner
+
+Claude deve leggere **direttamente da GitHub** questa sezione e l'aggiornamento corrispondente in `PRODUCT_BACKLOG.md`, insieme ai documenti della chat 01/02/03. Non è richiesta una riscrittura generalizzata né nuove funzioni.
+
+- **Priorità immediata: evidenze, non altre feature.** Fornire a chat 01 la prova riproducibile del caso FW-REV-010 con fallimento multiplo, la verifica di FW-REV-002/009 su operazioni consegnate fuori ordine e comandi/output/exit code delle suite. Le **verifiche indipendenti** rimangono dei reviewer.
+- **Deploy:** se già effettuato come dichiarato, fornire prove verificabili di versione server, schema, backup, SHA artefatto APK e compatibilità; non ripetere deploy, migrazioni o restore su produzione senza nuova autorizzazione.
+- **Android:** organizzare la verifica guidata sul telefono reale (senza assumere che sia stata eseguita), con risultati, log senza dati sensibili, versione APK/backend e test fallimento/restart. Non promuovere automaticamente `next` a `stable`.
+- **UX:** condividere con la chat 03 il limite del toast singolo; effettuare eventuale correzione solo a fronte di decisione UX/prodotto o problema confermato, preservando il comportamento a un tocco.
+- **Product discovery:** non implementare per ora FW-PROD-003, AI o nuove schermate. Preparare semmai i tre scenari e misurazioni per la prova piano→spesa.
+
+**Nessuna prova runtime o conclusione di risoluzione formale aggiunta da questa chat.**
