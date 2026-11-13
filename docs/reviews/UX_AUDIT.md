@@ -157,3 +157,49 @@ Questa appendice riflette il codice fino a `5e333bd`; la sezione iniziale conser
 5. Eseguire QA responsive 320/360/390/768 px e APK Android stable/next, con screenshot, touch target e scenari offline.
 
 **Nuovi finding esclusivi UX:** nessuno supportato da evidenza sufficiente in questo intervallo. **Finding UX formalmente chiusi:** nessuno; due fix staticamente supportati, un fix parziale.
+
+
+---
+
+## Review UX incrementale — 2026-11-13 — `e014e0d..439dc83`
+
+- **HEAD applicativo verificato su GitHub:** `439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7`.
+- **Intervallo:** 4 commit fast-forward: `9ba8b7c4872ab6d93217917b6e751211ea710f75`, `cfb68d845b7054803982d8b646b7a23a0d8d9a17`, `f2bf1e6d11eab164b296b78cde5873325820bbfc`, `439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7`.
+- **Perimetro:** diff e sorgenti di UI/sottoviste, shopping/Undo, logout, piattaforma Android, test aggiunti, `CLAUDE.md`, `DESIGN_SYSTEM.md`, handoff del maker `2026-11-13-439dc83.maker.md`. Nessun APK/dispositivo, browser interattivo o test eseguito dal reviewer.
+- **Verdetto area 03:** **APPROVATO CON RISERVE per avanzamento statico; nessun finding UX chiuso formalmente**. Il checkpoint ufficiale di chat 01 resta `null` secondo il Ledger consultato; nessuna modifica al Ledger.
+- **Nota sull'autore:** i commit sono attribuiti all'account GitHub `ThaOcelot`; GitHub non permette di distinguere con affidabilità quale modifica sia stata prodotta da Claude e quale da Kimi. Le dichiarazioni del maker non costituiscono test indipendenti.
+
+### Risultati dei finding dell'area 03
+
+**FW-UX-001 — P2 — Undo cancellazione spesa/dispensa.** **Fix supportato staticamente, verifica runtime pendente; resta aperto.**
+
+- Codice `static/js/views/shopping.js:232-264`: `removeWithUndo` elimina la voce con `takeById`, registra lo stato, mostra un toast Annulla per 7 secondi e la reintroduce con `putBack` usando lo stesso ID.
+- A `439dc83` è stato aggiunto `tests/js/store.test.mjs:41-129` per la serializzazione dei PUT, Undo durante un PUT in volo, HTTP 409/merge, eliminazione modificata altrove e doppie rimozioni. Sono test di componenti e moduli reali, **non** un E2E completo del clic sul toast in condizioni concorrenti.
+- **Limite UX confermato dal codice:** `static/js/ui.js:4-19` mantiene un singolo toast, sovrascritto dal successivo `replaceChildren`. Due rimozioni ravvicinate possono far sparire il primo Annulla prima dei 7 secondi promessi. Il maker conferma che è un comportamento intenzionalmente attuale, non prova perdita automatica di dati. Miglioramento consigliato: conservare un recupero per ogni eliminazione ancora annullabile (es. toast con conteggio/stack o piccola coda d'azioni), senza introdurre modali bloccanti; verificare con tocchi rapidi e toast di sincronizzazione.
+
+**FW-UX-002 — P2 — Semantica e tastiera delle schede.** **Fix sostanziale ma non completo in tutti gli utilizzi; aperto.**
+
+- `static/js/ui.js:35-48` introduce ID stabili, `aria-controls` opzionale e `tabpanel()` con `role="tabpanel"` e `aria-labelledby`; `static/js/main.js:173-192` continua a gestire frecce, Home/End e recupero del focus.
+- Collegamenti presenti nei tab principali di `dashboard.js`, `meals.js`, `shopping.js`, `progress.js`, `settings.js` e nelle sottoschede Elenco/Carichi di Progressi.
+- **Copertura non totale:** `static/js/views/meals.js:113,150` (giorni del piano, momenti dei pasti abituali) e `static/js/views/settings.js:44,209` (giorni promemoria, selezione tema) usano ancora `tabs()` senza pannello associato. Non è corretto considerare chiuso il requisito generale soltanto perché il nuovo E2E controlla i tab che già espongono `aria-controls`: `tests/e2e/ux.e2e.js:161` seleziona espressamente `[role=tab][aria-controls]`, non verifica tutti i `[role=tab]`.
+- **Rimedio consigliato:** collegare i veri tab secondari a pannelli, oppure renderli controlli appropriati alla loro funzione (es. radio/segmented selection per il tema). Testare anche assistive tech, focus e contenuto dopo i cambi di giorno/pasto.
+
+**FW-UX-003 — P2 — Button dentro label della checkbox.** **Fix presente staticamente, da verificare su dispositivo; resta aperto.**
+
+- `static/js/views/shopping.js:52-53` mantiene pulsanti e label come fratelli nella riga `.shoprow`, con nomi accessibili; i test `tests/e2e/ux.e2e.js:36-58` controllano la separazione e l'indipendenza delle azioni, ma non sono stati eseguiti da questo reviewer.
+- Rimangono necessari tastiera reale, click sui pulsanti e screen reader; nessuna regressione nuova confermata nello specifico markup.
+
+### Cambi trasversali di proprietà altrui
+
+- **FW-REV-010 — chat 01:** `static/js/platform.js:41-170` introduce ulteriore wipe/lettura Keystore, marcatore di uscita localStorage e cookie WebView, più probe di scrivibilità; `static/js/logout.js:20-55` comunica il caso peggiore. Miglioramento del feedback supportato staticamente. Il maker stesso segnala che se **nessun** canale conserva il marcatore e la memoria torna funzionante al riavvio, il token può ancora restare valido. Non registrato come un nuovo finding UX e non dichiarato risolto.
+- **FW-ARCH-001 — chat 02:** `app/main.py` intercetta il restore invalido con 422 e rollback dichiarato; `tests/test_restore_matrix.py` include scenario aggiuntivo. La UI di conferma è stata già migliorata. Spetta alla chat 02 verificarlo.
+- **FW-REV-002/009 — chat 01:** nessun ulteriore intervento diretto in questo intervallo; mantenere la richiesta di test indipendenti su timestamp subsecondi.
+
+### Evidenza dei test e distribuzione
+
+- **Reviewer:** nessuna suite eseguita, nessuna QA browser, nessun lettore schermo o APK reale. Non attestare `PASS`.
+- **Maker (dichiarazioni nel suo handoff):** `scripts/check.sh` = 105 pytest + 83 JS, `scripts/e2e.sh` = 169 controlli in 7 file, exit 0; nessun log indipendentemente acquisito.
+- **Produzione (solo dichiarazione successiva del maker):** versione 1.10.6 distribuita, schema 9 migrato, backup preliminari e APK next ricompilato; **non verificati dal reviewer**. La prova su S25 Ultra e screen reader è ancora assente.
+- **Test aggiuntivi consigliati:** E2E doppia rimozione in 7 s con doppio Undo; qualunque toast concorrente; tutte le tablist (incluse le sottoschede), lettore schermo; Android offline/online e riavvio; test indipendenti delle suite prima di chiudere un finding.
+
+**Prossima azione UX:** chiudere il gap semantico di FW-UX-002; migliorare la recuperabilità di FW-UX-001 sotto azioni ripetute; certificare FW-UX-003 su browser/dispositivo. Non sono stati identificati nuovi ID UX in questo intervallo.
