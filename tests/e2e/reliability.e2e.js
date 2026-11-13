@@ -209,6 +209,82 @@ const STATE = '**/api/state';
   const genBanane = genGroceries.find((g) => g.name === 'Banane');
   check('proposta confermata: articoli aggiunti alla lista con quantità e unità', genBanane && genBanane.amount === 400 && genBanane.unit === 'g' && !genGroceries.some((g) => g.name === 'Bistecca'));
 
+  // 8. FW-REV-001: una modifica alla stessa serie fatta mentre la precedente è in volo non va persa.
+  //    La serie viene registrata (PUT trattenuto dal test) e subito tolta (DELETE con la stessa chiave di coda):
+  //    alla risposta del PUT il DELETE deve partire, altrimenti sul server resta una serie che l'utente ha tolto.
+  await page.click('.bottom-nav [data-view=training]');
+  await page.click('[data-pick-routine=A]');
+  await page.click('[data-start]');
+  await page.waitForSelector('#sync[data-state=ok]');
+  const held = [];
+  const seen = [];
+  await page.route(SETS, (route) => {
+    seen.push(route.request().method());
+    if (held.length === 0) held.push(route); // solo la prima richiesta resta in sospeso
+    else route.continue();
+  });
+  await rows.nth(0).locator('[data-field=kg]').fill('40');
+  await rows.nth(0).locator('[data-field=reps]').fill('8');
+  await rows.nth(0).locator('[data-check]').click();
+  for (let i = 0; i < 50 && held.length === 0; i++) await page.waitForTimeout(50);
+  await rows.nth(0).locator('[data-check]').click(); // tolta mentre il PUT è in volo
+  await held[0].continue();
+  await page.waitForSelector('#sync[data-state=ok]', { timeout: 10000 });
+  await page.unroute(SETS);
+  check('modifica durante l\'invio: partono entrambe le richieste, nell\'ordine', seen.join(',') === 'PUT,DELETE', seen.join(','));
+  check('modifica durante l\'invio: il server ha l\'ultimo stato (serie tolta)', (await server('/api/v1/today')).active_session.sets.length === 0);
+
+  // 9. FW-REV-006: uscita con modifiche non inviate. Senza conferma non si esce e nulla va perso;
+  //    con la conferma vengono eliminate davvero e non ripartono al prossimo accesso.
+  const queued = async (n) => {
+    for (let i = 0; i < 100; i++) {
+      if (((await local('fitweek.workoutQueue.v1')) || []).length === n) return;
+      await page.waitForTimeout(50);
+    }
+    throw new Error(`coda diversa da ${n}: ${JSON.stringify(await local('fitweek.workoutQueue.v1'))} | ${errors.join(' | ')} | ${(await page.textContent('#ex-a1')).replace(/\s+/g, ' ').slice(0, 200)}`);
+  };
+  const logSet = async (n) => {
+    await rows.nth(n).locator('[data-field=kg]').fill('40');
+    await rows.nth(n).locator('[data-field=reps]').fill('8');
+    await rows.nth(n).locator('[data-check]').click();
+  };
+  const openLogout = async () => {
+    await page.click('.topbar [data-view=settings]');
+    await page.click('[data-tab=data]');
+    await page.click('[data-action=logout]');
+  };
+  await page.route(SETS, (route) => route.abort());
+  await logSet(0);
+  await queued(1);
+  let asked = '';
+  page.once('dialog', (d) => { asked = d.message(); d.dismiss(); });
+  await openLogout();
+  for (let i = 0; i < 120 && !asked; i++) await page.waitForTimeout(50);
+  check('uscita con coda piena: chiede conferma dicendo quante modifiche si perdono', /1 modifica non ancora arrivata/.test(asked) && /eliminate da questo dispositivo/.test(asked), asked.slice(0, 80) || 'nessuna richiesta');
+  check('uscita annullata: resta dentro e la coda è intatta', (await page.locator('#shell:not(.hidden)').count()) === 1 && ((await local('fitweek.workoutQueue.v1')) || []).length === 1, JSON.stringify(await local('fitweek.workoutQueue.v1')));
+  await page.unroute(SETS);
+  await online();
+  await page.waitForSelector('#sync[data-state=ok]', { timeout: 10000 });
+  check('uscita annullata: la serie arriva al server appena possibile', (await server('/api/v1/today')).active_session.sets.length === 1);
+
+  await page.click('.bottom-nav [data-view=training]');
+  await page.waitForSelector('#ex-a1 .set-row');
+  await page.route(SETS, (route) => route.abort());
+  await logSet(1);
+  await queued(1);
+  page.once('dialog', (d) => d.accept());
+  await openLogout();
+  await page.waitForSelector('#login-form:not(.hidden)', { timeout: 15000 });
+  check('uscita confermata: coda eliminata dal dispositivo', (await local('fitweek.workoutQueue.v1')) === null && (await local('fitweek.rejected.v1')) === null);
+  await page.unroute(SETS);
+  await page.fill('#pw', PW);
+  await page.click('#login-form button');
+  await page.waitForSelector('#shell:not(.hidden)');
+  await online();
+  await page.waitForTimeout(800);
+  await page.waitForSelector('#sync[data-state=ok]');
+  check('nuovo accesso: la modifica scartata non riparte', (await server('/api/v1/today')).active_session.sets.length === 1 && (await local('fitweek.workoutQueue.v1') || []).length === 0);
+
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();
   console.log(out.join('\n'));

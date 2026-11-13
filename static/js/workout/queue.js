@@ -39,7 +39,8 @@ export function retryRejected(index) {
 }
 
 /** Accoda. `key` deduplica: una nuova operazione con la stessa chiave sostituisce quella vecchia
- *  (es. modifiche ripetute alla stessa serie), mantenendo l'ordine della prima. */
+ *  (es. modifiche ripetute alla stessa serie), mantenendo l'ordine della prima. Se quella vecchia è in volo
+ *  in questo momento, la nuova resta in coda e parte subito dopo (vedi `settled`). */
 export function enqueue(method, path, body, key = `${method} ${path}`) {
   const i = ops.findIndex((o) => o.key === key);
   const op = { method, path, body, key, at: new Date().toISOString() };
@@ -51,10 +52,23 @@ export function enqueue(method, path, body, key = `${method} ${path}`) {
 
 export const pendingCount = () => ops.length;
 
-/** Pulisce la coda inviata (e gli scarti) all'uscita dall'account. */
+/** Uscita dall'account: elimina DAVVERO tutto ciò che non è stato inviato (coda e scarti). Chi la chiama deve
+ *  aver avvisato l'utente se `pendingCount()` o `rejected()` non sono vuoti (vedi logout.js). */
 export function clearQueue() {
-  if (!ops.length) storage.remove(KEY);
+  ops = [];
+  storage.remove(KEY);
   storage.remove(REJECTED_KEY);
+}
+
+/** Toglie dalla coda l'operazione di cui è arrivata la risposta, e solo quella. Se nel frattempo è stata
+ *  sostituita da una modifica più recente con la stessa chiave (o la coda è stata svuotata), non c'è più:
+ *  la nuova resta al suo posto e viene inviata al giro successivo. @returns false se non era più in coda */
+function settled(op) {
+  const i = ops.indexOf(op);
+  if (i < 0) return false;
+  ops.splice(i, 1);
+  save();
+  return true;
 }
 
 let running = null;
@@ -71,6 +85,7 @@ async function drain() {
     try {
       await request(op.path, { method: op.method, body: op.body, editedAt: op.at });
     } catch (e) {
+      if (!ops.includes(op)) continue; // superata mentre era in volo: l'esito di questa non conta più
       if (e.status === 401) {
         app.onUnauthorized();
         break;
@@ -89,12 +104,10 @@ async function drain() {
         toast(`Una modifica non è stata accettata dal server (${e.message}). La trovi in Impostazioni → Dati e accesso.`, { timeout: 6000 });
         setSync("error");
       }
-      ops.shift();
-      save();
+      settled(op);
       continue;
     }
-    ops.shift();
-    save();
+    settled(op);
     if (retrying) {
       retrying = false;
       setSync("ok"); // l'errore mostrato era solo il tentativo fallito, ora recuperato

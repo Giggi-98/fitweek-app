@@ -21,15 +21,26 @@ export const isHttpUrl = (url = standalone ? serverUrl() : globalThis.location?.
 
 let memToken = undefined;
 
-/** Carica il token dal Keystore Android (se presente) e migra un eventuale token salvato in localStorage. */
+/** Scrive il token nel Keystore. @returns true solo se la scrittura è confermata */
+async function secured(plugin, value) {
+  try {
+    await plugin.set({ value });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Carica il token dal Keystore Android (se presente) e migra un eventuale token salvato in localStorage.
+ *  Il vecchio valore viene tolto solo a scrittura confermata: se il Keystore fallisce resta l'unica copia
+ *  persistente, e la migrazione si ritenta al prossimo avvio. */
 export async function initToken() {
   if (!standalone) return null;
   const legacy = storage.get(TOKEN_KEY);
   const plugin = secureStore();
   if (plugin) {
     if (legacy) {
-      await plugin.set({ value: legacy }).catch(() => {});
-      storage.remove(TOKEN_KEY);
+      if (await secured(plugin, legacy)) storage.remove(TOKEN_KEY);
       memToken = legacy;
       return memToken;
     }
@@ -51,13 +62,12 @@ export async function setToken(value) {
   memToken = value || null;
   const plugin = secureStore();
   if (plugin) {
-    storage.remove(TOKEN_KEY);
-    try {
-      if (value) await plugin.set({ value });
-      else await plugin.clear();
-    } catch {
-      /* fallback in memoria per la sessione corrente */
-    }
+    if (!value) {
+      storage.remove(TOKEN_KEY); // uscita: il token in chiaro sparisce comunque
+      await plugin.clear().catch(() => {});
+    } else if (await secured(plugin, value)) storage.remove(TOKEN_KEY);
+    // Keystore guasto: il token nuovo vale per questa sessione (in memoria) e non viene mai scritto in chiaro;
+    // un eventuale vecchio token non ancora migrato resta dov'è.
     return;
   }
   if (value) storage.set(TOKEN_KEY, value);

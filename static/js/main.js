@@ -2,7 +2,7 @@
 import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
 import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
-import { app, clearLocalState, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
+import { app, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, initModal, toast } from "./ui.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
@@ -16,7 +16,8 @@ import * as progress from "./views/progress.js";
 import * as settings from "./views/settings.js";
 import * as shopping from "./views/shopping.js";
 import * as training from "./views/training.js";
-import { clearQueue, flush, pendingCount, startQueue } from "./workout/queue.js";
+import { flush, pendingCount, startQueue } from "./workout/queue.js";
+import { signOut } from "./logout.js";
 import { addRest, initRestTimer, stopRest } from "./workout/timer.js";
 
 settings.applyTheme();
@@ -158,13 +159,7 @@ document.addEventListener("click", async (e) => {
   }
   if (e.target.closest("#rest-plus")) return addRest(15);
   if (e.target.closest("#rest-stop")) return stopRest();
-  if (e.target.closest("#logout")) {
-    await request("/api/logout", { method: "POST" }).catch(() => {});
-    await setToken(null);
-    clearLocalState();
-    clearQueue();
-    return location.reload();
-  }
+  if (e.target.closest("#logout")) return signOut();
   const target = e.target.closest("button, [data-action], [role=button]");
   if (!target || !app.state || !current().onClick) return;
   try {

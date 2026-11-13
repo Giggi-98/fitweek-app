@@ -1,14 +1,15 @@
 // Impostazioni: profilo, programma, preferenze allenamento, tema, backup, sessione.
 import { request } from "../api.js";
 import { DAYS, PROGRAM_WEEKS, SLOTS } from "../constants.js";
-import { app, clearLocalState, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
+import { app, dropRejectedState, loadAll, persistState, refreshDaily, rejectedState, retryRejectedState } from "../store.js";
 import { panel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
-import { clearQueue, dropRejected, rejected, retryRejected } from "../workout/queue.js";
+import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
+import { signOut } from "../logout.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, syncNotifications, testNotification } from "../native.js";
-import { serverUrl, setToken, standalone } from "../platform.js";
+import { serverUrl, standalone } from "../platform.js";
 
 export const THEME_KEY = "fitweek.theme.v1";
 
@@ -266,11 +267,7 @@ export async function onClick(t) {
   if (t.dataset.action === "logout" || t.dataset.action === "logout-all") {
     const all = t.dataset.action === "logout-all";
     if (all && !confirm("Uscire da tutti i dispositivi?")) return false;
-    await request(all ? "/api/logout-all" : "/api/logout", { method: "POST" }).catch(() => {});
-    await setToken(null);
-    clearLocalState();
-    clearQueue();
-    location.reload();
+    await signOut({ all });
     return false;
   }
   if (t.matches("[data-import-backup]")) {

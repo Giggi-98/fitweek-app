@@ -207,6 +207,17 @@ async function putState() {
   setSync("ok");
 }
 
+const listed = (names) => `${names.slice(0, 3).join(", ")}${names.length > 3 ? ` e altri ${names.length - 3}` : ""}`;
+/** Testo dell'avviso dopo una fusione: cosa ha prevalso e cosa è rimasto nonostante l'eliminazione locale. */
+export function conflictNotice(conflicts) {
+  const names = (kept) => [...new Set(conflicts.filter((c) => (c.kind === "kept") === kept).map((c) => c.what))];
+  const mine = names(false), kept = names(true);
+  return [
+    mine.length ? `Modificato anche da un altro dispositivo: ${listed(mine)}. Ho tenuto la versione di questo dispositivo.` : "",
+    kept.length ? `Eliminato qui ma modificato su un altro dispositivo: ${listed(kept)}. È rimasto: se non serve, eliminalo di nuovo.` : "",
+  ].filter(Boolean).join(" ");
+}
+
 /** Il server ha una versione più nuova (altro dispositivo o modifiche offline): fusione e nuovo invio. */
 async function mergeAndPut() {
   const server = await request("/api/state", { fresh: true });
@@ -215,10 +226,8 @@ async function mergeAndPut() {
   app.version = server.version;
   await putState();
   app.render();
-  if (conflicts.length) {
-    const names = [...new Set(conflicts.map((c) => c.what))];
-    toast(`Modificato anche da un altro dispositivo: ${names.slice(0, 3).join(", ")}${names.length > 3 ? ` e altri ${names.length - 3}` : ""}. Ho tenuto la versione di questo dispositivo.`, { timeout: 8000 });
-  }
+  const notice = conflictNotice(conflicts);
+  if (notice) toast(notice, { timeout: 10000 });
 }
 
 let saveQueue = Promise.resolve(true);
@@ -270,6 +279,9 @@ export function persistState({ quiet = false } = {}) {
 export function syncState() {
   return statePending() ? persistState({ quiet: true }) : Promise.resolve(true);
 }
+
+/** Modifiche allo stato non arrivate al server (in attesa o rifiutate): 0, 1 o 2 blocchi. */
+export const unsentStateCount = () => (statePending() ? 1 : 0) + (rejectedState() ? 1 : 0);
 
 /** Cancella la copia locale e gli stati temporanei su questo dispositivo all'uscita. */
 export function clearLocalState() {

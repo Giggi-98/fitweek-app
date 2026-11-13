@@ -32,7 +32,7 @@ test("fusione: stesso elenco cambiato da entrambe le parti → nessuna pesata pe
 test("fusione: eliminazioni e modifiche locali valgono, il resto segue il server", () => {
   const base = state();
   const local = state({ groceries: [{ id: "g2", name: "Riso", checked: true }] }); // g1 tolto, g2 spuntato
-  const server = state({ groceries: [{ id: "g1", name: "Banane bio", checked: false }, { id: "g2", name: "Riso", checked: false }, { id: "g3", name: "Uova", checked: false }] });
+  const server = state({ groceries: [{ id: "g1", name: "Banane", checked: false }, { id: "g2", name: "Riso", checked: false }, { id: "g3", name: "Uova", checked: false }] });
   assert.deepEqual(mergeState(base, local, server).groceries, [
     { id: "g2", name: "Riso", checked: true },
     { id: "g3", name: "Uova", checked: false },
@@ -142,4 +142,74 @@ test("fusione: una sola pesata per giorno quando i due dispositivi ne aggiungono
   const server = { weights: [...base.weights, { id: "ws", date: "2026-11-12", weight: 88.9 }, { id: "w3", date: "2026-11-11", weight: 89 }] };
   const out = mergeState(base, local, server);
   assert.deepEqual(out.weights.map((w) => w.id).sort(), ["w0", "w3", "wl"]);
+});
+
+// ---- review indipendente: FW-REV-003 (piano pasti) e FW-REV-008 (eliminata qui, modificata altrove) ----
+const day = (over = {}) => ({ lunch: "Primo", pre: "Banana", dinner: "Secondo", items: [{ name: "Riso", amount: 80, unit: "g", category: "Primi", slot: "dinner" }], ...over });
+
+test("FW-REV-003: pranzo cambiato sul telefono e cena cambiata sul PC nello stesso giorno → restano entrambe", () => {
+  const base = { meals: { Lunedì: day(), Martedì: day() } };
+  const local = { meals: { Lunedì: day({ lunch: "Pasta al pesto" }), Martedì: day() } };
+  const server = { meals: { Lunedì: day({ dinner: "Pollo e patate" }), Martedì: day() } };
+  const conflicts = [];
+  const out = mergeState(base, local, server, conflicts);
+  assert.equal(out.meals.Lunedì.lunch, "Pasta al pesto");
+  assert.equal(out.meals.Lunedì.dinner, "Pollo e patate");
+  assert.equal(out.meals.Lunedì.pre, "Banana");
+  assert.deepEqual(conflicts, []);
+});
+
+test("FW-REV-003: lo stesso pasto cambiato da entrambe le parti → vale il locale, con conflitto che lo nomina", () => {
+  const base = { meals: { Lunedì: day() } };
+  const local = { meals: { Lunedì: day({ dinner: "Tonno" }) } };
+  const server = { meals: { Lunedì: day({ dinner: "Pollo", pre: "Yogurt" }) } };
+  const conflicts = [];
+  const out = mergeState(base, local, server, conflicts);
+  assert.equal(out.meals.Lunedì.dinner, "Tonno");
+  assert.equal(out.meals.Lunedì.pre, "Yogurt", "ciò che ho lasciato com'era segue il server");
+  assert.deepEqual(conflicts, [{ section: "meals", what: "Lunedì · cena" }]);
+});
+
+test("FW-REV-003: ingredienti del giorno fusi voce per voce", () => {
+  const riso = { name: "Riso", amount: 80, unit: "g", category: "Primi", slot: "dinner" };
+  const uova = { name: "Uova", amount: 2, unit: "pz", category: "Secondi", slot: "dinner" };
+  const yogurt = { name: "Yogurt", amount: 1, unit: "pz", category: "Altro", slot: "pre" };
+  const base = { meals: { Sabato: day({ items: [riso] }) } };
+  const local = { meals: { Sabato: day({ items: [{ ...riso, amount: 100 }, uova] }) } }; // quantità + aggiunta
+  const server = { meals: { Sabato: day({ items: [riso, yogurt] }) } }; // un'altra aggiunta
+  const conflicts = [];
+  const out = mergeState(base, local, server, conflicts).meals.Sabato.items;
+  assert.deepEqual(out.map((i) => [i.name, i.amount]).sort(), [["Riso", 100], ["Uova", 2], ["Yogurt", 1]]);
+  assert.deepEqual(conflicts, []);
+  const both = mergeState(base, { meals: { Sabato: day({ items: [{ ...riso, amount: 100 }] }) } }, { meals: { Sabato: day({ items: [{ ...riso, amount: 60 }] }) } }, conflicts);
+  assert.equal(both.meals.Sabato.items[0].amount, 100);
+  assert.deepEqual(conflicts, [{ section: "meals", what: "Sabato · Riso" }]);
+});
+
+test("FW-REV-003: un giorno presente solo da una parte o senza `items` non rompe la fusione", () => {
+  const base = { meals: { Lunedì: { lunch: "a", pre: "b", dinner: "c" } } };
+  const local = { meals: { Lunedì: { lunch: "a2", pre: "b", dinner: "c" } } };
+  const server = { meals: { Lunedì: { lunch: "a", pre: "b", dinner: "c2" }, Domenica: day() } };
+  const out = mergeState(base, local, server);
+  assert.deepEqual(out.meals.Lunedì, { lunch: "a2", pre: "b", dinner: "c2" });
+  assert.deepEqual(out.meals.Domenica, day());
+});
+
+test("FW-REV-008: voce eliminata qui ma modificata sull'altro dispositivo → resta, con segnalazione dedicata", () => {
+  const base = { inventory: [{ id: "i1", name: "Ceci", amount: 1 }, { id: "i2", name: "Tonno", amount: 3 }] };
+  const local = { inventory: [] }; // eliminate entrambe sul telefono
+  const server = { inventory: [{ id: "i1", name: "Ceci", amount: 4 }, { id: "i2", name: "Tonno", amount: 3 }] }; // i1 cambiata dal PC
+  const conflicts = [];
+  const out = mergeState(base, local, server, conflicts);
+  assert.deepEqual(out.inventory, [{ id: "i1", name: "Ceci", amount: 4 }], "la modifica remota non sparisce in silenzio");
+  assert.deepEqual(conflicts, [{ section: "inventory", what: "Ceci", kind: "kept" }]);
+});
+
+test("FW-REV-008: vale anche per gli esercizi della scheda", () => {
+  const ex = (id, video) => ({ id, name: id, video, sets: [3] });
+  const base = { routines: { A: [ex("a1", ""), ex("a2", "")] } };
+  const conflicts = [];
+  const out = mergeState(base, { routines: { A: [ex("a1", "")] } }, { routines: { A: [ex("a1", ""), ex("a2", "https://x/2")] } }, conflicts);
+  assert.deepEqual(out.routines.A.map((e) => e.id), ["a1", "a2"]);
+  assert.deepEqual(conflicts, [{ section: "routines", what: "a2", kind: "kept" }]);
 });
