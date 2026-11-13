@@ -133,8 +133,12 @@ Dal 2026-11-13 (D-025) ogni commit pubblicato su `main` passa da una revisione t
 
 **Branch**
 - `main`: applicazione, del maker (sola lettura per il reviewer).
-- `review/engineering`: archivio delle review, **solo del reviewer**. Contiene `docs/reviews/REVIEW_POLICY.md`, `docs/reviews/REVIEW_LEDGER.md` e i report `docs/reviews/YYYY-MM-DD-SHA.md`.
-- **Divieti per il maker**: nessun commit, push, merge, rebase o cancellazione su `review/engineering`; non modificare Policy, Ledger o report; non fare merge di quel branch in `main` né copiare i suoi documenti in `main`. Solo lettura.
+- `review/engineering`: archivio delle review e **canale di comunicazione asincrono** tra reviewer e maker (decisione dell'utente del 2026-11-13: l'utente non fa da tramite, i due si parlano attraverso i file di questo branch). Contiene `docs/reviews/REVIEW_POLICY.md`, `docs/reviews/REVIEW_LEDGER.md`, i report `docs/reviews/YYYY-MM-DD-SHA.md` e le risposte del maker `docs/reviews/YYYY-MM-DD-SHA.maker.md`.
+- **Cosa può scrivere il maker su `review/engineering`** (solo in `docs/reviews/`, mai codice):
+  - la propria risposta a un report, in un file nuovo `YYYY-MM-DD-SHA.maker.md` accanto al report;
+  - in fondo al Ledger, solo dentro la sezione `## Maker notes`, una riga per ciclo che punta alla risposta e agli SHA (in aggiunta, mai riscrivendo righe precedenti).
+- **Cosa resta del reviewer**: Policy, report, e tutto il resto del Ledger (stato dei finding, checkpoint, verdetti, storico). Il maker non li modifica, nemmeno per correggere un refuso: lo segnala nella propria risposta.
+- Prima di ogni scrittura: `git fetch` e ripartire dall'`HEAD` remoto del branch; mai force push; se il reviewer ha scritto nel frattempo, si rifà il commit sopra il suo. Nessun merge di `review/engineering` in `main` (né il contrario) e nessuna copia dei suoi documenti in `main`.
 
 **Dove leggere (sempre la versione remota, mai una copia locale vecchia)**
 ```bash
@@ -143,7 +147,7 @@ git show origin/review/engineering:docs/reviews/REVIEW_POLICY.md
 git show origin/review/engineering:docs/reviews/REVIEW_LEDGER.md
 git ls-tree --name-only origin/review/engineering docs/reviews/   # report pubblicati
 ```
-Il **Ledger è l'unica fonte ufficiale** dello stato dei finding e del checkpoint revisionato: non duplicarlo qui né in `docs/`. Un finding comunicato dall'utente ma non ancora presente su GitHub va trattato come "riferito, report non pubblicato": si può lavorare, ma dichiarandolo.
+Il **Ledger è l'unica fonte ufficiale** dello stato dei finding e del checkpoint revisionato: non duplicarlo qui né in `docs/`. A inizio sessione, se l'utente chiede di "controllare le review", si legge da lì senza farsi incollare nulla. Un finding comunicato dall'utente ma non ancora presente su GitHub va trattato come "riferito, report non pubblicato": si può lavorare, ma dichiarandolo.
 
 **Gestione di un finding**
 1. Leggere il report originale e verificare i riferimenti al codice sullo SHA indicato.
@@ -160,7 +164,7 @@ Ordine di priorità: P0/P1 prima (integrità dei dati e affidabilità offline), 
 
 **Implementato ≠ verificato**: il maker non dichiara mai un finding chiuso. La formula è "correzione implementata, in attesa di verifica indipendente"; "verificato/chiuso" lo scrive solo il reviewer nel Ledger. Lo stesso vale per i test: quelli eseguiti dal maker sono "dichiarati dal maker" finché il reviewer non li riesegue.
 
-**Consegna al reviewer (fine di ogni ciclo)**, scritta in `docs/review-responses/YYYY-MM-DD-SHA.md` su `main` (stesso nome del report a cui risponde; è il canale del maker, dato che non scrive su `review/engineering`): finding affrontati · riprodotto o no (con motivo) · file modificati · soluzione · test aggiunti · test eseguiti con risultati reali · rischi residui · **SHA completi (40 caratteri) dei commit pubblicati su `main`**, con l'intervallo `SHA_precedente..SHA_nuovo` e il finding associato a ciascuno · cosa va verificato a mano (telefono reale, APK, deploy).
+**Consegna al reviewer (fine di ogni ciclo)**, scritta in `docs/reviews/YYYY-MM-DD-SHA.maker.md` su `review/engineering` più la riga in `## Maker notes` del Ledger, dopo aver pubblicato i commit su `main`: finding affrontati · riprodotto o no (con motivo) · file modificati · soluzione · test aggiunti · test eseguiti con risultati reali · rischi residui · **SHA completi (40 caratteri) dei commit pubblicati su `main`**, con l'intervallo `SHA_precedente..SHA_nuovo` e il finding associato a ciascuno · cosa va verificato a mano (telefono reale, APK, deploy).
 
 ## Stato e roadmap
 

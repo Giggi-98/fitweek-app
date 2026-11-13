@@ -98,7 +98,8 @@ Alternativa scartata: versioni per riga e risoluzione manuale di ogni conflitto 
 ## D-025 — Revisione tecnica indipendente Maker/Reviewer · Accettata (2026-11-13, decisione dell'utente)
 Contesto: finora sviluppo e verifica erano fatti dallo stesso agente; le affermazioni nei commit e nei documenti non sono prova di correttezza.
 Decisione: Claude Code è il **maker** (codice, test, documentazione applicativa, commit su `main` quando autorizzato); ChatGPT è il **reviewer** indipendente dei commit pubblicati su GitHub (`Giggi-98/fitweek-app`). Il reviewer scrive solo nel branch `review/engineering` (`docs/reviews/`: Policy, Ledger, report per SHA) e assegna ai finding ID stabili `FW-REV-NNN` con severità P0–P3.
-- Il maker non modifica `review/engineering`, non lo unisce a `main` e non ne copia i documenti in `main`: li legge da `origin/review/engineering`.
+- Il maker non unisce `review/engineering` a `main` e non ne copia i documenti in `main`: li legge da `origin/review/engineering`.
+- Aggiornamento dello stesso giorno (decisione dell'utente): il branch è anche il canale asincrono tra i due, così l'utente non deve fare da tramite. Il maker vi scrive solo le proprie risposte (`docs/reviews/YYYY-MM-DD-SHA.maker.md`) e una riga per ciclo nella sezione `## Maker notes` in fondo al Ledger; Policy, report, stato dei finding e checkpoint restano del reviewer.
 - Il Ledger è l'unica fonte ufficiale dello stato dei finding e del checkpoint revisionato.
 - Ogni correzione ha un test che fallisce prima e passa dopo; un finding ritenuto errato si contesta con codice e test, non si ignora.
 - Il maker dichiara al massimo "correzione implementata, in attesa di verifica indipendente"; la chiusura è del reviewer.
