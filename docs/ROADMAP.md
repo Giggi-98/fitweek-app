@@ -17,6 +17,18 @@ Stato: ⬜ da fare · 🔄 in corso · ✅ fatto · ⏸ in attesa di autorizzazi
 
 ---
 
+## Review indipendente — correzioni lato maker (D-025)
+
+Stato ufficiale dei finding: solo nel Ledger su `origin/review/engineering`. Qui c'è soltanto l'avanzamento del lavoro del maker.
+
+Baseline su `2dac1ab` (2026-11-13): verdetto riferito dall'utente **MODIFICHE RICHIESTE**, otto finding da analisi statica (nessun test eseguito dal reviewer). Il report e il Ledger aggiornato **non sono ancora pubblicati** su GitHub (verificato il 2026-11-13: il Ledger remoto dice ancora `PENDING_INITIAL_REVIEW`), quindi i riferimenti al codice vanno riletti dal report quando esce.
+
+| Ordine | Finding | Lavoro del maker |
+|---|---|---|
+| 1 | FW-REV-001, 002, 003 (P1: serie e pasti, concorrenza e scritture offline obsolete) | ⬜ da riprodurre con test |
+| 2 | FW-REV-004, 005, 006, 008 (P2: export, token legacy, logout con coda, conflitto elimina/modifica) | ⬜ |
+| 3 | FW-REV-007 (P3: documentazione delle progressioni rispetto a seed e PDF) | ⬜ |
+
 ## M1 — Stabilizzazione, protezione dati, sicurezza
 
 **Obiettivo**: nessuna perdita di dati possibile per cause tecniche; codice versionato; errori gestiti; scheda coerente col PDF. Nessun cambiamento visibile importante oltre ai fix.

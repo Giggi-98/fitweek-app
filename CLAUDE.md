@@ -120,10 +120,50 @@ Build/deploy: `scripts/deploy.sh` (dettagli in `docs/DEPLOYMENT.md`). **Il deplo
 
 ## Git
 
-Repository dedicato in `/opt/fitweek-app` (branch `main`). `.env`, DB e backup sono esclusi da `.gitignore`. Nota: esiste anche un repo git con radice in `/opt` che contiene altri progetti: non usarlo per FitWeek.
+Repository dedicato in `/opt/fitweek-app` (branch `main`), remoto `origin` = `https://github.com/Giggi-98/fitweek-app`. `.env`, DB e backup sono esclusi da `.gitignore`. Nota: esiste anche un repo git con radice in `/opt` che contiene altri progetti: non usarlo per FitWeek. Commit e push su `main` solo quando l'utente li autorizza; mai force push, mai riscrivere la storia pubblicata (il reviewer ragiona per intervalli di SHA).
+
+## Independent Engineering Review Workflow
+
+Dal 2026-11-13 (D-025) ogni commit pubblicato su `main` passa da una revisione tecnica indipendente. Ciclo: **Claude sviluppa → GitHub conserva → ChatGPT revisiona → Claude corregge → ChatGPT verifica.**
+
+**Ruoli**
+- **MAKER = Claude Code**: sviluppo, correzioni, test di regressione, documentazione applicativa, commit su `main` (quando autorizzato).
+- **REVIEWER = ChatGPT**: analizza i commit pubblicati, apre i finding con ID stabili `FW-REV-NNN` (severità P0–P3), verifica le correzioni, mantiene il Ledger. Non scrive codice applicativo.
+
+**Branch**
+- `main`: applicazione, del maker (sola lettura per il reviewer).
+- `review/engineering`: archivio delle review, **solo del reviewer**. Contiene `docs/reviews/REVIEW_POLICY.md`, `docs/reviews/REVIEW_LEDGER.md` e i report `docs/reviews/YYYY-MM-DD-SHA.md`.
+- **Divieti per il maker**: nessun commit, push, merge, rebase o cancellazione su `review/engineering`; non modificare Policy, Ledger o report; non fare merge di quel branch in `main` né copiare i suoi documenti in `main`. Solo lettura.
+
+**Dove leggere (sempre la versione remota, mai una copia locale vecchia)**
+```bash
+git fetch origin
+git show origin/review/engineering:docs/reviews/REVIEW_POLICY.md
+git show origin/review/engineering:docs/reviews/REVIEW_LEDGER.md
+git ls-tree --name-only origin/review/engineering docs/reviews/   # report pubblicati
+```
+Il **Ledger è l'unica fonte ufficiale** dello stato dei finding e del checkpoint revisionato: non duplicarlo qui né in `docs/`. Un finding comunicato dall'utente ma non ancora presente su GitHub va trattato come "riferito, report non pubblicato": si può lavorare, ma dichiarandolo.
+
+**Gestione di un finding**
+1. Leggere il report originale e verificare i riferimenti al codice sullo SHA indicato.
+2. Riprodurre il problema con un test (i finding da analisi statica, specie di concorrenza, sono ipotesi finché non riprodotti). Se non è riproducibile, dirlo con il motivo.
+3. Confermare o contestare con evidenze.
+4. Correzione minima e robusta, senza modifiche non correlate al finding.
+5. Test di regressione che **fallisce prima** della correzione e **passa dopo**; poi `scripts/check.sh` e, se tocca frontend/sync, `scripts/e2e.sh`.
+6. Controllo degli effetti collaterali e aggiornamento della documentazione applicativa (`docs/`, questo file).
+7. Commit su `main` solo se autorizzato, con l'ID del finding nel messaggio (es. `fix(FW-REV-001): …`), possibilmente un commit per finding.
+
+Ordine di priorità: P0/P1 prima (integrità dei dati e affidabilità offline), poi P2, poi P3. Le regole non negoziabili restano valide: niente deploy, migrazioni sul DB reale o operazioni distruttive senza autorizzazione.
+
+**Contestazioni**: un finding ritenuto errato non si ignora. Si presenta una contestazione tecnica con codice (file:riga sullo SHA revisionato) e un test che dimostra il comportamento reale; decide il reviewer, lo stato lo cambia solo lui.
+
+**Implementato ≠ verificato**: il maker non dichiara mai un finding chiuso. La formula è "correzione implementata, in attesa di verifica indipendente"; "verificato/chiuso" lo scrive solo il reviewer nel Ledger. Lo stesso vale per i test: quelli eseguiti dal maker sono "dichiarati dal maker" finché il reviewer non li riesegue.
+
+**Consegna al reviewer (fine di ogni ciclo)**: finding affrontati · riprodotto o no (con motivo) · file modificati · soluzione · test aggiunti · test eseguiti con risultati reali · rischi residui · **SHA completi (40 caratteri) dei commit pubblicati su `main`**, con l'intervallo `SHA_precedente..SHA_nuovo` e il finding associato a ciascuno · cosa va verificato a mano (telefono reale, APK, deploy).
 
 ## Stato e roadmap
 
 - Audit iniziale: `docs/AUDIT-2026-11-09.md`.
 - Milestone e avanzamento: `docs/ROADMAP.md`.
+- Review indipendenti: stato dei finding nel Ledger su `origin/review/engineering` (vedi "Independent Engineering Review Workflow"); l'avanzamento delle correzioni lato maker è in `docs/ROADMAP.md`.
 - Problemi noti aperti: traffico HTTP non cifrato in LAN (documentato in `docs/SECURITY.md` con avviso in app e opzioni Tailscale HTTPS / reverse proxy locale); destinazione esterna `OFFSITE_DEST` da configurare per `scripts/backup-offsite.sh`; server raggiungibile solo in LAN (l'app autonoma lavora senza rete e invia al rientro; per sincronizzare fuori casa serve una VPN, l'indirizzo si cambia dalla schermata di accesso); nessun APK provato su un telefono reale (checklist pronta in `docs/ANDROID_CHECKLIST.md`); tappa 2 (modello IA sul telefono per il menu della mensa) da fare; pesate, spesa e dispensa ancora nel blob; stime nutrizionali generiche per i piatti della mensa; sonno solo a mano (importazione dall'orologio via Health Connect da valutare, D-019); prezzi reali per articolo da inserire a mano la prima volta (la lista generata dal piano lascia il prezzo vuoto se non già noto); grafico del girovita e confronto tra settimane (M3); link video `b4` da verificare.
