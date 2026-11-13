@@ -163,3 +163,26 @@ Questo audit non modifica `REVIEW_LEDGER.md`, non certifica runtime/produzione e
 - **Prossime verifiche:** prove indipendenti del restore su copia isolata; evidenza di versione realmente distribuita; test sul device Android `next` e QA dei casi falliti per integrità dati.
 
 **Nessuna modifica a `main`, `REVIEW_LEDGER.md`, al checkpoint o ai documenti degli altri owner.**
+
+## 11. Segnalazione operativa — perdita di connettività VPN durante download APK — 2026-11-13
+
+- **Stato:** segnalazione utente osservata, diagnosi da eseguire; **nessun finding FW-ARCH numerato** finché non emerga una causa verificata. Priorità di triage suggerita **P2**, da rivalutare se vengono dimostrate indisponibilità globale, perdite di dati o rischi di sicurezza.
+- **HEAD applicativo ispezionato:** `439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7` (confronto GitHub: `main` identico), **nessuna modifica applicativa** dal precedente audit.
+- **Scenario riferito direttamente dall'utente:** da un unico PC dell'ufficio collegato alla rete domestica tramite VPN, avviando dal browser web il download dell'APK FitWeek si interrompono contemporaneamente, dal punto di vista di quel PC, SSH, ping e pagina web verso l'host domestico. Il download da LAN locale funziona. Non è stato verificato se si interrompa il tunnel VPN, solo il percorso verso l'host oppure la connettività per altri client. Tipo VPN, MTU, dimensione APK e tempi di recupero non ancora noti.
+- **Impatto:** indisponibilità temporanea apparente dell'accesso remoto durante un trasferimento di grandi dimensioni; nessuna evidenza di crash del server, container, router o altre applicazioni.
+- **Evidenza di codice:** `app/main.py`: `GET /api/v1/app/android/download?channel=stable|next`, autenticato con `require_session`, verifica metadati `*-apk.json` e serve l'APK locale con `fastapi.responses.FileResponse`. `static/js/views/settings.js` rende un normale link `<a href=... download>`. `app/config.py`: directory download locale; `docker-compose.yml`: bind `192.168.222.200:8088:8080`, volume `./mobile/dist:/app/downloads:ro`; `Dockerfile`: Uvicorn/FastAPI. Non è stata riscontrata, mediante esame statico mirato, logica applicativa che spieghi da sola la perdita simultanea di SSH/ping/web.
+- **Ipotesi non confermate, in ordine diagnostico:** saturazione dell'upload domestico o bufferbloat; MTU/MSS/PMTUD anomalo del tunnel; router/firewall/NAT o client VPN sotto trasferimento sostenuto; solo in seconda battuta anomalie HTTP/FileResponse, Range, socket o carico Uvicorn/Docker. Non dichiarare la causa senza dati.
+
+### Verifiche richieste al maker (diagnosi, non implementazione preventiva)
+
+1. Identificare VPN, endpoint di ingresso, host e percorso di routing, senza esporre credenziali; stabilire se il guasto è tunnel-wide, host-specific o server-wide con ping/SSH dalla LAN e da un secondo client durante un trasferimento **controllato**.
+2. Raccogliere dimensioni APK, velocità e tempi di download, consumo banda e CPU/RAM server, stato del container, eventuali log kernel/router/VPN. Evitare ripetizioni incontrollate che interrompano la connessione dell'utente.
+3. Confrontare APK con un trasferimento statico equivalente via VPN e con un trasferimento a velocità limitata; verificare HTTP status/header `Content-Length`, `Accept-Ranges`/Range, disconnessione e eventuale riavvio del servizio.
+4. Se la prova lo indica, indagare MTU/MSS/PMTUD e saturazione/bufferbloat; effettuare prima diagnosi reversibili. Non modificare VPN, firewall, Docker, configurazione di rete, limiti o sistema live senza autorizzazione dell'utente.
+5. Riportare risultati riproducibili (comandi, orari, metriche, log redatti, condizioni di rete, risultati comparativi, commit SHA), distinguere causa dimostrata e plausibile; proporre intervento minimo e criteri di accettazione solo dopo identificazione.
+
+### Accettazione della diagnosi e coordinamento
+
+- La diagnosi è sufficiente quando è noto **quale segmento cade**, un confronto trasferimento lento/veloce o equivalente isola un fattore, e vengono raccolte evidenze per almeno una causa o per escluderla ragionevolmente. Un eventuale fix richiede test VPN dalla postazione interessata e controllo che SSH/ping restino raggiungibili durante il trasferimento APK.
+- **Test eseguiti dal reviewer:** nessuno lato VPN/live; la valutazione è solo lettura del codice e segnalazione utente. Non attribuire il problema a FitWeek, né a provider VPN, né al router senza riscontro.
+- **Relazione con altre aree:** possibile relazione con compatibilità Android/APK e disponibilità operativa, ma distinta dagli FW-ARCH-001/002 e FW-REV correnti. Owner di triage: area 02; nessuna modifica a Ledger o altre aree.
