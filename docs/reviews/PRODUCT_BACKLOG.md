@@ -85,3 +85,41 @@ Prima di pubblicare: rileggere HEAD `main`, `PRODUCT_REVIEW.md` e `PRODUCT_BACKL
 **Cicli successivi:** interventi minimi solo su frizioni validate; AI e nuove funzionalità non giustificate al momento.
 
 **Misure richieste:** serie corrette dopo offline/riavvio 100% nei casi di test; nessuna ri-autenticazione silenziosa dopo logout non riuscito; restore isolato con conteggi per dominio; lista generata con ingredienti mancanti, correzioni manuali e tempo di preparazione settimanale. Si tratta di criteri proposti, **non risultati osservati**.
+
+
+---
+
+## Aggiornamento operativo del backlog 1.10.6 — 2026-11-13
+
+- **Baseline:** `439dc830f35ba10ab24b3e7f40659d2b4f2f2bd7` (`e014e0d..439dc83`: 4 commit, GitHub compare).
+- **Ultimo checkpoint ufficiale:** `null`; la chat 01 ha revisionato staticamente solo fino a `e014e0d`. I nuovi commit 1.10.6 attendono review incrementale della chat 01.
+- **Ambito:** aggiornamento dei finding già esistenti FW-PROD-001…008, senza duplicare gli ID FW-REV/FW-ARCH/FW-UX.
+- **Evidenze:** `static/js/platform.js`, `logout.js`, `ui.js`, `views/shopping.js`, `app/main.py`, test pertinenti e `docs/reviews/2026-11-13-439dc83.maker.md`. Maker dichiara 105 pytest, 83 JS, 169 E2E superati; reviewer 04 **non ha eseguito** le suite.
+
+### Stato e prossime azioni, ordinate per valore/rischio
+
+| Ordine | ID | Stato product | Azione richiesta al maker / prova di accettazione |
+| --- | --- | --- | --- |
+| 1 | **FW-PROD-001 (P1)** | **BLOCCATO / DA VERIFICARE**. Correzione FW-REV-010 1.10.6 in codice; gate Android ancora aperto. | Consegnare a chat 01 scenario e test FW-REV-010 (Keystore+localStorage+cookie, incluse memorie che recuperano funzionalità al riavvio); regressione serie FW-REV-002/009; fornire log verificabili di versione server/APK e device-test offline/riavvio/online, logout/revoca. **Nessuna promozione `next`→`stable` senza validazione.** |
+| 2 | **FW-PROD-002 (P1)** | **BLOCCATO / DA VERIFICARE**. Restore 422/rollback aggiunto (`f2bf1e6`), FW-ARCH-001 resta di chat 02. | Mettere a disposizione prova di restore su **DB temporaneo** con v1–v4, domini sostituiti e mantenuti, collisione/422, rollback completo e differenze JSON vs SQLite. Proibita prova distruttiva su DB live senza autorizzazione. |
+| 3 | **FW-PROD-006 (P2)** | **QA PRIORITARIO, non nuova feature**. Undo aggiunto in 1.10.5; limite toast unico caratterizzato in 1.10.6. | Concordare con chat 03 valutazione di due rimozioni rapide: primo Undo diventa inaccessibile dal toast quando compare il secondo. Misurare recuperabilità e frequenza; decidere se accettare il limite o chiedere intervento minimo. Test anche offline, 409, reload e dispensa; non chiamarlo perdita dati accertata. |
+| 4 | **FW-PROD-005 (P2)** | **DA VERIFICARE**. Collegamenti `aria-controls` / `tabpanel` ora nel codice. | QA chat 03: browser e screen reader, tasti freccia/Home/End, focus, rapporto tab/pannello in tutte le viste e viewport reale; documentare risultati prima di chiudere FW-UX-002. |
+| 5 | **FW-PROD-003 (P2)** | **PRONTO PER DISCOVERY, NON PER SVILUPPO** | Eseguire tre settimane alimentari tipo, misurare ingredienti omessi dalla lista, correzioni e tempo; solo dopo proporre la soluzione minima, senza parser/AI. |
+| 6 | **FW-PROD-004 (P2)** | **DA VERIFICARE** | Test mensa→secondo asporto→cena e modifica del pasto senza doppio conteggio; coordinare FW-REV-003. |
+| 7 | **FW-PROD-007 (P3)** | **RINVIATO** | Decisione su dopo-settimana-8 solo quando necessaria; nessun ampliamento automatico. |
+| 8 | **FW-PROD-008 (P3)** | **RINVIATO** | AI menu mensa non autorizzata durante consolidamento. |
+
+### Richiesta di handoff verificabile per la 1.10.6
+
+- **Chat 01:** commit `9ba8b7c..439dc83`, condizione di ripartenza senza credenziali dopo guasti storage, FW-REV-002/009, regressioni e test indipendenti. Il Ledger e il checkpoint sono esclusivamente suoi.
+- **Chat 02:** FW-ARCH-001: test isolati di restore e rollback, più controllo di coerenza fra API e interfaccia. Non duplicare la registrazione tecnica.
+- **Chat 03:** FW-UX-001 toast multipli; FW-UX-002 semantica/lettore di schermo; FW-UX-003 regressione controlli spesa.
+- **Chat 04:** valutare il **beneficio reale** e l'accettabilità del limite Undo, e predisporre la discovery di FW-PROD-003.
+
+### Stato del rilascio e prerequisiti
+
+Nell'**aggiornamento operativo** dell'handoff maker `2026-11-13-439dc83.maker.md`, Claude dichiara che il deploy **1.10.6/schema 9** è avvenuto, che sono presenti backup pre-deploy e pre-migrazione e che l'APK `next` **versionCode 11006** è stato ricompilato. Queste sono **dichiarazioni del maker**, non verifiche indipendenti del reviewer 04; il dispositivo Android, l'integrità dei backup e la distribuzione effettiva richiedono prove. **Non usare le precedenti frasi «non in produzione» come stato corrente accertato.**
+
+**Gate 0 NON SUPERATO:** prima dell'approvazione di prodotto occorrono review chat 01 fino al nuovo HEAD, test critici indipendenti, compatibilità server/APK e verifica fisica del flusso offline/online, nonché ripristino isolato. Il fatto che il maker abbia eventualmente distribuito non rappresenta approvazione del reviewer.
+
+**Handoff a Claude:** consultare il backlog in GitHub, produrre soltanto le evidenze e gli interventi minimi elencati; evitare nuova feature e riscritture. Non modificare documenti di altre aree né avanzare checkpoint. Pubblicazione di questa appendice non autorizza ulteriori deploy o modifiche a `main`.
