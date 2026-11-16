@@ -4,13 +4,14 @@
 // Nessuna operazione viene mai buttata: gli errori passeggeri (rete, 5xx, 429) si ritentano senza limite;
 // i rifiuti definitivi (4xx) finiscono in un elenco visibile in Impostazioni, da riprovare o scartare.
 import { request } from "../api.js";
-import { keep, setPending, setSync, app } from "../store.js";
+import { keep, mirrorSettled, mirrorWrite, refreshDaily, setPending, setSync, watchQueue, app } from "../store.js";
 import { toast } from "../ui.js";
 import { isTransient } from "../stats.js";
 import { storage } from "../util.js";
 
 const KEY = "fitweek.workoutQueue.v1";
 let ops = storage.get(KEY, []);
+watchQueue(() => ops);
 
 let retrying = false; // c'è un errore mostrato che un invio riuscito deve cancellare
 const REJECTED_KEY = "fitweek.rejected.v1";
@@ -46,6 +47,7 @@ export function enqueue(method, path, body, key = `${method} ${path}`) {
   const op = { method, path, body, key, at: new Date().toISOString() };
   if (i >= 0) ops[i] = op;
   else ops.push(op);
+  mirrorWrite(op);
   save();
   flush();
 }
@@ -107,6 +109,7 @@ async function drain() {
       settled(op);
       continue;
     }
+    mirrorSettled(op);
     settled(op);
     if (retrying) {
       retrying = false;
@@ -114,6 +117,19 @@ async function drain() {
     }
   }
   setPending(ops.length);
+}
+
+/** Dopo una scrittura accodata: la invia se c'è rete e ricarica ciò che ne dipende (agenda, riepilogo,
+ *  cataloghi), poi ridisegna. Senza rete l'app autonoma rilegge dalla copia sul telefono. */
+export async function commit() {
+  await flush();
+  window.dispatchEvent(new Event("fitweek:changed"));
+  try {
+    await refreshDaily();
+  } catch {
+    /* webapp senza rete: resta ciò che è a schermo, la coda invierà al ritorno */
+  }
+  app.render();
 }
 
 export function startQueue() {

@@ -31,6 +31,15 @@ class Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ProteinPowder(Strict):
+    """Proteine in polvere dell'utente. Valori PER MISURINO, copiati dall'etichetta: l'app non li stima."""
+    name: Annotated[str, StringConstraints(min_length=1, max_length=80)]
+    scoopG: Optional[float] = Field(default=None, gt=0, le=200)
+    proteinG: Optional[float] = Field(default=None, ge=0, le=200)
+    kcal: Optional[float] = Field(default=None, ge=0, le=1000)
+    source: Literal["label", "off"] = "label"  # off = valori letti da Open Food Facts dal codice a barre
+
+
 class Profile(Strict):
     name: Text(100) = ""
     age: float = Field(ge=0, le=120)
@@ -44,6 +53,7 @@ class Profile(Strict):
     # Riferimenti giornalieri scelti dall'utente (mai calcolati né prescritti dall'app).
     proteinTarget: Optional[float] = Field(default=None, ge=0, le=500)
     kcalTarget: Optional[float] = Field(default=None, ge=0, le=10_000)
+    proteinPowder: Optional[ProteinPowder] = None
 
 
 class Exercise(Strict):

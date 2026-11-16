@@ -1,6 +1,6 @@
 """Ricerca di prodotti su Open Food Facts (database pubblico, licenza ODbL) — D-018.
 
-Il server invia al servizio SOLO il testo cercato: nessun cookie, nessun dato dell'utente, uno
+Il server invia al servizio SOLO il testo cercato (o il codice a barre letto dalla confezione): nessun cookie, nessun dato dell'utente, uno
 User-Agent generico. I valori tornano per 100 g e vengono marcati con fonte "off": non sono né
 stime dell'app né etichette verificate dall'utente. Disattivabile con FOOD_SEARCH=off.
 """
@@ -13,13 +13,14 @@ import urllib.request
 from collections import OrderedDict, deque
 from typing import Callable
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Path, Query
 
 from . import APP_VERSION
 from .config import Settings
 
 log = logging.getLogger("fitweek.foodsearch")
 SEARCH_URL = "https://search.openfoodfacts.org/search"
+PRODUCT_URL = "https://world.openfoodfacts.org/api/v2/product"
 FIELDS = "code,product_name,brands,quantity,serving_quantity,nutriments"
 ATTRIBUTION = "Open Food Facts (ODbL)"
 MAX_PER_MINUTE = 10  # limite indicato da Open Food Facts per le ricerche
@@ -27,12 +28,26 @@ CACHE_SIZE = 200
 TIMEOUT_S = 8
 
 
-def fetch_json(query: str) -> dict:
-    """Chiamata HTTP reale; nei test viene sostituita (monkeypatch)."""
-    url = f"{SEARCH_URL}?{urllib.parse.urlencode({'q': query, 'page_size': 12, 'langs': 'it', 'fields': FIELDS})}"
+def _get(url: str) -> dict:
     request = urllib.request.Request(url, headers={"User-Agent": f"FitWeek/{APP_VERSION} (self-hosted personal app)"})
     with urllib.request.urlopen(request, timeout=TIMEOUT_S) as response:  # noqa: S310 - URL fisso https
         return json.load(response)
+
+
+def fetch_json(query: str) -> dict:
+    """Chiamata HTTP reale; nei test viene sostituita (monkeypatch)."""
+    return _get(f"{SEARCH_URL}?{urllib.parse.urlencode({'q': query, 'page_size': 12, 'langs': 'it', 'fields': FIELDS})}")
+
+
+def fetch_product(code: str) -> dict:
+    """Scheda di un prodotto dal suo codice a barre; un codice sconosciuto risponde 404 (nessun prodotto).
+    Nei test viene sostituita (monkeypatch)."""
+    try:
+        return _get(f"{PRODUCT_URL}/{code}?{urllib.parse.urlencode({'fields': FIELDS})}")
+    except urllib.error.HTTPError as exc:
+        if exc.code == 404:
+            return {}
+        raise
 
 
 def _number(value) -> float | None:
@@ -76,14 +91,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     cache: OrderedDict[str, list[dict]] = OrderedDict()
     calls: deque[float] = deque()
 
-    @r.get("/food-search")
-    def food_search(q: str = Query(min_length=3, max_length=60)):
-        if not settings.food_search_enabled:
-            return {"enabled": False, "items": [], "source": ATTRIBUTION}
-        key = " ".join(q.lower().split())
+    def lookup(key: str, fetch: Callable[[], dict]) -> list[dict]:
+        """Risposta dalla memoria se c'è, altrimenti una chiamata esterna entro il limite al minuto."""
         if key in cache:
             cache.move_to_end(key)
-            return {"enabled": True, "items": cache[key], "source": ATTRIBUTION}
+            return cache[key]
         now = time.monotonic()
         while calls and now - calls[0] > 60:
             calls.popleft()
@@ -91,13 +103,29 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             raise HTTPException(status_code=429, detail="Troppe ricerche online: riprova tra un minuto.")
         calls.append(now)
         try:
-            items = parse_products(fetch_json(key))
+            items = parse_products(fetch())
         except (urllib.error.URLError, TimeoutError, ValueError, OSError) as exc:
             log.warning("ricerca prodotti non riuscita", extra={"fields": {"error": type(exc).__name__}})
             raise HTTPException(status_code=502, detail="Ricerca online non disponibile in questo momento.") from exc
         cache[key] = items
         if len(cache) > CACHE_SIZE:
             cache.popitem(last=False)
-        return {"enabled": True, "items": items, "source": ATTRIBUTION}
+        return items
+
+    @r.get("/food-search")
+    def food_search(q: str = Query(min_length=3, max_length=60)):
+        if not settings.food_search_enabled:
+            return {"enabled": False, "items": [], "source": ATTRIBUTION}
+        key = " ".join(q.lower().split())
+        return {"enabled": True, "items": lookup(key, lambda: fetch_json(key)), "source": ATTRIBUTION}
+
+    @r.get("/food-barcode/{code}")
+    def food_barcode(code: str = Path(pattern=r"^\d{8,14}$")):
+        """Prodotto dal codice a barre (EAN-8/13, UPC). `item` è null se il codice non è nel database o il
+        prodotto non ha nome e calorie: in quel caso i valori si copiano a mano dall'etichetta."""
+        if not settings.food_search_enabled:
+            return {"enabled": False, "item": None, "source": ATTRIBUTION}
+        items = lookup(f"barcode:{code}", lambda: {"products": [fetch_product(code).get("product") or {}]})
+        return {"enabled": True, "item": items[0] if items else None, "source": ATTRIBUTION}
 
     return r

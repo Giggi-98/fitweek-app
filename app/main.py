@@ -26,7 +26,7 @@ from .security import (
     password_matches,
     request_token,
 )
-from . import daily, foodsearch, tracking
+from . import daily, foodsearch, mirror, tracking
 from .workouts import build_router, load_sessions, now_iso
 
 log = logging.getLogger("fitweek.http")
@@ -334,6 +334,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(daily.build_router(settings, require_session))
     app.include_router(tracking.build_router(settings, require_session))
     app.include_router(foodsearch.build_router(settings, require_session))
+    app.include_router(mirror.build_router(settings, require_session))
 
     @app.get("/api/original-pdf", dependencies=[Depends(require_session)])
     def original_pdf():

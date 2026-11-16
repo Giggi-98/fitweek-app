@@ -3,6 +3,7 @@ import { request } from "../api.js";
 import { icon } from "../icons.js";
 import { dayNumber, formatQty, mondayOf, parseQty, planProposal } from "../stats.js";
 import { app, persistState } from "../store.js";
+import { enqueue, flush } from "../workout/queue.js";
 import { empty, openModal, panel, removalToast, tabpanel, tabs, toast } from "../ui.js";
 import { $, $$, esc, fmtDate, fmtNum, isoDate, money, num, putBack, storage, takeById, uid } from "../util.js";
 
@@ -124,9 +125,9 @@ async function reloadSpend() {
 }
 
 async function saveSpend(week, amount) {
-  if (amount == null) await request(`/api/v1/grocery-spend/${week}`, { method: "DELETE" });
-  else await request(`/api/v1/grocery-spend/${week}`, { method: "PUT", body: { amount } });
-  await reloadSpend();
+  enqueue(amount == null ? "DELETE" : "PUT", `/api/v1/grocery-spend/${week}`, amount == null ? undefined : { amount }, `spend:${week}`);
+  await flush();
+  await reloadSpend().catch(() => {}); // webapp senza rete: l'importo parte al ritorno, l'elenco resta com'è
 }
 
 /** Totale pagato in una settimana. Con `arrived` sposta anche gli articoli spuntati in dispensa. */
@@ -148,11 +149,7 @@ function openSpend(week, { arrived = false } = {}) {
       const amount = t.dataset.m === "delete" ? null : parseAmount($("#sp-amount").value);
       if (amount != null && (amount < 0 || amount > 10000)) return toast("Importo non valido"), false;
       if (amount == null && !arrived && t.dataset.m === "save") return toast("Inserisci il totale pagato"), false;
-      try {
-        if (amount != null || t.dataset.m === "delete") await saveSpend(week, amount);
-      } catch (e) {
-        return toast("Totale non salvato: " + e.message), false;
-      }
+      if (amount != null || t.dataset.m === "delete") await saveSpend(week, amount);
       if (arrived) await moveToPantry();
       else toast(amount == null ? "Totale eliminato" : "Totale salvato");
       app.render();

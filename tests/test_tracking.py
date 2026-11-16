@@ -143,3 +143,22 @@ def test_meal_with_off_items_keeps_database_source(auth_client):
     assert log["nutrition_source"] == "off" and log["kcal"] == 88.5
     food = next(f for f in auth_client.get("/api/v1/foods").json()["items"] if f["name"] == "Yogurt greco (150 g)")
     assert food["nutrition_source"] == "off"  # il catalogo ricorda il prodotto con la sua fonte
+
+
+def test_barcode_lookup_found_missing_invalid_and_cached(tmp_path, monkeypatch):
+    calls = []
+    products = {"8001234567890": {"status": 1, "product": {
+        "code": "8001234567890", "product_name": "Whey vaniglia", "brands": "Marca",
+        "serving_quantity": 30, "nutriments": {"energy-kcal_100g": 390, "proteins_100g": 78}}}}
+    monkeypatch.setattr(foodsearch, "fetch_product", lambda code: calls.append(code) or products.get(code, {}))
+    c = search_client(tmp_path)
+    found = c.get("/api/v1/food-barcode/8001234567890").json()
+    assert found["item"] == {"code": "8001234567890", "name": "Whey vaniglia", "brand": "Marca",
+                             "kcal_100g": 390.0, "protein_100g": 78.0, "serving_g": 30.0}
+    c.get("/api/v1/food-barcode/8001234567890")
+    assert calls == ["8001234567890"]  # la seconda lettura dello stesso codice non esce dal server
+    assert c.get("/api/v1/food-barcode/12345678").json()["item"] is None
+    assert c.get("/api/v1/food-barcode/abc").status_code == 422
+    assert c.get("/api/v1/food-barcode/123").status_code == 422
+    off = search_client(tmp_path / "off", enabled=False)
+    assert off.get("/api/v1/food-barcode/8001234567890").json() == {"enabled": False, "item": None, "source": foodsearch.ATTRIBUTION}

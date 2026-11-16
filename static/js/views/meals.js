@@ -4,12 +4,12 @@ import { DAYS, DAYSHORT, GYM, MEAL_DEFAULTS, SLOTS, SOURCE_LABEL } from "../cons
 import { icon } from "../icons.js";
 import { openComposer } from "../composer.js";
 import { guessSlot } from "../reminders.js";
-import { app, persistState, refreshDaily } from "../store.js";
+import { app, persistState } from "../store.js";
 import { formatQty, parseQty } from "../stats.js";
 import { empty, panel, tabId, tabpanel, tabs, toast } from "../ui.js";
 import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
 import { openPlanProposal } from "./shopping.js";
-import { enqueue, flush } from "../workout/queue.js";
+import { commit, enqueue } from "../workout/queue.js";
 
 const ui = { tab: "diary", weekOffset: 0, day: null, logs: null, loadedFor: null, planDay: (new Date().getDay() + 6) % 7, slot: "lunch" };
 // Un pasto registrato da un promemoria invalida il diario in cache.
@@ -171,13 +171,9 @@ async function saveTemplate(id, data) {
     nutrition_source: data.nutrition_source, position: num(data.position, app.templates.length),
   };
   if (!body.name) return toast("Inserisci un nome"), false;
-  try {
-    await request(`/api/v1/meal-templates/${encodeURIComponent(id)}`, { method: "PUT", body });
-    await refreshDaily();
-    toast("Pasto abituale salvato");
-  } catch (e) {
-    toast("Non salvato: " + e.message);
-  }
+  enqueue("PUT", `/api/v1/meal-templates/${encodeURIComponent(id)}`, body, `tpl:${id}`);
+  toast("Pasto abituale salvato");
+  await commit();
   return true;
 }
 
@@ -202,17 +198,15 @@ export async function onClick(t) {
   }
   if (t.dataset.delLog) {
     if (!confirm("Eliminare questo pasto dal diario?")) return false;
-    enqueue("DELETE", `/api/v1/meal-logs/${encodeURIComponent(t.dataset.delLog)}`);
-    await flush();
-    ui.loadedFor = null;
-    refreshDaily().then(() => app.render()).catch(() => {});
-    return true;
+    enqueue("DELETE", `/api/v1/meal-logs/${encodeURIComponent(t.dataset.delLog)}`, undefined, `meal:${t.dataset.delLog}`);
+    await commit();
+    return false;
   }
   if (t.dataset.delTpl) {
     if (!confirm("Eliminare questo pasto abituale?")) return false;
-    await request(`/api/v1/meal-templates/${encodeURIComponent(t.dataset.delTpl)}`, { method: "DELETE" }).catch((e) => toast(e.message));
-    await refreshDaily();
-    return true;
+    enqueue("DELETE", `/api/v1/meal-templates/${encodeURIComponent(t.dataset.delTpl)}`, undefined, `tpl:${t.dataset.delTpl}`);
+    await commit();
+    return false;
   }
   if (t.matches("[data-generate-list]")) return openPlanProposal(), false;
   if (t.dataset.delPlanIng) {

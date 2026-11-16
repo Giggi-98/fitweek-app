@@ -80,7 +80,7 @@ def agenda_for(c: sqlite3.Connection, d: date, now: datetime | None = None) -> l
     reminders = _rows(c, "SELECT * FROM reminders WHERE weekday=? AND enabled=1 ORDER BY time, id", (d.weekday(),))
     acks = {a["reminder_id"]: a for a in _rows(c, "SELECT * FROM reminder_acks WHERE date=?", (iso,))}
     meals = {}
-    for m in _rows(c, "SELECT slot, status, description FROM meal_logs WHERE date=? AND deleted_at IS NULL"
+    for m in _rows(c, "SELECT id, slot, status, description FROM meal_logs WHERE date=? AND deleted_at IS NULL"
                       " ORDER BY logged_at", (iso,)):
         meals.setdefault(m["slot"], m)
     weighed = any(w.get("date") == iso for w in _blob(c).get("weights", []))
@@ -89,10 +89,10 @@ def agenda_for(c: sqlite3.Connection, d: date, now: datetime | None = None) -> l
     now = now or datetime.now(TZ)
     out = []
     for r in reminders:
-        state, detail = "pending", ""
+        state, detail, meal_id = "pending", "", None
         if r["action"] == MEAL_ACTION and r["slot"] in meals:
             m = meals[r["slot"]]
-            state, detail = ("done" if m["status"] == "eaten" else "skipped"), m["description"]
+            state, detail, meal_id = ("done" if m["status"] == "eaten" else "skipped"), m["description"], m["id"]
         elif r["action"] == "log_weight" and weighed:
             state = "done"
         elif r["action"] == "start_workout" and trained:
@@ -108,7 +108,8 @@ def agenda_for(c: sqlite3.Connection, d: date, now: datetime | None = None) -> l
         due_at = datetime.combine(d, datetime.strptime(r["time"], "%H:%M").time(), TZ)
         if state == "snoozed":
             due_at = datetime.fromisoformat(ack["snooze_until"])
-        out.append({**r, "enabled": bool(r["enabled"]), "state": state, "detail": detail,
+        # meal_id: il pasto che ha chiuso il promemoria, così dalla giornata si apre direttamente il suo editor
+        out.append({**r, "enabled": bool(r["enabled"]), "state": state, "detail": detail, "meal_id": meal_id,
                     "due_at": due_at.isoformat(timespec="minutes"), "due": state == "pending" and due_at <= now})
     return out
 
@@ -192,10 +193,12 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             return {"items": _rows(c, "SELECT * FROM meal_templates WHERE deleted_at IS NULL ORDER BY position, name")}
 
     @r.put("/meal-templates/{tid}", dependencies=writes)
-    def put_template(tid: str, body: MealTemplatePut):
+    def put_template(tid: str, body: MealTemplatePut, edited: str = Depends(edit_time)):
         _check_id(tid)
-        now = now_iso()
+        now = edited
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "meal_templates", tid), edited):
+                return STALE
             c.execute(
                 "INSERT INTO meal_templates (id, slot, name, kcal, protein_g, nutrition_source, nutrition_note,"
                 " position, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
@@ -209,9 +212,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"ok": True}
 
     @r.delete("/meal-templates/{tid}", dependencies=writes)
-    def delete_template(tid: str):
+    def delete_template(tid: str, edited: str = Depends(edit_time)):
         with connect(settings.db_path) as c, transaction(c):
-            c.execute("UPDATE meal_templates SET deleted_at=? WHERE id=?", (now_iso(), tid))
+            if is_stale(_saved_at(c, "meal_templates", tid), edited):
+                return STALE
+            c.execute("UPDATE meal_templates SET deleted_at=?, updated_at=? WHERE id=?", (edited, edited, tid))
         return {"ok": True}
 
     # ---- diario pasti ----------------------------------------------------------------------
@@ -229,7 +234,7 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         kcal, protein, source = body.kcal, body.protein_g, body.nutrition_source
         description = body.description
         with connect(settings.db_path) as c, transaction(c):
-            if is_stale(_meal_time(c, mid), edited):
+            if is_stale(_saved_at(c, "meal_logs", mid), edited):
                 return STALE
             if body.items:
                 # Pasto composto: i totali derivano SEMPRE dalle voci (ricalcolati a ogni modifica).
@@ -268,10 +273,12 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                                       " ORDER BY category, use_count DESC, name")}
 
     @r.put("/foods/{fid}", dependencies=writes)
-    def put_food(fid: str, body: FoodPut):
+    def put_food(fid: str, body: FoodPut, edited: str = Depends(edit_time)):
         _check_id(fid)
-        now = now_iso()
+        now = edited
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "foods", fid), edited):
+                return STALE
             clash = c.execute("SELECT id FROM foods WHERE lower(name)=lower(?) AND id<>? AND deleted_at IS NULL",
                               (body.name, fid)).fetchone()
             if clash:
@@ -288,9 +295,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"ok": True}
 
     @r.delete("/foods/{fid}", dependencies=writes)
-    def delete_food(fid: str):
+    def delete_food(fid: str, edited: str = Depends(edit_time)):
         with connect(settings.db_path) as c, transaction(c):
-            c.execute("UPDATE foods SET deleted_at=? WHERE id=?", (now_iso(), fid))
+            if is_stale(_saved_at(c, "foods", fid), edited):
+                return STALE
+            c.execute("UPDATE foods SET deleted_at=?, updated_at=? WHERE id=?", (edited, edited, fid))
         return {"ok": True}
 
     @r.get("/takeaway")
@@ -305,7 +314,7 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     @r.delete("/meal-logs/{mid}", dependencies=writes)
     def delete_meal_log(mid: str, edited: str = Depends(edit_time)):
         with connect(settings.db_path) as c, transaction(c):
-            if is_stale(_meal_time(c, mid), edited):
+            if is_stale(_saved_at(c, "meal_logs", mid), edited):
                 return STALE
             c.execute("UPDATE meal_logs SET deleted_at=?, updated_at=? WHERE id=?", (edited, edited, mid))
         return {"ok": True}
@@ -320,12 +329,14 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"items": items}
 
     @r.put("/reminders/{rid}", dependencies=writes)
-    def put_reminder(rid: str, body: ReminderPut):
+    def put_reminder(rid: str, body: ReminderPut, edited: str = Depends(edit_time)):
         _check_id(rid)
         if body.action == MEAL_ACTION and not body.slot:
             raise HTTPException(status_code=422, detail="Un promemoria pasto richiede il tipo di pasto")
-        now = now_iso()
+        now = edited
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "reminders", rid), edited):
+                return STALE
             c.execute(
                 "INSERT INTO reminders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET"
                 " weekday=excluded.weekday, time=excluded.time, kind=excluded.kind, slot=excluded.slot,"
@@ -371,8 +382,9 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     return r
 
 
-def _meal_time(c: sqlite3.Connection, mid: str) -> str | None:
-    row = c.execute("SELECT updated_at FROM meal_logs WHERE id=?", (mid,)).fetchone()
+def _saved_at(c: sqlite3.Connection, table: str, rid: str) -> str | None:
+    """Orario dell'ultima modifica salvata della riga (la tabella è una costante del codice, mai input)."""
+    row = c.execute(f"SELECT updated_at FROM {table} WHERE id=?", (rid,)).fetchone()
     return row[0] if row else None
 
 

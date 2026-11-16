@@ -4,12 +4,12 @@
 // arriveranno con l'app per telefono (D-013), che userà gli stessi promemoria del server.
 import { request } from "./api.js";
 import { DAYS, PLAN_KEY, SLOTS, SOURCE_LABEL } from "./constants.js";
-import { app, persistState, recordWeight, refreshDaily } from "./store.js";
+import { app, persistState, recordWeight } from "./store.js";
 import { closeModal, dayOptions, modalOpen, openModal, toast } from "./ui.js";
 import { $, TIME24, esc, fmtDuration, fmtNum, isoDate, normalizeTime, num, uid } from "./util.js";
 import { icon } from "./icons.js";
 import { haptic } from "./motion.js";
-import { enqueue, flush } from "./workout/queue.js";
+import { commit, enqueue } from "./workout/queue.js";
 import { openComposer } from "./composer.js";
 
 const SNOOZE_MIN = 15;
@@ -23,17 +23,6 @@ async function ack(reminderId, status, minutes) {
     { date: todayIso(), status, ...(minutes ? { snooze_minutes: minutes } : {}) }, `ack:${reminderId}:${todayIso()}`);
 }
 
-async function afterChange() {
-  await flush();
-  window.dispatchEvent(new Event("fitweek:changed"));
-  try {
-    await refreshDaily();
-  } catch {
-    /* offline: l'agenda si aggiornerà al prossimo controllo */
-  }
-  app.render();
-}
-
 const laterButtons = (reminderId) =>
   reminderId
     ? `<div class="modal-secondary"><button type="button" data-m="later">Più tardi (${SNOOZE_MIN}′)</button><button type="button" data-m="dismiss">Non oggi</button></div>`
@@ -43,12 +32,12 @@ async function handleCommon(t, reminderId) {
   if (t.dataset.m === "later") {
     await ack(reminderId, "snoozed", SNOOZE_MIN);
     toast(`Te lo ricordo tra ${SNOOZE_MIN} minuti`);
-    afterChange();
+    commit();
     return true;
   }
   if (t.dataset.m === "dismiss") {
     await ack(reminderId, "dismissed");
-    afterChange();
+    commit();
     return true;
   }
   if (t.dataset.m === "close") return true;
@@ -133,7 +122,7 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
         enqueue("PUT", `/api/v1/meal-logs/${uid()}`, { date, slot, status: "eaten", items, description: "", note: "" });
         haptic(12);
         toast("Cena registrata");
-        afterChange();
+        commit();
         return true;
       }
       const base = { date, slot, status: "eaten", description: "", note: "" };
@@ -165,7 +154,7 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
       enqueue("PUT", `/api/v1/meal-logs/${uid()}`, body);
       haptic(12);
       toast(body.status === "skipped" ? "Segnato come saltato" : "Pasto registrato");
-      afterChange();
+      commit();
       return true;
     },
   );
@@ -174,11 +163,12 @@ export async function openMealLog({ slot = "other", date = todayIso(), reminderI
 // ---- pesata ------------------------------------------------------------------------------
 export function openWeighIn({ reminderId = null } = {}) {
   const last = [...app.state.weights].sort((a, b) => b.date.localeCompare(a.date))[0];
+  const today = app.state.weights.find((w) => w.date === todayIso()); // già pesato oggi: si corregge quella
   openModal(
     `<div class="modal-ic">${icon("scale")}</div>
     <h2 id="modal-title">Pesata</h2>
-    <p class="subtle">Stesse condizioni ogni volta: al mattino, a digiuno, dopo il bagno.${last ? ` Ultima: ${esc(fmtNum(last.weight))} kg.` : ""}</p>
-    <div class="field"><label for="m-weight">Peso (kg)</label><input id="m-weight" inputmode="decimal" autofocus placeholder="${last ? esc(String(last.weight).replace(".", ",")) : "es. 89,4"}"></div>
+    <p class="subtle">${today ? "Pesata di oggi già registrata: salvando la correggi." : `Stesse condizioni ogni volta: al mattino, a digiuno, dopo il bagno.${last ? ` Ultima: ${esc(fmtNum(last.weight))} kg.` : ""}`}</p>
+    <div class="field"><label for="m-weight">Peso (kg)</label><input id="m-weight" inputmode="decimal" autofocus value="${today ? esc(String(today.weight).replace(".", ",")) : ""}" placeholder="${last ? esc(String(last.weight).replace(".", ",")) : "es. 89,4"}"></div>
     <button type="button" class="btn primary full" data-m="save">Salva</button>
     ${laterButtons(reminderId)}`,
     async (t) => {
@@ -189,7 +179,7 @@ export function openWeighIn({ reminderId = null } = {}) {
       if (w < 20 || w > 500) return toast("Inserisci un peso valido"), false;
       const updated = recordWeight({ date: todayIso(), weight: w });
       if (await persistState()) toast(updated ? "Pesata di oggi aggiornata" : "Peso registrato");
-      afterChange();
+      commit();
       return true;
     },
   );
@@ -233,7 +223,7 @@ export function openSleepLog({ date = todayIso() } = {}) {
         haptic(12);
         toast("Sonno registrato");
       } else return false;
-      afterChange();
+      commit();
       return true;
     },
   );
@@ -267,7 +257,7 @@ function openSimple(item) {
       if (t.dataset.m !== "go") return false;
       if (item.action !== "start_workout") await ack(item.id, "done");
       if (hash) location.hash = hash;
-      afterChange();
+      commit();
       return true;
     },
   );

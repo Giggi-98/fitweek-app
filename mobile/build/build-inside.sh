@@ -265,6 +265,42 @@ public class AppUpdatePlugin extends Plugin {
 }
 JAVA
 
+# Plugin nativo BarcodeScan: legge un codice a barre con lo scanner di Google Play Services (ML Kit).
+# La schermata della fotocamera è di Play Services: l'app non chiede il permesso CAMERA e non riceve immagini,
+# solo le cifre lette. Alla prima lettura il telefono scarica il modulo dello scanner (serve la rete).
+cat > "$PKG_DIR/BarcodeScanPlugin.java" <<JAVA
+package ${APP_ID};
+
+import com.getcapacitor.JSObject;
+import com.getcapacitor.Plugin;
+import com.getcapacitor.PluginCall;
+import com.getcapacitor.PluginMethod;
+import com.getcapacitor.annotation.CapacitorPlugin;
+import com.google.mlkit.vision.barcode.common.Barcode;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions;
+import com.google.mlkit.vision.codescanner.GmsBarcodeScanning;
+
+@CapacitorPlugin(name = "BarcodeScan")
+public class BarcodeScanPlugin extends Plugin {
+    @PluginMethod
+    public void scan(final PluginCall call) {
+        GmsBarcodeScannerOptions options = new GmsBarcodeScannerOptions.Builder()
+                .setBarcodeFormats(Barcode.FORMAT_EAN_13, Barcode.FORMAT_EAN_8, Barcode.FORMAT_UPC_A, Barcode.FORMAT_UPC_E, Barcode.FORMAT_ITF)
+                .build();
+        GmsBarcodeScanning.getClient(getContext(), options).startScan()
+                .addOnSuccessListener(barcode -> {
+                    JSObject out = new JSObject();
+                    out.put("code", barcode.getRawValue());
+                    call.resolve(out);
+                })
+                .addOnCanceledListener(() -> call.resolve(new JSObject()))
+                .addOnFailureListener(e -> call.reject("Lettura del codice non riuscita: " + e.getMessage()));
+    }
+}
+JAVA
+sed -i "s#^dependencies {#dependencies {\\n    implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'#" android/app/build.gradle
+grep -q 'play-services-code-scanner' android/app/build.gradle || { echo "build.gradle non riconosciuto: lo scanner dei codici a barre non è stato aggiunto" >&2; exit 1; }
+
 cat > "$PKG_DIR/MainActivity.java" <<JAVA
 package ${APP_ID};
 
@@ -276,6 +312,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(SecureTokenPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
+        registerPlugin(BarcodeScanPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }

@@ -80,12 +80,12 @@ function romeMinuteAgo() {
 
   // 4. "+ Pasto" dalla dashboard apre l'editor: piatto nuovo con calorie dichiarate
   await page.click('[data-quick-meal]');
-  await page.waitForSelector('#modal[open] .tray');
+  await page.waitForSelector('#modal[open] .composer');
   await page.click('#modal [data-slot=other]'); // non occupa la cena, che serve più avanti nel test
   await page.fill('#c-new-name', 'Piadina');
   await page.fill('#c-new-kcal', '520');
   await page.click('#modal [data-new]');
-  await page.waitForSelector('#modal .tray-row');
+  await page.waitForSelector('#modal .tray-row', { state: 'attached' }); // su telefono la voce è nella scheda "Nel piatto"
   await page.click('#modal [data-save]');
   await page.waitForSelector('#modal', { state: 'hidden' });
   await page.waitForTimeout(600);
@@ -104,13 +104,13 @@ function romeMinuteAgo() {
 
   // 5b. Vassoio della mensa: primo + salsa + contorno, secondo "porto a casa" → la cena lo propone
   await page.click('#content [data-add-log]');
-  await page.waitForSelector('#modal[open] .tray');
+  await page.waitForSelector('#modal[open] .composer');
   await page.click('#modal [data-slot=lunch]');
   for (const [cat, id] of [['primo', 'f-pasta'], ['salsa', 'f-amatriciana'], ['contorno', 'f-verdure-vapore'], ['secondo', 'f-pollo']]) {
     await page.click(`#modal [data-cat=${cat}]`);
     await page.click(`#modal [data-food=${id}]`);
   }
-  const total = await page.textContent('#modal .tray-total strong');
+  const total = await page.textContent('#modal .composer-sum strong');
   check('vassoio: totale live senza il secondo portato a casa', /515/.test(total), total);
   check('secondo segnato "porto a casa" in automatico', await page.locator('#modal .tray-row.home').count() === 1);
   await page.screenshot({ path: `${SHOTS}/m4b-vassoio.png` });
@@ -134,7 +134,7 @@ function romeMinuteAgo() {
   await page.waitForSelector('#modal[open] .tray-row');
   await page.locator('#modal .tray-row').nth(1).locator('[data-qty="-1"]').click();
   await page.locator('#modal .tray-row').nth(1).locator('[data-qty="-1"]').click();
-  check('modifica: totale ricalcolato dal vivo', /470/.test(await page.textContent('#modal .tray-total strong')));
+  check('modifica: totale ricalcolato dal vivo', /470/.test(await page.textContent('#modal .composer-sum strong')));
   await page.click('#modal [data-save]');
   await page.waitForSelector('#modal', { state: 'hidden' });
   await page.waitForTimeout(700);

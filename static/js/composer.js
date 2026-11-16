@@ -1,14 +1,18 @@
 // Editor del pasto composto ("vassoio" della mensa): primo, salsa, secondo, contorno…
-// Stesso editor per creare e per modificare un pasto già registrato; i totali si ricalcolano dal vivo
-// (e il server li ricalcola comunque dalle voci). Le voci "porto a casa" non contano nel pasto corrente.
+// Stesso editor per creare e per modificare un pasto già registrato. Due zone distinte: "Nel piatto" (ciò che
+// hai scelto, con calorie e proteine per voce) e "Aggiungi" (catalogo, ricerca online, codice a barre). Su
+// schermo largo stanno affiancate, su telefono sono due schede; il totale e il salvataggio restano in basso.
+// I totali si ricalcolano dal vivo (il server li ricalcola comunque dalle voci); le voci "porto a casa" non
+// contano nel pasto corrente.
 import { request } from "./api.js";
+import { canScan, isBarcode, lookup, portion, scan } from "./barcode.js";
 import { SLOTS, SOURCE_LABEL } from "./constants.js";
 import { icon } from "./icons.js";
-import { haptic, pop } from "./motion.js";
-import { app, refreshDaily } from "./store.js";
-import { dayOptions, openModal, toast } from "./ui.js";
+import { haptic } from "./motion.js";
+import { app } from "./store.js";
+import { dayOptions, openModal, tabId, tabs, toast } from "./ui.js";
 import { $, esc, fmtNum, isoDate, num, uid } from "./util.js";
-import { enqueue, flush } from "./workout/queue.js";
+import { commit, enqueue } from "./workout/queue.js";
 
 export const CATEGORIES = [
   ["primo", "Primi"], ["salsa", "Salse"], ["secondo", "Secondi"], ["contorno", "Contorni"],
@@ -16,14 +20,18 @@ export const CATEGORIES = [
 ];
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
 const SLOT_ORDER = ["lunch", "pre_workout", "snack", "dinner", "other"];
+const ZONES = "Pasto in composizione"; // nome dell'elenco di schede (telefono)
 
 let st = null; // stato dell'editor aperto
 // Ricerca online: ultimo testo cercato, esito, prodotto scelto (in attesa della porzione in grammi).
 const online = { q: "", status: "idle", items: [], pick: null, disabled: false, timer: null };
 
 const workday = (iso) => new Date(iso + "T12:00:00").getDay() % 6 !== 0;
-const itemKcal = (i) => (i.kcal == null ? null : i.kcal * i.qty);
+const approx = (source) => (source === "estimate" || !source ? "~" : "");
+const comma = (n) => String(n).replace(".", ",");
+const decimal = (text) => (String(text).trim() === "" ? null : num(String(text).replace(",", "."), null));
 
+/** Totali di ciò che si mangia ora. `noProtein` = voci con calorie ma senza proteine: la somma è per difetto. */
 export function totals(items) {
   const eaten = items.filter((i) => !i.takeaway);
   const known = eaten.filter((i) => i.kcal != null);
@@ -31,48 +39,63 @@ export function totals(items) {
     kcal: known.length ? known.reduce((s, i) => s + i.kcal * i.qty, 0) : null,
     protein: known.length ? known.reduce((s, i) => s + (i.protein_g || 0) * i.qty, 0) : null,
     missing: eaten.length - known.length,
+    noProtein: known.filter((i) => i.protein_g == null).length,
     home: items.filter((i) => i.takeaway),
     estimate: known.some((i) => (i.nutrition_source || "estimate") === "estimate"),
   };
 }
 
+/** Calorie e proteine di una voce o di un piatto del catalogo, per la quantità indicata. */
+const valuesLine = (x, qty = 1) =>
+  x.kcal == null
+    ? "senza valori"
+    : `${approx(x.nutrition_source)}${fmtNum(x.kcal * qty, 0)} kcal${x.protein_g != null ? ` · ${fmtNum(x.protein_g * qty)} g prot.` : ""}`;
+
 function trayRow(i, idx) {
-  const k = itemKcal(i);
-  const homeable = st.slot === "lunch";
+  const editing = st.edit === idx;
   return `<div class="tray-row ${i.takeaway ? "home" : ""}" data-idx="${idx}">
-    <div class="tray-name"><strong>${esc(i.name)}</strong><small>${esc(CAT_LABEL[i.category] || "")}${k != null ? ` · ${i.nutrition_source === "estimate" || !i.nutrition_source ? "~" : ""}${fmtNum(k, 0)} kcal` : " · senza valori"}${i.takeaway ? " · a casa, non conta ora" : ""}</small></div>
-    <div class="qty"><button type="button" data-qty="-1" aria-label="Meno">${icon("minus", "sm")}</button><span>${String(i.qty).replace(".", ",")}×</span><button type="button" data-qty="1" aria-label="Più">${icon("plus", "sm")}</button></div>
-    ${homeable ? `<button type="button" class="icon-btn ${i.takeaway ? "on" : ""}" data-home aria-pressed="${i.takeaway}" title="Lo porto a casa (per cena)">${icon("package")}</button>` : ""}
+    <button type="button" class="tray-name" data-edit aria-expanded="${editing}" aria-label="${esc(i.name)}: correggi calorie e proteine"><strong>${esc(i.name)}</strong><small>${valuesLine(i, i.qty)}${i.takeaway ? " · a casa" : ""}</small></button>
+    <div class="qty"><button type="button" data-qty="-1" aria-label="Meno">${icon("minus", "sm")}</button><span>${comma(i.qty)}×</span><button type="button" data-qty="1" aria-label="Più">${icon("plus", "sm")}</button></div>
+    ${st.slot === "lunch" ? `<button type="button" class="icon-btn ${i.takeaway ? "on" : ""}" data-home aria-pressed="${i.takeaway}" title="Lo porto a casa (per cena)">${icon("package")}</button>` : ""}
     <button type="button" class="icon-btn" data-remove aria-label="Togli ${esc(i.name)}">${icon("x", "sm")}</button>
+    ${editing ? `<div class="tray-edit"><div class="field"><label for="c-edit-kcal">kcal a porzione</label><input id="c-edit-kcal" inputmode="decimal" value="${esc(i.kcal == null ? "" : comma(i.kcal))}"></div><div class="field"><label for="c-edit-prot">Proteine (g)</label><input id="c-edit-prot" inputmode="decimal" value="${esc(i.protein_g == null ? "" : comma(i.protein_g))}"></div><button type="button" class="btn" data-edit-ok>Fatto</button></div>` : ""}
   </div>`;
 }
 
-const foodPick = (f) =>
-  `<button type="button" class="pick" data-food="${esc(f.id)}"><span>${esc(f.name)}</span><small>${f.kcal != null ? `${f.nutrition_source === "estimate" ? "~" : ""}${fmtNum(f.kcal, 0)} kcal · ${SOURCE_LABEL[f.nutrition_source] || "stima"}` : "senza valori"}</small></button>`;
+/** Valori corretti a mano nella voce aperta: da quel momento la fonte è "inserito". */
+function applyEdit() {
+  const i = st.items[st.edit];
+  const kcalField = $("#c-edit-kcal");
+  st.edit = null;
+  if (!i || !kcalField) return;
+  const kcal = decimal(kcalField.value), protein = decimal($("#c-edit-prot").value);
+  if (kcal === i.kcal && protein === (i.protein_g ?? null)) return;
+  Object.assign(i, { kcal, protein_g: kcal == null ? null : protein, nutrition_source: kcal == null ? null : "manual" });
+}
 
-const portion = (p, grams) => ({
-  kcal: Math.round((p.kcal_100g * grams) / 100),
-  protein: p.protein_100g == null ? null : Math.round((p.protein_100g * grams) / 10) / 10,
-});
+const foodPick = (f) =>
+  `<button type="button" class="pick" data-food="${esc(f.id)}"><span>${esc(f.name)}</span><small>${valuesLine(f)}${f.kcal != null ? ` · ${SOURCE_LABEL[f.nutrition_source] || "stima"}` : ""}</small></button>`;
+
+const offValues = (v) => `${v.kcal} kcal${v.protein != null ? ` · ${fmtNum(v.protein)} g prot.` : ""}`;
 
 /** Risultati online: elenco dei prodotti, oppure la riga della porzione per quello scelto. */
 function onlineBlock(q) {
   if (online.disabled || q.length < 3) return "";
   if (online.q !== q || online.status === "loading") return '<p class="subtle off-status">Cerco su Open Food Facts…</p>';
   if (online.status === "error") return `<p class="subtle off-status">${esc(online.error)}</p>`;
-  if (!online.items.length) return '<p class="subtle off-status">Nessun prodotto trovato online: puoi aggiungerlo a mano con il +.</p>';
+  if (!online.items.length) return `<p class="subtle off-status">${isBarcode(q) ? "Codice non trovato su Open Food Facts: scrivi il nome e aggiungilo a mano con i valori dell'etichetta." : "Nessun prodotto trovato online: puoi aggiungerlo a mano qui sotto."}</p>`;
   if (online.pick != null) {
     const p = online.items[online.pick];
     const grams = p.serving_g || 100;
     const v = portion(p, grams);
     return `<div class="off-portion">
-      <strong>${esc(p.name)}</strong><small>${esc(p.brand)}${p.brand ? " · " : ""}${fmtNum(p.kcal_100g, 0)} kcal per 100 g</small>
-      <div class="off-row"><label for="c-off-g">Porzione (g)</label><input id="c-off-g" inputmode="numeric" value="${grams}"><span id="c-off-kcal">${v.kcal} kcal</span></div>
+      <strong>${esc(p.name)}</strong><small>${esc(p.brand)}${p.brand ? " · " : ""}${fmtNum(p.kcal_100g, 0)} kcal${p.protein_100g != null ? ` e ${fmtNum(p.protein_100g)} g di proteine` : ""} per 100 g</small>
+      <div class="off-row"><label for="c-off-g">Porzione (g)</label><input id="c-off-g" inputmode="numeric" value="${grams}"><span id="c-off-kcal">${offValues(v)}</span></div>
       <div class="button-row"><button type="button" class="btn primary" data-off-add>${icon("plus", "sm")}Aggiungi al piatto</button><button type="button" class="btn ghost" data-off-back>Indietro</button></div>
     </div>`;
   }
   return `<span class="eyebrow">Da Open Food Facts</span>
-    <div class="pick-list">${online.items.map((p, k) => `<button type="button" class="pick" data-off="${k}"><span>${esc(p.name)}${p.brand ? `<em>${esc(p.brand)}</em>` : ""}</span><small>${fmtNum(p.kcal_100g, 0)} kcal/100 g</small></button>`).join("")}</div>
+    <div class="pick-list">${online.items.map((p, k) => `<button type="button" class="pick" data-off="${k}"><span>${esc(p.name)}${p.brand ? `<em>${esc(p.brand)}</em>` : ""}</span><small>${fmtNum(p.kcal_100g, 0)} kcal${p.protein_100g != null ? ` · ${fmtNum(p.protein_100g)} g prot.` : ""} /100 g</small></button>`).join("")}</div>
     <p class="subtle off-status">Valori inseriti dagli utenti di Open Food Facts (ODbL): se hai la confezione, controlla l'etichetta.</p>`;
 }
 
@@ -81,10 +104,10 @@ function browse() {
   const q = (st.newName || "").trim().toLowerCase();
   if (q.length < 2) {
     const foods = app.foods.filter((f) => f.category === st.cat);
-    return `<div class="pick-list">${foods.map(foodPick).join("") || '<p class="subtle">Nessun piatto in questa categoria: scrivilo qui sopra e premi +.</p>'}</div>`;
+    return `<div class="pick-list">${foods.map(foodPick).join("") || '<p class="subtle">Nessun piatto in questa categoria: scrivilo qui sopra.</p>'}</div>`;
   }
   const local = app.foods.filter((f) => f.name.toLowerCase().includes(q)).slice(0, 6);
-  return `${local.length ? `<span class="eyebrow">Nel tuo catalogo</span><div class="pick-list">${local.map(foodPick).join("")}</div>` : ""}${onlineBlock(q)}${!local.length && (online.disabled || q.length < 3) ? '<p class="subtle">Non è nel catalogo: premi + per aggiungerlo (le calorie sono facoltative).</p>' : ""}`;
+  return `${local.length ? `<span class="eyebrow">Nel tuo catalogo</span><div class="pick-list">${local.map(foodPick).join("")}</div>` : ""}${onlineBlock(q)}${!local.length && (online.disabled || q.length < 3) ? '<p class="subtle">Non è nel catalogo: aggiungilo a mano qui sotto.</p>' : ""}`;
 }
 
 const paintBrowse = () => {
@@ -92,14 +115,24 @@ const paintBrowse = () => {
   if (box) box.innerHTML = browse();
 };
 
+/** La riga "aggiungi a mano" compare solo quando c'è un nome scritto (resta fuori dall'elenco, che si ridisegna
+ *  mentre arrivano i risultati: così i campi non perdono il cursore). */
+function paintManual() {
+  const row = $("#c-manual");
+  if (row) row.hidden = !$("#c-new-name").value.trim() || isBarcode($("#c-new-name").value);
+}
+
 async function searchOnline(q) {
   Object.assign(online, { q, status: "loading", items: [], pick: null });
   paintBrowse();
   try {
-    const out = await request(`/api/v1/food-search?q=${encodeURIComponent(q)}`, { timeout: 12000 });
+    // Un codice a barre porta dritto al prodotto e alla sua porzione; un testo all'elenco dei risultati.
+    const code = isBarcode(q);
+    const out = code ? await lookup(q) : await request(`/api/v1/food-search?q=${encodeURIComponent(q)}`, { timeout: 12000 });
     if (online.q !== q) return; // nel frattempo l'utente ha scritto altro
     if (!out.enabled) online.disabled = true;
-    Object.assign(online, { status: "done", items: out.items });
+    const items = code ? (out.item ? [out.item] : []) : out.items;
+    Object.assign(online, { status: "done", items, pick: code && items.length ? 0 : null });
   } catch (e) {
     if (online.q !== q) return;
     Object.assign(online, { status: "error", error: e.status === 0 ? "Ricerca online non raggiungibile: resta il tuo catalogo." : e.message });
@@ -116,63 +149,91 @@ document.addEventListener("input", (e) => {
     clearTimeout(online.timer);
     if (q.length >= 3 && !online.disabled && q !== online.q) online.timer = setTimeout(() => searchOnline(q), 600);
     paintBrowse();
+    paintManual();
   }
   if (e.target.id === "c-off-g" && online.pick != null) {
     const grams = num(e.target.value.replace(",", "."));
-    $("#c-off-kcal").textContent = grams > 0 ? `${portion(online.items[online.pick], grams).kcal} kcal` : "—";
+    $("#c-off-kcal").textContent = grams > 0 ? offValues(portion(online.items[online.pick], grams)) : "—";
   }
 });
 
 /** Prima di ridisegnare conserva ciò che l'utente ha scritto nei campi. */
 function capture() {
-  if ($("#c-date")) st.date = $("#c-date").value;
+  if (st.edit != null) applyEdit();
+  st.date = $("#c-date").value;
   if ($("#c-desc")) st.description = $("#c-desc").value;
   if ($("#c-kcal")) st.kcal = $("#c-kcal").value;
-  st.newName = $("#c-new-name")?.value || "";
-  st.newKcal = $("#c-new-kcal")?.value || "";
+  st.newName = $("#c-new-name").value;
+  st.newKcal = $("#c-new-kcal").value;
+  st.newProt = $("#c-new-prot").value;
 }
 
+function sumLine(t) {
+  const notes = [
+    t.kcal == null ? "nessun valore" : t.estimate ? "stima" : "valori dichiarati",
+    t.missing ? `${t.missing} senza valori` : "",
+    t.noProtein ? `proteine non indicate per ${t.noProtein}` : "",
+    t.home.length ? `a casa: ${esc(t.home.map((i) => i.name).join(", "))}` : "",
+  ];
+  return `<div class="composer-sum">
+    <strong>${t.kcal != null ? `${t.estimate ? "~" : ""}${fmtNum(t.kcal, 0)} kcal` : "— kcal"}</strong>
+    <span>${t.protein != null ? `${t.noProtein ? "almeno " : ""}${fmtNum(t.protein, 0)} g proteine` : "— g proteine"}</span>
+    <small>${notes.filter(Boolean).join(" · ")}</small>
+  </div>`;
+}
+
+/** Ridisegna tenendo ciò che è scritto nei campi (e applicando la correzione di una voce, se aperta). */
 function render() {
-  if (st.rendered) capture();
+  capture();
+  paint();
+}
+
+function paint() {
   const t = totals(st.items);
   const legacy = !st.items.length && (st.description || st.log);
-  const body = `
-    <h2 id="modal-title">${st.log ? "Modifica pasto" : "Componi il pasto"}</h2>
-    <div class="composer-top">
-      <div class="chips scroll" role="group" aria-label="Pasto">${SLOT_ORDER.map((s) => `<button type="button" class="chip ${s === st.slot ? "active" : ""}" data-slot="${s}">${SLOTS[s]}</button>`).join("")}</div>
+  const panelAttrs = (zone) => `role="tabpanel" id="c-zone-${zone}" aria-labelledby="${tabId(ZONES, zone)}" tabindex="0"`;
+  const body = `<div class="composer" data-zone="${st.zone}">
+    <div class="composer-head">
+      <h2 id="modal-title">${st.log ? "Modifica pasto" : "Componi il pasto"}</h2>
+      <button type="button" class="icon-btn" data-close aria-label="Chiudi senza salvare">${icon("x")}</button>
+      <div class="chips scroll" role="group" aria-label="Pasto">${SLOT_ORDER.map((s) => `<button type="button" class="chip ${s === st.slot ? "active" : ""}" aria-pressed="${s === st.slot}" data-slot="${s}">${SLOTS[s]}</button>`).join("")}</div>
       <select id="c-date" aria-label="Giorno">${dayOptions(st.date)}</select>
     </div>
-    <div class="tray">
-      ${st.items.length ? st.items.map(trayRow).join("") : `<p class="subtle tray-empty">Aggiungi le voci del vassoio qui sotto: primo, salsa, secondo, contorno…</p>`}
-      <div class="tray-total">
-        <span>Totale ${st.items.length ? "" : "pasto"}</span>
-        <strong>${t.kcal != null ? `${t.estimate ? "~" : ""}${fmtNum(t.kcal, 0)} kcal` : "—"}</strong>
-        <small>${t.protein != null ? `${fmtNum(t.protein, 0)} g proteine · ` : ""}${t.estimate ? "stima" : t.kcal != null ? "valori dichiarati" : "nessun valore"}${t.missing ? ` · ${t.missing} senza valori` : ""}${t.home.length ? ` · a casa: ${esc(t.home.map((i) => i.name).join(", "))}` : ""}</small>
-      </div>
+    <div class="composer-tabs">${tabs([["tray", "Nel piatto", null, st.items.length || null], ["add", "Aggiungi"]], st.zone, ZONES, "zone", { tray: "c-zone-tray", add: "c-zone-add" })}</div>
+    <div class="composer-zones">
+      <section class="composer-zone tray" ${panelAttrs("tray")}>
+        <h3>Nel piatto</h3>
+        ${st.items.length ? st.items.map(trayRow).join("") : '<p class="subtle tray-empty">Ancora vuoto. Scegli le voci da Aggiungi: primo, salsa, secondo, contorno…</p>'}
+        ${legacy ? `<div class="field"><label for="c-desc">Descrizione (pasto registrato senza voci)</label><input id="c-desc" maxlength="300" value="${esc(st.description || "")}"></div>
+          <div class="field"><label for="c-kcal">Calorie (facoltativo)</label><input id="c-kcal" inputmode="numeric" value="${esc(st.kcal ?? "")}"></div>` : ""}
+      </section>
+      <section class="composer-zone add" ${panelAttrs("add")}>
+        <h3>Aggiungi</h3>
+        <div class="composer-search">
+          <input id="c-new-name" maxlength="120" value="${esc(st.newName || "")}" placeholder="Cerca un piatto o un codice a barre" aria-label="Cerca nel catalogo, online o per codice a barre" autocomplete="off">
+          ${canScan() ? `<button type="button" class="btn" data-scan aria-label="Leggi il codice a barre con la fotocamera">${icon("scan-barcode")}</button>` : ""}
+        </div>
+        <div class="chips scroll cat-tabs" role="group" aria-label="Categoria">${CATEGORIES.map(([k, l]) => `<button type="button" class="chip ${k === st.cat ? "active" : ""}" aria-pressed="${k === st.cat}" data-cat="${k}">${l}</button>`).join("")}</div>
+        <div id="c-browse">${browse()}</div>
+        <div class="new-food" id="c-manual" ${(st.newName || "").trim() ? "" : "hidden"}>
+          <span class="eyebrow">A mano, in ${esc(CAT_LABEL[st.cat])}</span>
+          <input id="c-new-kcal" inputmode="decimal" value="${esc(st.newKcal || "")}" placeholder="kcal" aria-label="Calorie per porzione (facoltativo)">
+          <input id="c-new-prot" inputmode="decimal" value="${esc(st.newProt || "")}" placeholder="proteine g" aria-label="Proteine per porzione in grammi (facoltativo)">
+          <button type="button" class="btn" data-new>${icon("plus", "sm")}Aggiungi</button>
+        </div>
+      </section>
     </div>
-    ${legacy ? `<div class="field"><label for="c-desc">Descrizione (pasto registrato senza voci)</label><input id="c-desc" maxlength="300" value="${esc(st.description || "")}"></div>
-      <div class="field"><label for="c-kcal">Calorie (facoltativo)</label><input id="c-kcal" inputmode="numeric" value="${esc(st.kcal ?? "")}"></div>` : ""}
-    <div class="chips scroll cat-tabs" role="group" aria-label="Categoria">${CATEGORIES.map(([k, l]) => `<button type="button" class="chip ${k === st.cat ? "active" : ""}" aria-pressed="${k === st.cat}" data-cat="${k}">${l}</button>`).join("")}</div>
-    <div class="new-food">
-      <input id="c-new-name" maxlength="120" value="${esc(st.newName || "")}" placeholder="Cerca o scrivi un piatto…" aria-label="Cerca nel catalogo o scrivi un piatto nuovo" autocomplete="off">
-      <input id="c-new-kcal" inputmode="numeric" value="${esc(st.newKcal || "")}" placeholder="kcal" aria-label="Calorie per porzione (facoltativo)">
-      <button type="button" class="btn" data-new aria-label="Aggiungi come piatto nuovo">${icon("plus", "sm")}</button>
+    <div class="composer-foot">
+      ${sumLine(t)}
+      <button type="button" class="btn primary xl" data-save>${icon("check")}${st.log ? "Salva modifiche" : `Registra · ${esc(SLOTS[st.slot])}`}</button>
+      <button type="button" class="link-btn" ${st.log ? "data-delete>Elimina" : "data-skip>Saltato"}</button>
     </div>
-    <div id="c-browse">${browse()}</div>
-    <div class="composer-actions">
-      ${st.items.length ? `<div class="mini-total"><span>${st.items.length} ${st.items.length === 1 ? "voce" : "voci"}${t.home.length ? ` · ${t.home.length} a casa` : ""}</span><strong>${t.kcal != null ? `${t.estimate ? "~" : ""}${fmtNum(t.kcal, 0)} kcal` : "—"}</strong></div>` : ""}
-      <button type="button" class="btn primary xl full" data-save>${icon("check")}${st.log ? "Salva modifiche" : `Registra · ${esc(SLOTS[st.slot])}`}</button>
-      <div class="modal-secondary">
-        ${st.log ? '<button type="button" data-delete>Elimina</button>' : '<button type="button" data-skip>Saltato</button>'}
-        <button type="button" data-close>Annulla</button>
-      </div>
-    </div>`;
-  const scroller = $("#modal-body");
-  const y = scroller?.scrollTop || 0;
-  openModal(body, handle);
+  </div>`;
+  const scroll = Object.fromEntries(["tray", "add"].map((z) => [z, $(`#c-zone-${z}`)?.scrollTop || 0]));
+  openModal(body, handle, { layout: "composer" });
   $("#modal-body").dataset.static = st.rendered ? "1" : "";
   st.rendered = true;
-  $("#modal-body").scrollTop = y;
+  for (const z of ["tray", "add"]) $(`#c-zone-${z}`).scrollTop = scroll[z];
 }
 
 function addFood(f) {
@@ -182,6 +243,7 @@ function addFood(f) {
 }
 
 async function save(status = "eaten") {
+  capture();
   const legacyDesc = $("#c-desc")?.value.trim();
   const legacyKcal = $("#c-kcal")?.value.trim();
   if (status === "eaten" && !st.items.length && !legacyDesc) return toast("Aggiungi almeno una voce"), false;
@@ -196,23 +258,35 @@ async function save(status = "eaten") {
     enqueue("PUT", `/api/v1/reminders/${encodeURIComponent(st.reminderId)}/ack`, { date: body.date, status: "done" }, `ack:${st.reminderId}:${body.date}`);
   }
   toast(status === "skipped" ? "Segnato come saltato" : st.log ? "Pasto aggiornato" : "Pasto registrato");
-  await done();
+  await commit();
   return true;
-}
-
-async function done() {
-  await flush();
-  window.dispatchEvent(new Event("fitweek:changed"));
-  try {
-    await refreshDaily();
-  } catch {
-    /* offline */
-  }
-  app.render();
 }
 
 async function handle(t) {
   const row = t.closest(".tray-row");
+  if (t.dataset.zone) {
+    st.zone = t.dataset.zone;
+    render();
+    $(`#${tabId(ZONES, st.zone)}`).focus();
+    return false;
+  }
+  if (t.matches("[data-scan]")) {
+    const code = await scan().catch((e) => (toast(e.message), null));
+    if (!code) return false;
+    $("#c-new-name").value = st.newName = code;
+    paintManual();
+    searchOnline(code);
+    return false;
+  }
+  if (row && t.matches("[data-edit]")) {
+    const idx = num(row.dataset.idx);
+    const open = st.edit === idx;
+    capture(); // applica e chiude la voce eventualmente aperta
+    st.edit = open ? null : idx;
+    paint();
+    return false;
+  }
+  if (t.matches("[data-edit-ok]")) return render(), false;
   if (t.dataset.slot) {
     st.slot = t.dataset.slot;
     if (st.slot !== "lunch") st.items.forEach((i) => (i.takeaway = false));
@@ -224,7 +298,6 @@ async function handle(t) {
     addFood(app.foods.find((f) => f.id === t.dataset.food));
     if ($("#c-new-name")) $("#c-new-name").value = ""; // scelta fatta: si torna all'elenco per categoria
     render();
-    pop([...document.querySelectorAll(".tray-row")].pop(), 1.04);
     return false;
   }
   if (t.dataset.off) return (online.pick = num(t.dataset.off)), paintBrowse(), false;
@@ -265,12 +338,11 @@ async function handle(t) {
   }
   if (t.matches("[data-new]")) {
     const name = $("#c-new-name").value.trim();
-    const kcal = $("#c-new-kcal").value.trim();
+    const kcal = decimal($("#c-new-kcal").value);
     if (!name) return toast("Scrivi il nome del piatto"), false;
     const existing = app.foods.find((f) => f.name.toLowerCase() === name.toLowerCase());
-    addFood(existing || { id: null, name, category: st.cat, kcal: kcal ? num(kcal.replace(",", ".")) : null, protein_g: null, nutrition_source: kcal ? "manual" : null });
-    $("#c-new-name").value = $("#c-new-kcal").value = "";
-    st.newName = "";
+    addFood(existing || { id: null, name, category: st.cat, kcal, protein_g: kcal == null ? null : decimal($("#c-new-prot").value), nutrition_source: kcal == null ? null : "manual" });
+    $("#c-new-name").value = $("#c-new-kcal").value = $("#c-new-prot").value = "";
     render();
     return false;
   }
@@ -280,7 +352,7 @@ async function handle(t) {
     if (!confirm("Eliminare questo pasto dal diario?")) return false;
     enqueue("DELETE", `/api/v1/meal-logs/${encodeURIComponent(st.id)}`, undefined, `meal:${st.id}`);
     toast("Pasto eliminato");
-    await done();
+    await commit();
     return true;
   }
   if (t.matches("[data-close]")) return true;
@@ -305,11 +377,13 @@ export async function openComposer({ slot = "lunch", date = app.today?.date || i
     description: log && !log.items?.length ? log.description : "",
     kcal: log && !log.items?.length ? log.kcal : null,
     note: log?.note || "",
+    zone: log || items.length ? "tray" : "add",
+    edit: null, // indice della voce di cui si stanno correggendo i valori
     cat: (log?.slot || slot) === "lunch" ? "primo" : (log?.slot || slot) === "dinner" ? "secondo" : (log?.slot || slot) === "pre_workout" || (log?.slot || slot) === "snack" ? "frutta" : "altro",
     reminderId,
     rendered: false,
   };
   online.pick = null;
-  render();
+  paint();
 }
 

@@ -4,11 +4,13 @@ import * as cache from "./cache.js";
 import { DAYS, GYM } from "./constants.js";
 import { standalone } from "./platform.js";
 import { mondayOf } from "./stats.js";
+import { applyWrite, normalizeDb, readLocal, withPending } from "./local.js";
 import { localAgenda, localToday, mergeState } from "./sync.js";
 import { toast } from "./ui.js";
 import { $, isoDate, storage, uid } from "./util.js";
 
 const SESSIONS_PATH = "/api/v1/workout-sessions?limit=200";
+const MIRROR_PATH = "/api/v1/sync/snapshot";
 const STATE_PENDING = "fitweek.statePending.v1"; // modifiche allo stato non ancora arrivate al server
 const STATE_REJECTED = "fitweek.stateRejected.v1"; // modifiche rifiutate dal server (422), tenute da parte
 const SCHEDULE = Object.fromEntries(DAYS.map((d, i) => [i, GYM[d]]).filter(([, r]) => r));
@@ -22,6 +24,7 @@ export const app = {
   weekly: null, // /api/v1/weekly-summary
   templates: [], // pasti abituali
   foods: [], // catalogo piatti (mensa e casa)
+  dayLogs: [], // pasti registrati oggi (per aprirli dalla giornata e per il consiglio sulle proteine)
   sleep: { items: [], summary: null }, // ultime 60 notti (/api/v1/sleep)
   exNotes: {}, // note per esercizio: id → testo
   spend: [], // spesa reale per settimana, più recenti prima
@@ -93,6 +96,35 @@ function adoptState(s) {
   }
 }
 
+// ---- copia dei dati sul telefono (app autonoma) -----------------------------------------------
+// `confirmed` = ciò che il server ha: l'ultima fotografia più le scritture che ha già accettato; è la parte
+// salvata sul dispositivo. `mirror` = `confirmed` con sopra le scritture ancora in coda: senza rete risponde
+// alle letture (`net.localRead`), così ciò che è stato fatto sul telefono si vede subito.
+let confirmed = standalone ? cache.get(MIRROR_PATH)?.data ?? null : null;
+let mirror = null; // ricalcolata quando serve
+let queuedOps = () => []; // impostata dalla coda (workout/queue.js)
+export function watchQueue(read) {
+  queuedOps = read;
+}
+const currentMirror = () => (mirror ??= confirmed && withPending(confirmed, queuedOps()));
+/** Dalla coda, a ogni scrittura accodata. */
+export function mirrorWrite(op) {
+  if (mirror) mirror = applyWrite(mirror, op);
+}
+/** Dalla coda, quando il server ha accettato una scrittura: da qui in poi fa parte della sua copia. */
+export function mirrorSettled(op) {
+  if (!confirmed) return;
+  confirmed = applyWrite(normalizeDb(confirmed), op);
+  cache.put(MIRROR_PATH, confirmed);
+}
+async function pullMirror() {
+  confirmed = await request(MIRROR_PATH);
+  mirror = null;
+}
+if (standalone) {
+  net.localRead = (path) => (app.state && currentMirror() ? readLocal(path, mirror, { state: app.state, sessions: app.sessions, now: new Date() }) : undefined);
+}
+
 // ---- caricamento ------------------------------------------------------------------------------
 export async function loadAll() {
   const [s, today, sessions, notes, spend] = await Promise.all([
@@ -113,12 +145,15 @@ export async function loadAll() {
 
 /** Agenda di oggi, riepilogo settimanale e pasti abituali. */
 export async function refreshDaily() {
-  const [agenda, weekly, templates, foods, sleep, reminders] = await Promise.all([
+  if (standalone) await pullMirror().catch(() => {}); // senza una copia valgono le vecchie risposte in memoria
+  const day = net.offlineSince == null ? app.today.date : isoDate();
+  const [agenda, weekly, templates, foods, sleep, logs, reminders] = await Promise.all([
     request("/api/v1/agenda"),
     request("/api/v1/weekly-summary"),
     request("/api/v1/meal-templates"),
     request("/api/v1/foods"),
     request("/api/v1/sleep"),
+    request(`/api/v1/meal-logs?from=${day}&to=${day}`),
     standalone ? request("/api/v1/reminders") : null, // nell'app serve per ricostruire l'agenda senza rete
   ]);
   app.agenda = agenda.items;
@@ -126,6 +161,7 @@ export async function refreshDaily() {
   app.templates = templates.items;
   app.foods = foods.items;
   app.sleep = sleep;
+  app.dayLogs = logs.items;
   if (net.offlineSince != null) adoptOfflineDay(agenda, reminders);
 }
 
@@ -286,6 +322,7 @@ export const unsentStateCount = () => (statePending() ? 1 : 0) + (rejectedState(
 /** Cancella la copia locale e gli stati temporanei su questo dispositivo all'uscita. */
 export function clearLocalState() {
   cache.clear();
+  confirmed = mirror = null;
   storage.remove(STATE_PENDING);
   storage.remove(STATE_REJECTED);
 }

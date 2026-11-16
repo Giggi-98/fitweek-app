@@ -5,13 +5,14 @@ import { app, dropRejectedState, loadAll, persistState, refreshDaily, rejectedSt
 import { choices, panel, tabpanel, tabs, toast } from "../ui.js";
 import { icon } from "../icons.js";
 import { TIME24, esc, num, storage, uid } from "../util.js";
-import { dropRejected, rejected, retryRejected } from "../workout/queue.js";
+import { dropRejected, enqueue, flush, rejected, retryRejected } from "../workout/queue.js";
 import { isBackup, restoreConfirmText, restoreDoneText } from "../backup.js";
 import { signOut } from "../logout.js";
 import { prefs, setPrefs } from "../workout/timer.js";
 import { isNative, nativeStatus, openExactAlarmSettings, startUpdate, syncNotifications, testNotification } from "../native.js";
 import { checkForUpdate, updateStatus } from "../update.js";
 import { serverUrl, standalone } from "../platform.js";
+import { canScan, isBarcode, lookup, portion, scan } from "../barcode.js";
 
 export const THEME_KEY = "fitweek.theme.v1";
 
@@ -135,17 +136,73 @@ function androidPanel() {
   );
 }
 
+// ---- proteine in polvere: valori per misurino, dall'etichetta o dal codice a barre -----------------
+let scanned = null; // prodotto trovato dal codice a barre (valori per 100 g), finché il modulo resta aperto
+const field = (id, name, label, value, attrs = "") =>
+  `<div class="field"><label for="${id}">${label}</label><input id="${id}" name="${name}" value="${esc(value ?? "")}" ${attrs}></div>`;
+
+function powderPanel(powder) {
+  const dec = 'inputmode="decimal" autocomplete="off"';
+  return panel(
+    `${icon("beef")}Proteine in polvere`,
+    `<form id="powder-form" class="stack">
+      <p class="subtle">Valori per un misurino, copiati dall'etichetta. Servono per registrare lo shaker; quando prenderlo lo vedi in Oggi, toccando Proteine.</p>
+      <div class="field-row"><div class="field"><label for="pw-code">Codice a barre (facoltativo)</label><input id="pw-code" inputmode="numeric" maxlength="14" autocomplete="off" placeholder="es. 8001234567890"></div>
+        ${canScan() ? `<button type="button" class="btn" data-powder="scan" aria-label="Leggi il codice a barre con la fotocamera">${icon("scan-barcode")}</button>` : ""}
+        <button type="button" class="btn" data-powder="find">Cerca</button></div>
+      ${field("pw-name", "name", "Nome", powder?.name, 'maxlength="80" required')}
+      <div class="form-grid three">
+        ${field("pw-scoop", "scoopG", "Misurino (g)", powder?.scoopG, dec)}
+        ${field("pw-protein", "proteinG", "Proteine (g)", powder?.proteinG, `${dec} required`)}
+        ${field("pw-kcal", "kcal", "Calorie (kcal)", powder?.kcal, dec)}
+      </div>
+      <input type="hidden" id="pw-source" name="source" value="${esc(powder?.source || "label")}">
+      <div class="button-row"><button class="btn primary" type="submit">Salva</button>${powder ? '<button type="button" class="btn ghost" data-powder="remove">Rimuovi</button>' : ""}</div>
+    </form>`,
+  );
+}
+
+const byId = (id) => document.getElementById(id);
+/** Riempie proteine e calorie del misurino dai valori per 100 g del prodotto trovato. */
+function fillFromScan() {
+  const grams = optTarget(byId("pw-scoop").value);
+  if (!scanned || !grams) return;
+  const v = portion(scanned, grams);
+  byId("pw-protein").value = v.protein ?? "";
+  byId("pw-kcal").value = v.kcal;
+  byId("pw-source").value = "off";
+}
+
+async function findPowder(code) {
+  if (!isBarcode(code)) return toast("Il codice a barre ha da 8 a 14 cifre");
+  try {
+    const out = await lookup(code.trim());
+    if (!out.enabled) return toast("La ricerca online è disattivata sul server: copia i valori dall'etichetta.");
+    if (!out.item) return toast("Prodotto non trovato su Open Food Facts: copia i valori dall'etichetta.");
+    scanned = out.item;
+    byId("pw-code").value = code;
+    byId("pw-name").value = `${scanned.name}${scanned.brand ? ` ${scanned.brand.split(",")[0].trim()}` : ""}`.slice(0, 80);
+    if (scanned.serving_g) byId("pw-scoop").value = scanned.serving_g;
+    fillFromScan();
+    toast(byId("pw-scoop").value ? "Valori da Open Food Facts: confrontali con l'etichetta, poi salva." : "Prodotto trovato: scrivi i grammi del misurino e calcolo i valori.");
+  } catch (e) {
+    toast(e.status === 0 ? "Per cercare un codice a barre serve la rete." : e.message);
+  }
+}
+
 async function saveReminder(id, base, changes) {
   const r = { ...base, ...changes };
   const body = { weekday: r.weekday, time: r.time, kind: r.kind, slot: r.slot, title: r.title, action: r.action, enabled: r.enabled };
-  try {
-    await request(`/api/v1/reminders/${encodeURIComponent(id)}`, { method: "PUT", body });
-    await loadReminders();
-    window.dispatchEvent(new Event("fitweek:reminders-changed"));
-    toast("Promemoria salvato");
-  } catch (e) {
-    toast("Non salvato: " + e.message + (e.field ? ` (${e.field})` : ""));
-  }
+  enqueue("PUT", `/api/v1/reminders/${encodeURIComponent(id)}`, body, `rem:${id}`);
+  toast("Promemoria salvato");
+  await remindersChanged();
+}
+
+/** Invia la modifica se c'è rete, poi rilegge i promemoria (dal server o dalla copia sul telefono). */
+async function remindersChanged() {
+  await flush();
+  await loadReminders().catch(() => {}); // webapp senza rete: resta l'elenco a schermo, la coda invierà
+  window.dispatchEvent(new Event("fitweek:reminders-changed"));
 }
 export function applyTheme(theme = storage.get(THEME_KEY, "auto")) {
   if (theme === "auto") delete document.documentElement.dataset.theme;
@@ -212,7 +269,7 @@ export function render() {
     `<div class="split wide-left">${panel(
       `${icon("user")}Profilo`,
       `<form id="profile-form" class="stack"><div class="form-grid three"><div class="field"><label for="pf-name">Nome (facoltativo)</label><input id="pf-name" name="name" maxlength="100" value="${esc(p.name)}"></div><div class="field"><label for="pf-age">Età</label><input id="pf-age" name="age" type="number" min="0" max="120" value="${esc(p.age)}"></div><div class="field"><label for="pf-h">Altezza (cm)</label><input id="pf-h" name="height" type="number" min="0" max="260" value="${esc(p.height)}"></div><div class="field"><label for="pf-w">Peso iniziale (kg)</label><input id="pf-w" name="startingWeight" type="number" min="0" max="500" step="0.1" value="${esc(p.startingWeight)}"></div><div class="field"><label for="pf-b">Budget spesa (€ a settimana)</label><input id="pf-b" name="budget" type="number" min="0" max="100000" step="1" value="${esc(p.budget)}"></div><div class="field"><label for="pf-prot">Riferimento proteine (g al giorno)</label><input id="pf-prot" name="proteinTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.proteinTarget ?? "")}"></div><div class="field"><label for="pf-kcal">Riferimento calorie (kcal al giorno)</label><input id="pf-kcal" name="kcalTarget" inputmode="numeric" placeholder="nessuno" value="${esc(p.kcalTarget ?? "")}"></div></div><p class="subtle">I riferimenti li scegli tu: l'app non li calcola né li consiglia, mostra solo quanto manca nella giornata.</p><div class="field"><label for="pf-n">La tua routine</label><textarea id="pf-n" name="notes" rows="4" maxlength="5000">${esc(p.notes)}</textarea></div><button class="btn primary" type="submit">Salva profilo</button></form>`,
-    )}<div class="stack">${panel(
+    )}<div class="stack">${powderPanel(p.proteinPowder)}${panel(
       `${icon("calendar")}Programma`,
       `<form id="program-form" class="stack"><div class="field-row"><div class="field"><label for="prog-week">Settimana attuale</label><select id="prog-week" name="week">${Array.from({ length: PROGRAM_WEEKS }, (_, i) => opt(i + 1, app.today.program_week, `Settimana ${i + 1}`)).join("")}</select></div><button class="btn" type="submit">Aggiorna</button></div><p class="subtle">Avanza da sola ogni lunedì (inizio programma: ${esc(p.startDate)}). Cambiarla qui sposta la data di inizio.</p></form>`,
       standalone ? "" : `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">Scheda PDF${icon("arrow-right", "sm")}</a>`,
@@ -263,12 +320,23 @@ export async function onClick(t) {
     toast(updateStatus.error ? `Controllo non riuscito: ${updateStatus.error}` : up ? `FitWeek ${up.version} è disponibile` : "L'app è aggiornata");
     return false; // il riquadro si ridisegna da solo quando cambia lo stato dell'aggiornamento
   }
+  if (t.dataset.powder === "find") return await findPowder(byId("pw-code").value), false;
+  if (t.dataset.powder === "scan") {
+    const code = await scan().catch((e) => (toast(e.message), null));
+    if (code) await findPowder(code);
+    return false;
+  }
+  if (t.dataset.powder === "remove") {
+    app.state.profile.proteinPowder = null;
+    scanned = null;
+    if (await persistState()) toast("Polvere rimossa");
+    return true;
+  }
   if (t.dataset.remDay) return (rem.day = num(t.dataset.remDay)), true;
   if (t.dataset.remDel) {
     if (!confirm("Eliminare questo promemoria?")) return false;
-    await request(`/api/v1/reminders/${encodeURIComponent(t.dataset.remDel)}`, { method: "DELETE" }).catch((e) => toast(e.message));
-    await loadReminders();
-    window.dispatchEvent(new Event("fitweek:reminders-changed"));
+    enqueue("DELETE", `/api/v1/reminders/${encodeURIComponent(t.dataset.remDel)}`, undefined, `rem:${t.dataset.remDel}`);
+    await remindersChanged();
     return true;
   }
   if (t.dataset.themeSet) {
@@ -327,6 +395,13 @@ export async function onChange(t) {
   return true;
 }
 
+/** Modulo della polvere: i grammi del misurino ricalcolano i valori trovati dal codice a barre; un valore
+ *  corretto a mano torna a essere "etichetta". */
+export function onInput(t) {
+  if (t.id === "pw-scoop") fillFromScan();
+  else if (t.id === "pw-protein" || t.id === "pw-kcal") byId("pw-source").value = "label";
+}
+
 /** Campo vuoto o zero = nessun riferimento. */
 const optTarget = (v) => {
   const n = num(String(v ?? "").replace(",", "."), 0);
@@ -357,6 +432,14 @@ export async function onSubmit(form, data) {
   if (form.id === "prefs-form") {
     setPrefs({ restSeconds: num(data.restSeconds, 90), kgStep: num(data.kgStep, 2.5), sound: data.sound === "on" });
     toast("Preferenze salvate");
+    return true;
+  }
+  if (form.id === "powder-form") {
+    const proteinG = optTarget(data.proteinG);
+    if (!data.name.trim() || proteinG == null) return toast("Servono il nome e le proteine per misurino"), false;
+    app.state.profile.proteinPowder = { name: data.name.trim(), scoopG: optTarget(data.scoopG), proteinG, kcal: optTarget(data.kcal), source: data.source === "off" ? "off" : "label" };
+    scanned = null;
+    if (await persistState()) toast("Polvere salvata");
     return true;
   }
   if (form.id === "profile-form") {

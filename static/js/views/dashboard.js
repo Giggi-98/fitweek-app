@@ -4,6 +4,7 @@ import { icon } from "../icons.js";
 import { ring } from "../motion.js";
 import { openComposer } from "../composer.js";
 import { guessSlot, openReminder, openSleepLog, openWeighIn } from "../reminders.js";
+import { adviceNow, openProtein } from "../shaker.js";
 import { dayNumber } from "../stats.js";
 import { app } from "../store.js";
 import { modalOpen, tabId, tabs } from "../ui.js";
@@ -11,10 +12,13 @@ import { clock, countdown, gapFor, nextEvent, nowAction, positionNow, toMinutes 
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
 import { todayStatus } from "./training.js";
 
-const KIND_ICON = { meal: "utensils", workout: "dumbbell", weigh_in: "scale", shopping: "shopping-cart", sleep: "moon", custom: "bell" };
+const KIND_ICON = { meal: "utensils", workout: "dumbbell", weigh_in: "scale", shopping: "shopping-cart", sleep: "moon", custom: "bell", protein: "beef" };
+const PROTEIN_ROW = "protein-advice"; // riga calcolata, non un promemoria: compare solo con un riferimento di proteine
 const SLOT_ICON = { lunch: "soup", pre_workout: "zap", snack: "apple", dinner: "utensils", other: "cookie" };
 const ui = { tab: "day" }; // solo su telefono: su schermo largo giornata e settimana stanno affiancate
 const CTA = { log_meal: "Registra", start_workout: "Inizia", log_weight: "Pesa", open_shopping: "Apri", none: "Fatto" };
+// Una voce già chiusa si riapre nel suo editor: pasto, pesata, e la seduta in Progressi.
+const editable = (i) => Boolean(i.meal_id) || i.action === "log_weight" || i.action === "start_workout";
 
 function greeting() {
   const h = new Date().getHours();
@@ -71,8 +75,9 @@ function plannedFor(routine, week) {
 }
 
 // ---- riquadri di oggi: calorie e proteine (stime, con il riferimento scelto dall'utente), sonno, peso ----
-/** Riquadro con barra verso il riferimento. Sopra il riferimento la barra è piena, senza colori d'allarme. */
-function intakeTile(label, iconName, value, target, unit, missing) {
+/** Riquadro con barra verso il riferimento. Sopra il riferimento la barra è piena, senza colori d'allarme.
+ *  `action` = attributo che lo rende un pulsante (le proteine aprono shaker e alternative). */
+function intakeTile(label, iconName, value, target, unit, missing, action = "") {
   const has = value != null;
   const pct = has && target ? Math.min(100, Math.round((value / target) * 100)) : 0;
   const left = has && target ? target - value : null;
@@ -81,12 +86,13 @@ function intakeTile(label, iconName, value, target, unit, missing) {
     : target
       ? left > 0 ? `mancano ~${fmtNum(left, 0)} ${unit}` : "riferimento raggiunto"
       : missing ? `+${missing} senza valori` : "dai pasti registrati";
-  return `<div class="metric tile">
+  const tag = action ? "button" : "div";
+  return `<${tag} ${action ? `type="button" ${action}` : ""} class="metric tile">
     <div class="metric-label">${icon(iconName, "sm")}${label} <span class="badge-calc">stima</span></div>
     <div class="metric-value">${has ? `~<span data-count="${Math.round(value)}">${fmtNum(value, 0)}</span>` : "—"}<small>${target ? ` / ${fmtNum(target, 0)}` : ""} ${unit}</small></div>
     ${target ? `<div class="bar" role="img" aria-label="${pct}% del riferimento"><div data-pct-w="${pct}"></div></div>` : ""}
     <div class="metric-sub">${sub}</div>
-  </div>`;
+  </${tag}>`;
 }
 
 function tiles() {
@@ -100,7 +106,7 @@ function tiles() {
   const night = app.sleep.items.find((n) => n.date === app.today.date);
   return `<div class="tiles dash-stats">
     ${intakeTile("Calorie", "flame", today?.kcal_estimate, targets.kcal, "kcal", today?.meals_without_values)}
-    ${intakeTile("Proteine", "beef", today?.protein_estimate_g, targets.protein_g, "g", 0)}
+    ${intakeTile("Proteine", "beef", today?.protein_estimate_g, targets.protein_g, "g", 0, 'data-protein aria-label="Proteine di oggi: shaker e alternative"')}
     <button type="button" class="metric tile" data-sleep aria-label="${night ? "Modifica il sonno di stanotte" : "Registra il sonno di stanotte"}">
       <div class="metric-label">${icon("moon", "sm")}Sonno</div>
       <div class="metric-value">${night ? esc(fmtDuration(night.duration_min)) : "—"}</div>
@@ -116,9 +122,18 @@ function tiles() {
 
 // ---- adesso: una sola azione, la più rilevante per l'ora e la routine ---------------------------
 const minutesNow = () => new Date().getHours() * 60 + new Date().getMinutes();
+/** Riga dello shaker: "da fare" solo se mancano proteine rispetto al riferimento scelto dall'utente. */
+function proteinRow() {
+  const a = adviceNow();
+  if (!a) return [];
+  const detail = { taken: "Registrato", reached: "Non serve: riferimento raggiunto", suggest: a.due ? `Mancano circa ${a.missing} g` : `Solo se mancano proteine · ora ~${a.protein} di ${a.target} g` }[a.state];
+  return [{ id: PROTEIN_ROW, kind: "protein", action: "protein", title: "Shaker di proteine", time: a.time, detail,
+    state: { taken: "done", reached: "skipped", suggest: "pending" }[a.state], due: false }];
+}
+
 /** Agenda di oggi con l'orario mostrato (quello posticipato, se "Più tardi"), in ordine. */
 const agendaRows = () =>
-  app.agenda
+  [...app.agenda, ...proteinRow()]
     .map((i) => ({ ...i, shown: i.state === "snoozed" ? clock(new Date(i.due_at)) : i.time }))
     .sort((a, b) => a.shown.localeCompare(b.shown));
 
@@ -168,7 +183,7 @@ function timeline() {
       <span class="tl-node">${icon(ic)}</span>
       <button type="button" class="tl-card" data-agenda="${esc(i.id)}">
         <span class="tl-text"><strong>${esc(i.title)}</strong>${sub ? `<small>${sub}</small>` : ""}</span>
-        ${isNext || overdue ? `<span class="tl-cta">${CTA[i.action] || "Apri"}</span>` : i.state === "done" ? icon("circle-check", "sm") : ""}
+        ${isNext || overdue ? `<span class="tl-cta">${CTA[i.action] || "Apri"}</span>` : !open && editable(i) ? icon("pencil", "sm tl-edit") : i.state === "done" ? icon("circle-check", "sm") : ""}
       </button>
     </li>`;
   });
@@ -260,14 +275,21 @@ export function afterRender() {
 setInterval(positionNow, 15_000);
 window.addEventListener("resize", () => positionNow());
 
+/** Una voce della giornata: da fare → il suo inserimento; già fatta o saltata → il suo editor. */
+function openItem(item) {
+  const closed = item.state === "done" || item.state === "skipped";
+  const log = closed && item.meal_id ? app.dayLogs.find((m) => m.id === item.meal_id) : null;
+  if (item.action === "start_workout") location.hash = item.state === "done" && !app.today.active_session ? "#progress" : "#training";
+  else if (log) openComposer({ log });
+  else openReminder(item);
+}
+
 export async function onClick(t) {
   if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
+  if (t.dataset.agenda === PROTEIN_ROW || t.matches("[data-protein]")) return openProtein(), false;
   if (t.dataset.agenda) {
     const item = app.agenda.find((i) => i.id === t.dataset.agenda);
-    if (item && item.state !== "done" && item.state !== "skipped") {
-      if (item.action === "start_workout") location.hash = "#training";
-      else openReminder(item);
-    }
+    if (item) openItem(item);
     return false;
   }
   if (t.matches("[data-quick-meal]")) return openComposer({ slot: guessSlot() }), false;

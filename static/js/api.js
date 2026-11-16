@@ -13,8 +13,11 @@ export class ApiError extends Error {
 }
 
 /** Stato della rete visto dalle richieste: `offlineSince` = orario della copia locale in uso, o null.
- *  `onBack` scatta quando il server torna raggiungibile dopo un periodo offline. */
-export const net = { offlineSince: null, onChange: () => {}, onBack: () => {} };
+ *  `onBack` scatta quando il server torna raggiungibile dopo un periodo offline.
+ *  `localRead(path)` (impostata da store.js nell'app autonoma) risponde a una lettura dalla copia dei dati
+ *  sul telefono, con le modifiche in coda già applicate; `undefined` = percorso non ricostruibile, vale la
+ *  vecchia risposta in memoria. */
+export const net = { offlineSince: null, onChange: () => {}, onBack: () => {}, localRead: () => undefined };
 function setOffline(since) {
   if (net.offlineSince === since) return;
   const wasOffline = net.offlineSince != null;
@@ -67,10 +70,11 @@ export async function request(path, { method = "GET", body, fresh = false, timeo
   const cacheable = standalone && method === "GET" && !fresh;
   // Già offline: la lettura risponde subito con la copia locale, senza far aspettare; intanto si sonda il server.
   if (cacheable && net.offlineSince != null) {
-    const hit = cache.get(path);
-    if (hit) {
+    const own = net.localRead(path);
+    const hit = own === undefined ? cache.get(path) : null;
+    if (own !== undefined || hit) {
       probeServer();
-      return hit.data;
+      return own ?? hit.data;
     }
   }
   let res;
@@ -82,8 +86,10 @@ export async function request(path, { method = "GET", body, fresh = false, timeo
       body: body === undefined ? undefined : JSON.stringify(body),
     }, timeout ?? (method === "GET" ? READ_TIMEOUT_MS : WRITE_TIMEOUT_MS));
   } catch {
+    const own = cacheable ? net.localRead(path) : undefined;
     const hit = cacheable ? cache.get(path) : null;
     if (standalone) setOffline(net.offlineSince ?? hit?.at ?? Date.now());
+    if (own !== undefined) return own;
     if (hit) return hit.data;
     throw new ApiError("Rete non raggiungibile", 0);
   }

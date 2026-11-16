@@ -14,7 +14,7 @@ from .config import Settings
 from .db import connect, transaction
 from .schemas import ExerciseNotePut, GrocerySpendPut, IsoDate, SleepPut
 from .security import check_origin
-from .workouts import STALE, edit_time, is_stale, now_iso, today
+from .workouts import STALE, edit_time, is_stale, today
 
 
 def _rows(c: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
@@ -111,15 +111,17 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"items": rows}
 
     @r.put("/grocery-spend/{week_start}", dependencies=writes)
-    def put_grocery_spend(week_start: IsoDate, body: GrocerySpendPut):
+    def put_grocery_spend(week_start: IsoDate, body: GrocerySpendPut, edited: str = Depends(edit_time)):
         monday = date.fromisoformat(week_start)
         monday -= timedelta(days=monday.weekday())  # qualsiasi giorno → lunedì della sua settimana
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "grocery_spend", "week_start", monday.isoformat()), edited):
+                return STALE
             c.execute(
                 "INSERT INTO grocery_spend (week_start, amount, note, updated_at) VALUES (?, ?, ?, ?)"
                 " ON CONFLICT(week_start) DO UPDATE SET amount=excluded.amount, note=excluded.note,"
                 " updated_at=excluded.updated_at",
-                (monday.isoformat(), body.amount, body.note, now_iso()),
+                (monday.isoformat(), body.amount, body.note, edited),
             )
         return {"ok": True, "week_start": monday.isoformat()}
 

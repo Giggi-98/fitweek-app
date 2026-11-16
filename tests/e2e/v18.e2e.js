@@ -102,7 +102,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.fill('#c-off-g', '200');
   check('calorie ricalcolate sulla porzione', /118 kcal/.test(await page.textContent('#c-off-kcal')), await page.textContent('#c-off-kcal'));
   await page.click('#modal [data-off-add]');
-  await page.waitForSelector('#modal .tray-row');
+  await page.waitForSelector('#modal .tray-row', { state: 'attached' }); // su telefono la voce è nella scheda "Nel piatto"
   await page.click('#modal [data-save]');
   await page.waitForSelector('#modal', { state: 'hidden' });
   await page.waitForTimeout(500);

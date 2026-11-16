@@ -127,9 +127,11 @@ export function dayOptions(selected = isoDate(), n = 14) {
 
 // ---- finestra modale (una alla volta) ------------------------------------------------------
 let modalHandler = null;
-/** Apre la modale con `html`; `handler(target)` riceve i click e restituisce true per chiudere. */
-export function openModal(html, handler) {
+/** Apre la modale con `html`; `handler(target)` riceve i click e restituisce true per chiudere.
+ *  `layout` sceglie l'impaginazione della finestra (CSS `.modal[data-layout=…]`); senza, il foglio semplice. */
+export function openModal(html, handler, { layout = "" } = {}) {
   const dlg = $("#modal");
+  dlg.dataset.layout = layout;
   $("#modal-body").innerHTML = html;
   applyDynamicStyles($("#modal-body"));
   modalHandler = handler;
