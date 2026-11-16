@@ -222,6 +222,15 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.13.0 (2026-11-16) — scheda modificabile, gestione per esercizio, calcoli
+
+Richiesta dell'utente (D-039). Nel repository, **non in produzione**; richiede la migrazione 10 (una colonna, con backup automatico all'avvio).
+- **Scheda**: in Palestra → Programma → Modifica si riordina, aggiunge, sostituisce e toglie (con Annulla); per esercizio nome, ripetizioni, serie per settimana, recupero, gruppo, video. Segnale "modificato" e ripristino dal PDF per esercizio o per giornata.
+- **In seduta**: menu dell'esercizio con sostituisci/salta solo oggi, sposta, recupero; "Aggiungi esercizio a questa seduta"; tipo di serie con un tocco sul numero; obiettivo della prossima serie con "Usa".
+- **Calcoli**: massimale stimato, record di quattro tipi in tempo reale e nel riepilogo, confronto per esercizio con l'ultima volta, serie settimanali per gruppo muscolare, scheda dell'esercizio con grafico (carico, massimale, volume).
+
+Verificato dal maker: 117 pytest, 130 test JS, 263 controlli e2e in 10 file (nuovo: `program`). **Non verificato: nulla su telefono; migrazione 10 mai eseguita sul DB reale.**
+
 ## 1.12.1 (2026-11-16) — un solo APK
 
 Decisione dell'utente (D-038): si distribuisce solo l'app autonoma. Pagina di download con un solo APK, `scripts/build-apk.sh` compila `next` per default, nome dell'app "FitWeek". Il deploy della 1.12.0 è stato fatto dall'utente il 2026-11-16 (backup `fitweek-pre-deploy-4f806da-20261116-193135.sqlite`, container healthy).

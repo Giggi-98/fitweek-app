@@ -1,5 +1,11 @@
 # Design system
 
+## Aggiunte 1.13.0 (2026-11-16)
+
+- **Programma** (Palestra, schermata di avvio): ogni riga apre la scheda dell'esercizio; "Modifica" mostra per riga sposta su/giù e matita, più "Aggiungi esercizio" e, se la giornata differisce dal PDF, "Ripristina". Un esercizio cambiato porta la pillola "modificato" o "aggiunto".
+- **Scheda di seduta**: in testa il menu "…" (storia, sostituisci/salta solo oggi, sposta, recupero); sotto "Ultima volta" una sola riga `.ex-goal` con l'obiettivo della prossima serie e "Usa"; il numero della serie è un pulsante che ne cambia il tipo (R, D, C) e diventa trofeo sul record.
+- **Finestre dell'esercizio**: scheda (tre riquadri, grafico con `choices()` carico/massimale/volume, ultime sedute), editor (una sola azione principale; sostituisci, rimuovi e "come nel PDF" sono secondarie) e scelta dell'esercizio. Il massimale porta sempre l'etichetta "stima".
+
 ## Aggiunte 1.12.0 (2026-11-16)
 
 - **Editor del pasto** (`static/js/composer.js`, `.modal[data-layout="composer"]`): finestra a tutta altezza con tre fasce. In alto titolo, giorno, chiusura e tipo di pasto; al centro due zone che scorrono per conto loro, "Nel piatto" (ciò che hai scelto) e "Aggiungi" (ricerca, categorie, catalogo, piatto a mano); in basso un solo totale (calorie e proteine) e l'unica azione principale. Da 900 px le zone sono affiancate e "Nel piatto" ha il fondo `--color-surface-2`; sotto sono due schede (`tabs()`), con il numero di voci su "Nel piatto". La finestra non scorre mai nel suo insieme.

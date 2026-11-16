@@ -111,6 +111,13 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.13 (2026-11-16) — scheda modificabile e tipo di serie
+
+- `GET /api/v1/program/original` → `{routines: {A: [...], B: [...], C: [...]}}`: la scheda verificata sul PDF, in sola lettura (per mostrare le differenze e ripristinare).
+- `PUT /api/v1/workout-sessions/{id}/sets/{esercizio}/{n}`: campo `kind` = `normal` (predefinito) | `warmup` | `drop` | `failure`. Come `rir`, va rimandato a ogni modifica della serie. Le sedute restituite e il backup lo riportano per ogni serie; il ripristino di un backup senza `kind` mette `normal`.
+- Blob (`/api/state`): `routines[giorno][]` accetta `rest` (15–600 secondi, facoltativo) e `muscle` (testo); `name` non può essere vuoto. Nuovo elenco `exerciseArchive` (esercizi non più in una giornata, stessa forma).
+- Schema 10: `set_logs.kind`.
+
 ## API 1.12 (2026-11-16) — copia per l'app, codice a barre, proteine
 
 | Metodo | Path | Descrizione |

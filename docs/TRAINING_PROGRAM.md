@@ -2,7 +2,7 @@
 
 Fonte autorevole: `resources/scheda-originale.pdf` (4 pagine: tabelle W1–W8 e link video). Ricostruzione verificata il 2026-11-09 estraendo le coordinate delle celle (`pdftotext -bbox`) e associando ogni cambio di serie alla colonna `WEEKn` corrispondente. Le virgolette `“ “ “` nel PDF significano "come la settimana precedente".
 
-Non modificare questi valori senza indicazione dell'allenatore. Le BPM sono riferimenti del PDF, non obiettivi personalizzati.
+Non modificare questi valori (in `app/seed.py`) senza indicazione dell'allenatore. Dalla 1.13 l'utente può cambiare la propria scheda dall'app: queste tabelle restano l'originale a cui l'app confronta e ripristina (D-039). Le BPM sono riferimenti del PDF, non obiettivi personalizzati.
 
 ## Serie per settimana (W1…W8)
 

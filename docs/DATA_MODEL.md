@@ -158,3 +158,9 @@ set_tombstones(session_id → workout_sessions ON DELETE CASCADE, exercise_id, s
 ```
 
 Un segno per ogni posizione di serie eliminata, con l'orario dell'eliminazione più recente. Serve a scartare un `PUT` rimasto in coda su un dispositivo offline e fatto prima dell'eliminazione (FW-REV-002). Il segno resta anche se la serie viene registrata di nuovo: a quel punto conta il più recente tra `set_logs.logged_at` e `set_tombstones.deleted_at`. Non c'è pulizia periodica: al più una riga per posizione, e spariscono con la seduta.
+
+## Stato dopo 1.13.0 (schema 10, 2026-11-16)
+
+Migrazione 10: `set_logs.kind TEXT NOT NULL DEFAULT 'normal'` (`normal|warmup|drop|failure`, validato dall'API). Solo aggiunta: le serie esistenti restano `normal`.
+Blob: `routines[giorno][]` con `rest` (secondi) e `muscle` facoltativi; `exerciseArchive[]` = esercizi tolti, sostituiti o usati solo in una seduta (danno un nome allo storico). La scheda del PDF non è nel DB: sta in `app/seed.py` ed è esposta da `GET /api/v1/program/original`.
+Sul dispositivo: `fitweek.workoutEdits.v1` contiene anche il piano della seduta in corso (`plan`: saltati, sostituiti, aggiunti, ordine) e il tipo delle serie non ancora registrate (`kinds`).
