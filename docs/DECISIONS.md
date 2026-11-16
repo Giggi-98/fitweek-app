@@ -156,6 +156,13 @@ Richiesta dell'utente: l'app deve accorgersi del cambio di versione e potersi in
 - **Alternative scartate**: `PackageInstaller` a sessione (permetterebbe aggiornamenti senza conferma solo in casi ristretti, con più codice nativo non provabile qui); aggiornare solo le pagine web dell'app `next` senza APK (un secondo meccanismo di distribuzione, e non aggiornerebbe il codice nativo).
 - **Limiti**: provato con bridge Capacitor simulato e con la compilazione dei due APK; **nessuna prova su telefono reale** (download nativo, cookie del guscio, FileProvider, finestra di installazione). Checklist in `docs/ANDROID_CHECKLIST.md` §5.
 
+## D-038 — Un solo APK: l'app autonoma · Implementata (1.12.1, 2026-11-16, decisione dell'utente)
+L'utente vuole un solo APK, quello che funziona anche senza rete. Da questa versione si distribuisce solo il canale `next` (app autonoma, D-021/D-036); il guscio `stable`, che caricava la webapp dal server, non viene più compilato né servito (`mobile/dist/fitweek.apk` rimosso dal server).
+- `scripts/build-apk.sh` compila `next` se non si indica il canale; `stable` resta compilabile ma non è più previsto.
+- L'app mantiene l'id `app.fitweek.personal.next` (cambiarlo impedirebbe di aggiornare quella già installata) e si chiama "FitWeek", senza più "β".
+- Impostazioni → App Android (dal browser) propone un solo download: l'app autonoma. API e nomi dei canali restano gli stessi (`/api/v1/app/android` continua a esporre `next`): nessun contratto cambiato.
+- **Conseguenze**: chi ha installato il vecchio guscio non riceve più aggiornamenti e deve disinstallarlo e installare l'app autonoma (nuovo accesso; i dati stanno sul server). L'etichetta "IN PROVA" non c'è più nell'interfaccia, ma resta vero che **nessun APK è mai stato provato su un telefono**.
+
 ## D-035 — Proteine in polvere: il consiglio parte dal riferimento dell'utente · Implementata (1.12.0, 2026-11-16, richiesta dell'utente)
 L'utente ha comprato shaker e proteine in polvere e vuole sapere quando prenderle e cosa mangiare in alternativa. Scelte confermate dall'utente in sessione: consiglio **solo se mancano proteine**; alternativa = **alimenti al posto dello shaker**; valori della polvere **inseriti dall'utente**; acqua o latte **scelti ogni volta**.
 - **Nessun fabbisogno calcolato** (D-020 resta): `proteinAdvice()` in `static/js/protein.js` confronta le proteine dei pasti registrati oggi con `profile.proteinTarget`. Senza riferimento non c'è consiglio, e l'app lo dice invece di proporne uno.

@@ -222,6 +222,10 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.12.1 (2026-11-16) — un solo APK
+
+Decisione dell'utente (D-038): si distribuisce solo l'app autonoma. Pagina di download con un solo APK, `scripts/build-apk.sh` compila `next` per default, nome dell'app "FitWeek". Il deploy della 1.12.0 è stato fatto dall'utente il 2026-11-16 (backup `fitweek-pre-deploy-4f806da-20261116-193135.sqlite`, container healthy).
+
 ## 1.12.0 (2026-11-16) — proteine in polvere, giornata modificabile, copia locale, codice a barre
 
 Richieste dell'utente (D-035, D-036, D-037). Nel repository, **non in produzione**: nessun deploy, nessun APK pubblicato.

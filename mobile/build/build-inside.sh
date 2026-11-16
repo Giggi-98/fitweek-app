@@ -10,8 +10,7 @@ APP_ID="app.fitweek.personal"
 APP_NAME="FitWeek"
 STEM="fitweek"
 if [[ "$CHANNEL" == next ]]; then
-  APP_ID="app.fitweek.personal.next"   # si installa accanto alla stable
-  APP_NAME="FitWeek β"
+  APP_ID="app.fitweek.personal.next"   # id storico dell'app autonoma: cambiarlo impedirebbe di aggiornarla
   STEM="fitweek-next"
 fi
 

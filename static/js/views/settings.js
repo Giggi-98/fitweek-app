@@ -112,19 +112,16 @@ function androidPanel() {
       .catch(() => {});
     return panel(`${icon("smartphone")}App Android`, '<p class="subtle">Caricamento…</p>', "", "", "android-panel");
   }
-  const i = android.info;
-  const next = i.next
-    ? `<div class="app-next"><span class="pill accent">In prova</span><p><strong>Versione ${esc(i.next.version)}</strong> · ${mb(i.next.size)}</p><p class="subtle">App autonoma: si apre anche senza rete e invia i dati al ritorno. Si installa accanto a quella attuale, senza sostituirla.</p><a class="btn full" href="/api/v1/app/android/download?channel=next" download>${icon("download")}Scarica la versione di prova</a></div>`
-    : "";
-  if (!i.available) return panel(`${icon("smartphone")}App Android`, '<p class="subtle">L\'APK non è ancora stato compilato sul server (scripts/build-apk.sh).</p>', "", "", "android-panel");
+  // Un solo APK: l'app autonoma (canale `next`). Il vecchio guscio (`stable`) si scarica solo se è l'unico presente.
+  const apk = android.info.next ? { ...android.info.next, channel: "next" } : android.info.available ? { ...android.info, channel: "stable" } : null;
+  if (!apk) return panel(`${icon("smartphone")}App Android`, '<p class="subtle">L\'APK non è ancora stato compilato sul server (scripts/build-apk.sh).</p>', "", "", "android-panel");
   return panel(
     `${icon("smartphone")}App Android`,
     `<div class="app-cols"><div class="stack">
-      <p class="subtle">L'app mostra FitWeek a schermo intero e invia le <strong>notifiche dei promemoria anche ad app chiusa</strong>. Versione ${esc(i.version)} · ${mb(i.size)}.</p>
-      <a class="btn primary full" href="/api/v1/app/android/download" download>${icon("download")}Scarica APK</a>
-      <p class="subtle">L'app si collega a ${esc(i.server_url || "")}: funziona sulla Wi-Fi di casa o con la VPN. Le notifiche arrivano ovunque.</p>
-      <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(i.sha256 || "")}</p></details>
-      ${next}
+      <p class="subtle">${apk.channel === "next" ? "L'app tiene i dati sul telefono: si apre e registra <strong>anche senza rete</strong>, poi si allinea al server appena lo raggiunge." : "L'app mostra FitWeek a schermo intero."} Invia le <strong>notifiche dei promemoria anche ad app chiusa</strong>. Versione ${esc(apk.version)} · ${mb(apk.size)}.</p>
+      <a class="btn primary full" href="/api/v1/app/android/download?channel=${apk.channel}" download>${icon("download")}Scarica APK</a>
+      <p class="subtle">L'app si collega a ${esc(apk.server_url || "")}: per allinearsi serve la Wi-Fi di casa o la VPN. Le notifiche arrivano ovunque.</p>
+      <details><summary class="subtle">Verifica del file</summary><p class="subtle mono">SHA-256 ${esc(apk.sha256 || "")}</p></details>
     </div>
     <ol class="steps">
       <li>Scarica e apri il file. Il browser avvisa che è un'app esterna al Play Store: conferma <em>Scarica comunque</em>.</li>

@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
 # Compila e firma l'APK Android di FitWeek in un container (nessuna installazione sull'host).
-# Uso: scripts/build-apk.sh [URL_SERVER] [stable|next]   (predefiniti: http://192.168.222.200:8088, stable)
-#   stable: guscio che carica la webapp dal server            → mobile/dist/fitweek.apk
-#   next:   app autonoma con le pagine dentro l'APK (D-021),  → mobile/dist/fitweek-next.apk
-#           appId diverso: si installa ACCANTO alla stable, senza sostituirla.
+# Uso: scripts/build-apk.sh [URL_SERVER] [next|stable]   (predefiniti: http://192.168.222.200:8088, next)
+#   next:   app autonoma con le pagine dentro l'APK (D-021): l'UNICA distribuita dalla 1.12.1 (D-038)
+#                                                             → mobile/dist/fitweek-next.apk
+#   stable: vecchio guscio che carica la webapp dal server, non più distribuito (resta compilabile)
+#                                                             → mobile/dist/fitweek.apk
 # Output servito dalla webapp in Impostazioni (con il relativo file .json).
 # La chiave di firma vive in /opt/fitweek-secrets (fuori dal repository): NON perderla, altrimenti
 # gli aggiornamenti non si installano sopra la versione già presente sul telefono.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 APP_URL="${1:-http://192.168.222.200:8088}"
-CHANNEL="${2:-stable}"
+CHANNEL="${2:-next}"
 [[ "$CHANNEL" == stable || "$CHANNEL" == next ]] || { echo "Canale non valido: $CHANNEL (stable|next)" >&2; exit 2; }
 APP_VERSION="$(python3 -c 'import re;print(re.search(r"APP_VERSION = \"(.+?)\"", open("app/__init__.py").read()).group(1))')"
 SECRETS=/opt/fitweek-secrets

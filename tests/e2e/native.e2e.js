@@ -36,7 +36,7 @@ const FAKE_CAPACITOR = () => {
       },
       // app installata vecchissima: qualunque APK sul server è più recente
       AppUpdate: { install: async (args) => { (window.__ln.installs ||= []).push(args); if (window.__ln.failInstall) throw new Error(window.__ln.failInstall); return { started: true }; } },
-      App: { getInfo: async () => ({ id: 'app.fitweek.personal', name: 'FitWeek', version: '1.0.0', build: '10000' }), addListener: (evt, cb) => { listeners['app:' + evt] = cb; return { remove() {} }; }, minimizeApp: async () => { window.__ln.minimized = true; } },
+      App: { getInfo: async () => ({ id: 'app.fitweek.personal.next', name: 'FitWeek', version: '1.0.0', build: '10000' }), addListener: (evt, cb) => { listeners['app:' + evt] = cb; return { remove() {} }; }, minimizeApp: async () => { window.__ln.minimized = true; } },
     },
   };
 };
@@ -113,15 +113,15 @@ const FAKE_CAPACITOR = () => {
   const panelText = await page.textContent('#content');
   check('pannello app: stato notifiche', /consentite ✓/.test(panelText) && /notifiche programmate/.test(panelText));
   // Aggiornamento dell'app: rilevato dal confronto tra versione installata e APK sul server
-  const meta = await api('/api/v1/app/android');
-  if (meta.available) {
+  const meta = (await api('/api/v1/app/android')).next; // l'unico APK distribuito: l'app autonoma
+  if (meta) {
     await page.waitForSelector('[data-native=update]');
     check('aggiornamento: il pannello mostra versione installata e disponibile', new RegExp(`Versione ${meta.version.replace(/\./g, '\\.')} disponibile`).test(await page.textContent('#android-panel')) && /Installata: 1\.0\.0/.test(await page.textContent('#android-panel')), (await page.textContent('#android-panel')).slice(0, 120));
     await page.screenshot({ path: `${SHOTS}/m6-native-settings.png` });
     await page.click('[data-native=update]');
     await page.waitForFunction(() => window.__ln.installs?.length === 1);
     const sent = await page.evaluate(() => window.__ln.installs[0]);
-    check('aggiornamento: al plugin vanno l\'APK dello stesso canale e l\'impronta dichiarata dal server', sent.url === `${B}/api/v1/app/android/download?channel=stable` && sent.sha256 === meta.sha256 && sent.authorization === '', JSON.stringify(sent));
+    check('aggiornamento: al plugin vanno l\'APK dello stesso canale e l\'impronta dichiarata dal server', sent.url === `${B}/api/v1/app/android/download?channel=next` && sent.sha256 === meta.sha256 && sent.authorization === '', JSON.stringify(sent));
     await page.locator('#toast', { hasText: 'conferma l\'installazione' }).waitFor();
     check('aggiornamento: l\'utente viene mandato alla conferma di Android', true);
     await page.evaluate(() => { window.__ln.failInstall = 'Il file scaricato non corrisponde all\'impronta attesa'; });
@@ -152,9 +152,9 @@ const FAKE_CAPACITOR = () => {
   await wp.click('.topbar [data-view=settings]');
   await wp.click('[data-tab=app]');
   const info = await wp.evaluate(() => fetch('/api/v1/app/android').then((r) => r.json()));
-  if (info.available) {
-    await wp.waitForSelector('a[href="/api/v1/app/android/download"]');
-    const [download] = await Promise.all([wp.waitForEvent('download'), wp.click('a[href="/api/v1/app/android/download"]')]);
+  if (info.next) {
+    await wp.waitForSelector('a[href="/api/v1/app/android/download?channel=next"]');
+    const [download] = await Promise.all([wp.waitForEvent('download'), wp.click('a[href="/api/v1/app/android/download?channel=next"]')]);
     check('download APK dal browser', /^fitweek-.*\.apk$/.test(download.suggestedFilename()), download.suggestedFilename());
     await wp.screenshot({ path: `${SHOTS}/m6-download.png` });
   } else {

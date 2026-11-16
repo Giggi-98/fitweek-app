@@ -28,7 +28,7 @@ failed=0
 for test in tests/e2e/${E2E_ONLY:-*}.e2e.js; do   # E2E_ONLY=native per un solo file
   echo "== $test"
   docker rm -f "$NAME" >/dev/null 2>&1 || true   # container nuovo per ogni file: test indipendenti
-  APK_MOUNT=(); [[ -f mobile/dist/fitweek.apk ]] && APK_MOUNT=(-v "$PWD/mobile/dist:/app/downloads:ro")
+  APK_MOUNT=(); [[ -f mobile/dist/fitweek-next.apk ]] && APK_MOUNT=(-v "$PWD/mobile/dist:/app/downloads:ro")
   docker run -d --rm --name "$NAME" -p "127.0.0.1:$PORT:8080" -e APP_PASSWORD="$E2E_PASSWORD" -e APP_ORIGINS="$E2E_APP_URL" "${APK_MOUNT[@]}" \
     -e SESSION_SECRET="$(openssl rand -hex 32)" -e DB_PATH=/tmp/e2e.sqlite fitweek:test >/dev/null
   for _ in $(seq 1 30); do curl -sf "$E2E_URL/api/health" >/dev/null && break; sleep 0.5; done
