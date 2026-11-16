@@ -157,3 +157,59 @@ test("FW-REV-010: sessione revocata ma token non eliminato e uscita non registra
   globalThis.localStorage.setItem = realSetItem;
   cookieFail = false;
 });
+
+// Token ancora in localStorage perché la migrazione al Keystore è fallita (FW-REV-005): è l'unica copia persistente.
+const LEGACY = "fitweek.token.v1";
+const legacyStart = async ({ up }) => {
+  stored.clear();
+  jar.clear();
+  cookieFail = false;
+  Object.assign(keystore, { value: null, broken: true });
+  stored.set(LEGACY, JSON.stringify("tok-legacy"));
+  assert.equal(await initToken(), "tok-legacy");
+  assert.equal(JSON.parse(stored.get(LEGACY)), "tok-legacy", "premessa: migrazione fallita, la copia legacy resta");
+  Object.assign(server, { up, calls: [] });
+  Object.assign(ui, { confirms: [], alerts: [], reloads: 0, answer: true });
+};
+
+test("FW-REV-010: uscita non conclusa con token legacy → la copia persistente resta, anche dopo il riavvio", async () => {
+  await legacyStart({ up: false });
+  cookieFail = true;
+  const realSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  globalThis.localStorage.setItem = () => { throw new Error("QuotaExceededError"); };
+  assert.equal(await signOut(), false);
+  assert.match(ui.alerts[0], /ancora collegato/);
+  assert.equal(token(), "tok-legacy");
+  assert.equal(JSON.parse(stored.get(LEGACY)), "tok-legacy", "\"nulla è stato eliminato\": nemmeno l'unico token persistente");
+  globalThis.localStorage.setItem = realSetItem;
+  cookieFail = false;
+  assert.equal(await initToken(), "tok-legacy", "riavvio con Keystore ancora guasto: stesso token, sessione ancora revocabile dal dispositivo");
+  assert.equal(JSON.parse(stored.get(LEGACY)), "tok-legacy");
+  // nuovo tentativo con il server raggiungibile: la sessione viene revocata e la copia in chiaro sparisce
+  Object.assign(server, { up: true, calls: [] });
+  Object.assign(ui, { alerts: [], confirms: [] });
+  assert.equal(await signOut(), true);
+  assert.deepEqual(server.calls, ["POST /api/logout"]);
+  assert.equal(stored.has(LEGACY), false);
+  assert.equal(await initToken(), null);
+});
+
+test("FW-REV-010: sessione revocata con token legacy e nessun canale → l'uscita si conclude e il token in chiaro viene tolto", async () => {
+  await legacyStart({ up: true });
+  cookieFail = true;
+  const realSetItem = globalThis.localStorage.setItem.bind(globalThis.localStorage);
+  globalThis.localStorage.setItem = () => { throw new Error("QuotaExceededError"); };
+  assert.equal(await signOut(), true);
+  assert.equal(stored.has(LEGACY), false, "uscita conclusa: nessun token in chiaro resta sul dispositivo");
+  assert.equal(token(), null);
+  globalThis.localStorage.setItem = realSetItem;
+  cookieFail = false;
+  assert.equal(await initToken(), null);
+});
+
+test("FW-REV-010: uscita solo dal dispositivo con token legacy, registrata dal marcatore → il token in chiaro viene tolto", async () => {
+  await legacyStart({ up: false });
+  assert.equal(await signOut(), true);
+  assert.equal(stored.has(LEGACY), false);
+  assert.equal(await initToken(), null);
+});

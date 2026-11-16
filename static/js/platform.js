@@ -147,18 +147,24 @@ export const token = () => (standalone ? (memToken !== undefined ? memToken : st
 /** Uscita (`value` null): @returns true solo se l'eliminazione dal Keystore è confermata; "marked" se non lo
  *  è ma l'uscita è registrata su almeno un canale (l'app non rientrerà da sola); false se nessun canale ha
  *  registrato nulla: resta solo il controllo all'avvio, che non basta se la memoria torna scrivibile prima
- *  della riapertura. Chi chiama non deve dare l'uscita per conclusa se la sessione non è revocata sul server. */
-export async function setToken(value) {
+ *  della riapertura. Chi chiama non deve dare l'uscita per conclusa se la sessione non è revocata sul server.
+ *  `keepLegacyUnlessDone` (uscita senza revoca sul server): l'eventuale token ancora in localStorage perché la
+ *  migrazione al Keystore è fallita è l'unica copia persistente, e viene tolto solo quando l'esito è `true` o
+ *  "marked"; con esito `false` resta, perché l'uscita non si conclude e la sessione deve sopravvivere al riavvio. */
+export async function setToken(value, { keepLegacyUnlessDone = false } = {}) {
   memToken = value || null;
   const plugin = secureStore();
   if (plugin) {
     if (!value) {
-      storage.remove(TOKEN_KEY); // uscita: il token in chiaro sparisce comunque
+      if (!keepLegacyUnlessDone) storage.remove(TOKEN_KEY); // il token in chiaro sparisce comunque
       if (await wiped(plugin)) {
+        storage.remove(TOKEN_KEY);
         clearSignedOutMark();
         return true;
       }
-      return markSignedOut() ? "marked" : false;
+      if (!markSignedOut()) return false;
+      storage.remove(TOKEN_KEY);
+      return "marked";
     }
     if (await secured(plugin, value)) {
       storage.remove(TOKEN_KEY);
@@ -174,7 +180,9 @@ export async function setToken(value) {
 }
 
 /** Uscita non conclusa (FW-REV-010): la sessione continua con il token di prima, solo in memoria.
- *  Nulla viene scritto: nel Keystore il token c'è ancora, proprio perché l'eliminazione non è riuscita. */
+ *  Nulla viene scritto: nel Keystore il token c'è ancora, proprio perché l'eliminazione non è riuscita, e un
+ *  eventuale token legacy in localStorage non è stato toccato (`keepLegacyUnlessDone`). Un token nato nel
+ *  Keystore non viene mai copiato in chiaro. */
 export function keepToken(value) {
   if (standalone && value) memToken = value;
 }

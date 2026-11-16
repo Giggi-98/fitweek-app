@@ -54,7 +54,8 @@ export async function signOut({ all = false } = {}) {
   }
   if (!revoked && !confirm(NOT_REVOKED)) return false;
   const held = token();
-  const outcome = await setToken(null); // true = eliminazione confermata; "marked" = uscita registrata; false = nessun canale
+  // senza revoca, un token legacy in chiaro resta finché l'uscita non ha un esito: è l'unica copia persistente
+  const outcome = await setToken(null, { keepLegacyUnlessDone: !revoked }); // true = eliminazione confermata; "marked" = uscita registrata; false = nessun canale
   if (outcome === false && !revoked) {
     keepToken(held); // né revocato, né eliminato, né registrato: l'uscita non è avvenuta
     alert(SIGN_OUT_INCOMPLETE);
