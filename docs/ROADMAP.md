@@ -222,6 +222,22 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.12.0 (2026-11-16) — proteine in polvere, giornata modificabile, copia locale, codice a barre
+
+Richieste dell'utente (D-035, D-036, D-037). Nel repository, **non in produzione**: nessun deploy, nessun APK pubblicato.
+- **Proteine**: polvere in Impostazioni (valori dell'etichetta, anche dal codice a barre), riga "Shaker di proteine" nella giornata solo se c'è un riferimento, popup con quanto manca, shaker (misurini, acqua o latte) e alimenti alternativi dal catalogo.
+- **La giornata**: ogni voce già fatta o saltata si riapre nel suo editor (pasto → "Modifica pasto", pesata → correzione del valore di oggi, palestra → Progressi).
+- **Editor del pasto**: due zone ("Nel piatto" / "Aggiungi") affiancate su schermo largo e a schede su telefono; calorie e proteine per voce, correggibili; totale unico e salvataggio sempre visibili; piatto nuovo con proteine.
+- **Copia locale**: l'app autonoma risponde da sola senza rete con le modifiche in coda già visibili; abituali, promemoria e spese passano dalla coda.
+- **Codice a barre**: scanner nell'app Android, codice scrivibile ovunque, dati da Open Food Facts.
+- **Server**: `GET /sync/snapshot`, `GET /food-barcode/{codice}`, `meal_id` nell'agenda, `profile.proteinPowder`, controllo dell'orario di modifica su abituali, catalogo, promemoria e spese. Nessun cambio di schema.
+
+Verificato dal maker: 113 pytest, 117 test JS, 235 controlli e2e in 9 file (2 nuovi: `protein`, `localfirst`), compilazione di un APK `stable` di prova in una cartella temporanea (plugin `BarcodeScan`, nessun permesso CAMERA). **Non verificato: nulla su un telefono reale** (scanner, copia locale nell'APK); la chiamata vera a Open Food Facts per codice non è stata eseguita (nei test è simulata).
+
+## 1.11.1 (2026-11-13) — uscita non conclusa con token non migrato
+
+FW-REV-010, residuo trovato dalla chat 01 nel report `2026-11-13-24f1a8b.md` (verdetto MODIFICHE RICHIESTE): riprodotto, **correzione implementata, in attesa di verifica indipendente** (D-034). Test: 3 nuovi in `tests/js/logout.test.mjs`, il primo fallito prima della correzione. Solo frontend.
+
 ## 1.11.0 (2026-11-13) — l'app Android si aggiorna da sé
 
 Richiesta dell'utente (D-033). L'app (canali `stable` e `next`) rileva che sul server c'è un APK più recente dello stesso canale, lo dice con un avviso e in *Impostazioni → App Android*, e al tocco lo scarica, ne verifica l'impronta e apre l'installatore di Android (che chiede conferma). Nessuna API nuova, nessun cambio di schema. Verificato: 105 pytest, 101 test JS (13 nuovi in `tests/js/update.test.mjs`), 179 controlli e2e (5 nuovi nel file `native`, con bridge simulato), compilazione dei due APK con il plugin `AppUpdate` e il permesso `REQUEST_INSTALL_PACKAGES`. **Non verificato: nulla su un telefono reale.** Stato: nel repository, **non in produzione**; le app già installate vanno aggiornate a mano una volta (non hanno ancora il plugin).

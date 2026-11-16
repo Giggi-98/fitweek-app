@@ -43,6 +43,17 @@ Premessa: sul telefono c'è un'app **dalla 1.11.0 in su** (la prima va installat
 - [ ] **Senza rete**: in modalità aereo non compare nessun avviso né errore; "Cerca aggiornamenti" dice che il controllo non è riuscito.
 - [ ] **Via VPN** (solo dopo la diagnosi del blocco durante il download dal PC dell'ufficio): l'aggiornamento scarica senza far cadere la connessione.
 
+## 6. Codice a barre, proteine e copia locale (1.12.0)
+Premessa: server alla 1.12.0 e APK compilato dopo il deploy.
+- [ ] **Scanner**: in *Pasti → + Pasto → Aggiungi* il pulsante con il codice a barre apre la fotocamera di Google (la prima volta scarica il modulo: serve la rete). Android **non** chiede a FitWeek il permesso della fotocamera.
+- [ ] **Prodotto trovato**: inquadrando una confezione compaiono nome, calorie e proteine per 100 g e la porzione in grammi; confronta i valori con l'etichetta.
+- [ ] **Prodotto assente / fotocamera chiusa**: compare l'avviso, nessun valore viene inventato, l'editor resta com'è.
+- [ ] **Polvere**: in *Impostazioni → Proteine in polvere* lo scanner compila nome e valori per misurino; dopo averli corretti sull'etichetta la fonte diventa "etichetta".
+- [ ] **Shaker**: in *Oggi* tocca *Proteine*: misurini, acqua o latte, *Registra shaker*; la riga della giornata diventa "Registrato".
+- [ ] **Giornata**: tocca un pasto già fatto → si apre "Modifica pasto" con le sue voci; tocca la pesata fatta → si corregge.
+- [ ] **Editor con una mano**: le schede "Nel piatto" / "Aggiungi" e il pulsante di salvataggio si raggiungono con il pollice; la tastiera non copre il totale.
+- [ ] **Senza rete (app β)**: in modalità aereo registra un pasto e rinomina un promemoria; giornata, proteine e diario si aggiornano subito; chiudi e riapri l'app: c'è ancora tutto. Togli la modalità aereo: l'indicatore torna "Sincronizzato" e dal PC si vedono le stesse modifiche.
+
 ---
 
 ### Note / esito della prova

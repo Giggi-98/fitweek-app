@@ -20,7 +20,7 @@ Ogni componente, endpoint e tabella citato qui esiste nel repository. Ciò che n
    app/workouts.py   /api/v1: today, workout-sessions, serie, program-week
    app/daily.py      /api/v1: meal-logs, meal-templates, foods, takeaway, reminders, agenda, weekly-summary
    app/tracking.py   /api/v1: sleep, exercise-notes, grocery-spend
-   app/foodsearch.py /api/v1/food-search → Open Food Facts (unica chiamata verso l'esterno, FOOD_SEARCH=off la spegne)
+   app/foodsearch.py /api/v1/food-search, /api/v1/food-barcode → Open Food Facts (unico servizio esterno, FOOD_SEARCH=off lo spegne)
    app/domain.py     regole pure (settimana del programma, giorno A/B/C, serie previste)
    app/schemas.py    modelli Pydantic · app/security.py sessioni, limite ai tentativi, Origin, CSP
    app/migrations.py migrazioni versionate con backup prima di ognuna · app/db.py connessione, transazioni, snapshot
@@ -63,7 +63,8 @@ Moduli che fanno da contratto: `api.js` (unico punto HTTP, tempi massimi e stato
 
 - **Scritture per voce** (sedute, serie, pasti, risposte ai promemoria, note degli esercizi, correzioni fatte da Progressi): entrano in una coda in `localStorage` con l'orario in cui sono state fatte. Errori di rete, 5xx e 429 si ritentano senza limite; un 4xx sposta l'operazione in "Modifiche non inviate" (Impostazioni → Dati e accesso), mai nel nulla (D-022). Alla risposta si toglie dalla coda solo l'operazione inviata (D-026).
 - **Stato a blob**: resta in attesa sul dispositivo finché il server non lo accetta; su 409 il client rilegge, fonde (elenchi per id, piano pasti per giorno → pasto → ingrediente) e segnala i conflitti; una voce eliminata da una parte e modificata dall'altra resta (D-026).
-- **Solo nell'app `next`**: le letture senza rete rispondono con l'ultima copia locale e l'app lo segnala. La webapp nel browser non ha copia offline delle pagine né delle letture: ha solo le due code qui sopra.
+- **Solo nell'app `next`** (1.12, D-036): il telefono tiene una copia delle righe dei domini giornalieri (`GET /api/v1/sync/snapshot`) e `static/js/local.js` riproduce su quella copia le letture e le scritture dell'API. Senza rete agenda, riepilogo settimanale, diario, abituali, catalogo, promemoria, sonno, note e spese rispondono dal telefono con le modifiche in coda già applicate; a coda vuota la copia riparte dalla fotografia del server. Le altre letture (oggi, sedute, stato) rispondono con l'ultima risposta salvata. La webapp nel browser non ha copia offline delle pagine né delle letture: ha solo le due code qui sopra.
+- **Regole duplicate**: agenda e riepilogo settimanale sono calcolati in `app/daily.py` e in `static/js/local.js`; `tests/e2e/localfirst.e2e.js` confronta le due risposte sugli stessi dati.
 - **Promemoria**: con l'app aperta li controlla `reminders.js` ogni minuto; a schermo spento esistono solo come notifiche locali programmate dalle app Android (`native.js`, `schedule.js`).
 - **Aggiornamento dell'app Android** (1.11, D-033): `update.js` confronta la versione installata con l'APK dello stesso canale esposto da `GET /api/v1/app/android`; su richiesta dell'utente il plugin nativo `AppUpdate` scarica il file con la sessione, ne verifica lo SHA-256 e lo passa all'installatore di Android. Nessun endpoint nuovo; mai provato su un telefono.
 

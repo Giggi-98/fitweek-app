@@ -1,6 +1,15 @@
 # Design system
 
-## Stato attuale: v3 "sportivo premium, a schede" (1.10.0, 2026-11-11)
+## Aggiunte 1.12.0 (2026-11-16)
+
+- **Editor del pasto** (`static/js/composer.js`, `.modal[data-layout="composer"]`): finestra a tutta altezza con tre fasce. In alto titolo, giorno, chiusura e tipo di pasto; al centro due zone che scorrono per conto loro, "Nel piatto" (ciò che hai scelto) e "Aggiungi" (ricerca, categorie, catalogo, piatto a mano); in basso un solo totale (calorie e proteine) e l'unica azione principale. Da 900 px le zone sono affiancate e "Nel piatto" ha il fondo `--color-surface-2`; sotto sono due schede (`tabs()`), con il numero di voci su "Nel piatto". La finestra non scorre mai nel suo insieme.
+- **Voce del piatto**: nome, calorie e proteine per la quantità scelta; toccando il nome si correggono i valori a porzione (la fonte diventa "inserito"). Un totale con voci senza proteine dice "almeno N g" e quante voci mancano: mai uno zero al posto di un dato assente.
+- **`openModal(html, handler, { layout })`**: l'impaginazione della finestra è un attributo del `<dialog>`; senza `layout` resta il foglio semplice usato dagli altri popup.
+- **Proteine di oggi** (`static/js/shaker.js`): numero contro il riferimento, frase di stato, un riquadro per lo shaker (misurini, `choices()` acqua/latte, valori con la fonte) con l'unica azione principale, poi le alternative come elenco `.pick`. Nessun colore d'avviso: sotto il riferimento non è un errore.
+- **La giornata**: una voce chiusa con un editor mostra la matita (`.tl-edit`) al posto del segno di spunta; la riga dello shaker è calcolata e non usa lo stato "da registrare".
+- Skill di controllo in `.claude/skills/`: `deslop-ui` (prima e dopo ogni modifica all'interfaccia) e `deslop-logic` (sul diff prima del commit).
+
+## Stato v3 "sportivo premium, a schede" (1.10.0, 2026-11-11)
 
 Stessa identità della v2 (token, colori, icone, movimento: vedi sotto), nuova impaginazione. Obiettivi: niente elementi sovrapposti, meno scorrimento, spazio usato fino in fondo su schermi larghi.
 

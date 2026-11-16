@@ -111,6 +111,18 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.12 (2026-11-16) — copia per l'app, codice a barre, proteine
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/api/v1/sync/snapshot?days=60` | Copia dei domini giornalieri in una sola lettura coerente → `{as_of, since, meal_logs, meal_templates, foods, reminders, reminder_acks, sleep_logs, exercise_notes, grocery_spend}`. Solo righe non eliminate; diario, sonno e conferme limitati agli ultimi `days` giorni (7–400); il resto completo. Stato a blob e sedute restano su `/api/state` e `/api/v1/workout-sessions`. |
+| GET | `/api/v1/food-barcode/{codice}` | Prodotto di Open Food Facts dal codice a barre (8–14 cifre, altrimenti 422) → `{enabled, source, item}` con `item` come una voce di `/food-search` oppure `null` (codice sconosciuto, o prodotto senza nome o calorie). Stessa memoria, stesso limite (429) e stesso 502 di `/food-search`. |
+
+Modifiche a endpoint esistenti:
+- `GET /api/v1/agenda`: ogni voce ha `meal_id` (il pasto che ha chiuso o saltato il promemoria, altrimenti `null`).
+- `PUT`/`DELETE` di `/meal-templates/{id}` e `/foods/{id}`, `PUT /reminders/{id}`, `PUT /grocery-spend/{data}`: leggono `X-Edited-At` come le altre scritture; una modifica più vecchia del dato salvato risponde `{ok: true, stale: true}` e non viene applicata. `DELETE /reminders/{id}` e `DELETE /grocery-spend/{settimana}` restano eliminazioni definitive senza questo controllo.
+- Blob (`/api/state`): `profile.proteinPowder` = `null` oppure `{name, scoopG?, proteinG?, kcal?, source: "label"|"off"}` (valori per misurino).
+
 ## API 1.10.5 (2026-11-13) — contratto del ripristino da backup JSON (FW-ARCH-001)
 
 `POST /api/v1/restore` non cambia comportamento: lo dichiara. La risposta ora contiene anche `replaced` e `kept` (chiavi dei domini), e l'app mostra lo stesso elenco **prima** della conferma (`static/js/backup.js`).

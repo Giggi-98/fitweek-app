@@ -133,6 +133,12 @@ La durata del sonno non è memorizzata: si calcola dagli orari (se la sveglia è
 Blob: `profile.proteinTarget`, `profile.kcalTarget` (numeri facoltativi scelti dall'utente), `groceries[].recurring` (resta in lista dopo "Spesa arrivata").
 `set_logs.rir`: 0–3 = ripetizioni di riserva, 4 = "4 o più".
 
+## Stato dopo 1.12.0 (schema 9 invariato, 2026-11-16)
+
+Nessuna tabella nuova. Blob: `profile.proteinPowder` (facoltativo) = `{name, scoopG, proteinG, kcal, source}`: polvere proteica dell'utente, valori **per misurino**; `source` è `label` (copiati dall'etichetta) o `off` (letti da Open Food Facts dal codice a barre). Uno shaker registrato è una riga di `meal_logs` con `slot = "other"` e una voce con `food_id = "shaker"`.
+
+Sul telefono (solo app autonoma) la chiave `fitweek.cache.v1:/api/v1/sync/snapshot` di `localStorage` contiene la copia delle righe dei domini giornalieri; viene eliminata all'uscita insieme al resto della copia locale.
+
 ## Stato dopo 1.10.2 (schema 8, 2026-11-12)
 
 ```sql
