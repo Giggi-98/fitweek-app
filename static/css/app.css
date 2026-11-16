@@ -370,7 +370,10 @@ button.tile:active { transform: scale(0.98); }
 .train-bar { display: grid; grid-template-columns: minmax(0, 1fr); gap: var(--space-3); }
 .ex-preview { display: grid; grid-template-columns: minmax(0, 1fr); column-gap: var(--space-7); }
 .ex-line { display: flex; align-items: center; gap: var(--space-3); min-height: 60px; padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); }
-.ex-line-main { flex: 1; min-width: 0; }
+.ex-line-main { flex: 1; min-width: 0; display: grid; padding: 0; border: 0; background: none; color: inherit; text-align: left; }
+.ex-line-main .entry-title .pill { margin-left: var(--space-1); }
+.ex-move { display: flex; flex: none; }
+.ex-move button:disabled { opacity: 0.3; }
 .ex-line .entry-sub { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ex-plan { flex: none; padding: 4px 10px; border-radius: var(--radius-pill); background: var(--color-surface-2); font-size: var(--text-sm); font-weight: 700; font-variant-numeric: tabular-nums; white-space: nowrap; }
 .ex-idx { flex: 0 0 30px; height: 30px; border-radius: 10px; display: grid; place-items: center; background: var(--color-surface-2); color: var(--color-text-muted); font-weight: 800; font-size: var(--text-xs); }
@@ -407,7 +410,9 @@ button.tile:active { transform: scale(0.98); }
 .set-legend, .set-row { display: grid; grid-template-columns: 26px 1fr 1fr var(--tap); gap: var(--space-2); align-items: center; }
 .set-legend { font-size: 10px; color: var(--color-text-faint); text-transform: uppercase; font-weight: 800; letter-spacing: var(--tracking-caps); text-align: center; margin-top: var(--space-2); }
 .set-row { position: relative; border-radius: var(--radius-md); }
-.set-num { text-align: center; font-weight: 800; color: var(--color-text-faint); font-variant-numeric: tabular-nums; }
+.set-num { min-height: var(--tap); padding: 0; border: 0; background: none; text-align: center; font-weight: 800; color: var(--color-text-faint); font-variant-numeric: tabular-nums; }
+.set-row.warmup .set-num, .set-row.drop .set-num, .set-row.failure .set-num { color: var(--color-text); }
+.set-row.warmup .stepper { opacity: 0.7; }
 .set-row.extra .set-num { color: var(--color-warning); }
 .set-row.done .set-num { color: var(--color-accent); }
 .stepper { display: grid; grid-template-columns: 34px 1fr 34px; align-items: stretch; border: 1px solid var(--color-border); border-radius: var(--radius-md); background: var(--color-surface-2); overflow: hidden; transition: background var(--dur-3), border-color var(--dur-3); }
@@ -773,9 +778,22 @@ input[type="file"]::file-selector-button { margin-right: var(--space-3); min-hei
 .ex-note .icon { flex: none; margin-top: 1px; }
 .ex-note.has { color: var(--color-text); font-size: var(--text-sm); }
 .ex-note.has .icon { color: var(--color-accent); }
-.ex-hint { display: flex; align-items: center; gap: var(--space-2); flex-wrap: wrap; padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-accent-soft); font-size: var(--text-sm); }
-.ex-hint .icon { color: var(--color-accent); flex: none; }
-.ex-hint span { flex: 1 1 160px; }
+.ex-goal { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: var(--space-3); padding: var(--space-2) var(--space-3); border-radius: var(--radius-md); background: var(--color-accent-soft); font-size: var(--text-sm); }
+.ex-goal span { display: grid; }
+.ex-goal small { color: var(--color-text-muted); font-size: var(--text-xs); }
+.ex-goal strong { font-variant-numeric: tabular-nums; white-space: nowrap; }
+.ex-session-actions { display: grid; gap: var(--space-1); justify-items: start; }
+.ex-history { list-style: none; margin: 0; padding: 0; display: grid; }
+.ex-history li { display: flex; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0; border-bottom: 1px solid var(--color-border); font-size: var(--text-sm); }
+.ex-history span { display: grid; color: var(--color-text-muted); }
+.ex-history strong { text-align: right; font-variant-numeric: tabular-nums; }
+.week-sets { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-2); margin: 0; padding: 0; border: 0; }
+.week-sets legend { padding: 0 0 var(--space-2); font-size: var(--text-xs); font-weight: 650; color: var(--color-text-muted); }
+.week-sets label { display: grid; gap: 2px; font-size: var(--text-xs); color: var(--color-text-muted); text-align: center; }
+.week-sets input { text-align: center; padding-inline: 0; }
+@media (min-width: 600px) { .week-sets { grid-template-columns: repeat(8, minmax(0, 1fr)); } }
+.new-ex { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-2); }
+.sum-table { text-align: left; }
 
 /* ================================================================== progressi (1.7) */
 .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }

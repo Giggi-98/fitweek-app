@@ -248,9 +248,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         for x in sets:
                             c.execute(
                                 "INSERT OR REPLACE INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir,"
-                                " completed, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                                " completed, kind, logged_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                                 (s["id"], x["exercise_id"], x["set_index"], x["kg"], x["reps"], x["rir"],
-                                 int(x["completed"]), x["logged_at"]),
+                                 int(x["completed"]), x.get("kind", "normal"), x["logged_at"]),
                             )
                     now = now_iso()
                     if body.meal_templates is not None:

@@ -52,6 +52,9 @@ const P = {
   "circle-check": "<circle cx='12' cy='12' r='10' /> <path d='m9 12 2 2 4-4' />",
   "undo-2": "<path d='M9 14 4 9l5-5' /> <path d='M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11' />",
   "scan-barcode": "<path d='M3 7V5a2 2 0 0 1 2-2h2' /> <path d='M17 3h2a2 2 0 0 1 2 2v2' /> <path d='M21 17v2a2 2 0 0 1-2 2h-2' /> <path d='M7 21H5a2 2 0 0 1-2-2v-2' /> <path d='M8 7v10' /> <path d='M12 7v10' /> <path d='M17 7v10' />",
+  "ellipsis": "<circle cx='12' cy='12' r='1' /> <circle cx='19' cy='12' r='1' /> <circle cx='5' cy='12' r='1' />",
+  "arrow-up": "<path d='m5 12 7-7 7 7' /> <path d='M12 19V5' />",
+  "arrow-down": "<path d='M12 5v14' /> <path d='m19 12-7 7-7-7' />",
   "pencil": "<path d='M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z' /> <path d='m15 5 4 4' />",
 };
 

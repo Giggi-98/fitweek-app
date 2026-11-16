@@ -58,10 +58,13 @@ class Profile(Strict):
 
 class Exercise(Strict):
     id: Id
-    name: Text(120)
+    name: Annotated[str, StringConstraints(min_length=1, max_length=120)]
     reps: Text(20)
     sets: list[Annotated[int, Field(ge=0, le=20)]] = Field(min_length=1, max_length=52)
     video: HttpsUrl = ""
+    # Scelti dall'utente nell'editor della scheda (1.13); assenti negli esercizi del PDF mai modificati.
+    rest: Optional[int] = Field(default=None, ge=15, le=600)  # recupero in secondi; None = quello predefinito
+    muscle: Text(30) = ""
 
 
 class WorkoutSet(Strict):
@@ -129,6 +132,9 @@ class AppState(Strict):
     profile: Profile
     routines: dict[Key, list[Exercise]] = Field(max_length=20)
     workouts: list[Workout] = Field(max_length=10_000)
+    # Esercizi usati in passato e non più in una giornata (tolti, sostituiti, usati solo in una seduta):
+    # servono a dare un nome allo storico e a riproporli quando se ne aggiunge uno.
+    exerciseArchive: list[Exercise] = Field(default_factory=list, max_length=300)
     weights: list[WeightReading] = Field(max_length=20_000)
     meals: dict[Key, MealDay] = Field(max_length=7)
     groceries: list[GroceryItem] = Field(max_length=500)
@@ -172,11 +178,15 @@ class SessionPatch(Strict):
     notes: Optional[Text(5000)] = None
 
 
+SetKind = Literal["normal", "warmup", "drop", "failure"]
+
+
 class SetLogPut(Strict):
     kg: Optional[float] = Field(default=None, ge=0, le=1000)
     reps: Optional[int] = Field(default=None, ge=0, le=500)
     rir: Optional[int] = Field(default=None, ge=0, le=10)
     completed: bool = True
+    kind: SetKind = "normal"  # il riscaldamento non conta in volume, record e obiettivi
 
 
 class ProgramWeekPut(Strict):
@@ -215,6 +225,7 @@ class BackupSet(Strict):
     reps: Optional[int] = Field(default=None, ge=0, le=500)
     rir: Optional[int] = Field(default=None, ge=0, le=10)
     completed: bool = True
+    kind: SetKind = "normal"
     logged_at: Text(40)
 
 

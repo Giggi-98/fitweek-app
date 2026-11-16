@@ -12,6 +12,7 @@ from .config import Settings
 from .db import connect, transaction
 from .schemas import ProgramWeekPut, SessionCreate, SessionPatch, SetLogPut
 from .security import check_origin
+from .seed import ROUTINES
 
 TZ = ZoneInfo("Europe/Rome")
 SESSION_COLS = (
@@ -77,7 +78,7 @@ def load_sessions(c: sqlite3.Connection, where: str = "", params: tuple = (), li
     marks = ",".join("?" * len(ids))
     sets: dict[str, list[dict]] = {i: [] for i in ids}
     for s in c.execute(
-        f"SELECT session_id, exercise_id, set_index, kg, reps, rir, completed, logged_at FROM set_logs"
+        f"SELECT session_id, exercise_id, set_index, kg, reps, rir, completed, kind, logged_at FROM set_logs"
         f" WHERE session_id IN ({marks}) ORDER BY exercise_id, set_index",
         ids,
     ):
@@ -118,6 +119,12 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             "active_session": active[0] if active else None,
             "done_today": done_today,
         }
+
+    @r.get("/program/original")
+    def original_program():
+        """La scheda del PDF così com'è stata verificata (`app/seed.py`, docs/TRAINING_PROGRAM.md): l'app la usa
+        per mostrare cosa è stato modificato e per ripristinare un esercizio o una giornata."""
+        return {"routines": ROUTINES}
 
     @r.put("/program-week", dependencies=writes)
     def set_program_week(body: ProgramWeekPut):
@@ -229,11 +236,11 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                     or is_stale(_deleted_time(c, sid, exercise_id, set_index), edited)):
                 return STALE  # più vecchia della serie salvata, oppure della sua eliminazione
             c.execute(
-                "INSERT INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir, completed, logged_at)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, exercise_id, set_index) DO UPDATE SET"
+                "INSERT INTO set_logs (session_id, exercise_id, set_index, kg, reps, rir, completed, kind, logged_at)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(session_id, exercise_id, set_index) DO UPDATE SET"
                 " kg=excluded.kg, reps=excluded.reps, rir=excluded.rir, completed=excluded.completed,"
-                " logged_at=excluded.logged_at",
-                (sid, exercise_id, set_index, body.kg, body.reps, body.rir, int(body.completed), edited),
+                " kind=excluded.kind, logged_at=excluded.logged_at",
+                (sid, exercise_id, set_index, body.kg, body.reps, body.rir, int(body.completed), body.kind, edited),
             )
             c.execute("UPDATE workout_sessions SET updated_at=? WHERE id=?", (now_iso(), sid))
         return {"ok": True}

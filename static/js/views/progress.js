@@ -8,6 +8,10 @@ import { openSleepLog } from "../reminders.js";
 import { closeModal, dayOptions, empty, openModal, panel, stat, tabpanel, tabs, toast } from "../ui.js";
 import { enqueue, flush } from "../workout/queue.js";
 import { icon } from "../icons.js";
+import { weeklyMuscleSets } from "../workout/calc.js";
+import { openExercisePage } from "../workout/exercise.js";
+import { findExercise, muscleOf } from "../workout/program.js";
+import { addDays } from "../stats.js";
 import { esc, fmtDate, fmtDuration, fmtNum, isoDate, num } from "../util.js";
 
 const ui = { exercise: null, tab: "weight", list: "readings", loads: "trend" };
@@ -111,20 +115,20 @@ function consistencyPanel() {
 }
 
 function exercisePanel() {
-  const all = Object.entries(app.state.routines).flatMap(([routine, exs]) => exs.map((ex) => ({ ...ex, routine })));
+  const all = [...Object.entries(app.state.routines).flatMap(([routine, exs]) => exs.map((ex) => ({ ...ex, routine }))), ...(app.state.exerciseArchive || []).map((ex) => ({ ...ex, routine: "" }))];
   const withData = all.filter((ex) => exerciseHistory(app.sessions, ex.id).length);
   if (!withData.length) return empty("Nessun carico registrato", "Il grafico compare dopo la prima seduta conclusa.");
   const ex = withData.find((e) => e.id === ui.exercise) || withData[0];
   const hist = exerciseHistory(app.sessions, ex.id);
   const best = hist.reduce((a, b) => (b.kg > a.kg ? b : a));
   const last = hist[hist.length - 1];
-  const options = Object.keys(app.state.routines)
+  const options = [...Object.keys(app.state.routines), ""]
     .map((r) => {
       const items = withData.filter((e) => e.routine === r);
-      return items.length ? `<optgroup label="Giorno ${esc(r)}">${items.map((e) => `<option value="${esc(e.id)}" ${e.id === ex.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</optgroup>` : "";
+      return items.length ? `<optgroup label="${r ? `Giorno ${esc(r)}` : "Non più in scheda"}">${items.map((e) => `<option value="${esc(e.id)}" ${e.id === ex.id ? "selected" : ""}>${esc(e.name)}</option>`).join("")}</optgroup>` : "";
     })
     .join("");
-  return `<div class="field"><label for="ex-pick">Esercizio</label><select id="ex-pick" data-ex-pick>${options}</select></div>
+  return `<div class="field-row"><div class="field"><label for="ex-pick">Esercizio</label><select id="ex-pick" data-ex-pick>${options}</select></div><button type="button" class="btn" data-ex-page="${esc(ex.id)}">Storia e record</button></div>
     <div class="metrics three">
       ${stat("Ultima", `${fmtNum(last.kg)}<small> kg</small>`, `× ${esc(last.reps ?? "—")} rip. · ${esc(fmtDate(last.date))}`)}
       ${stat("Carico massimo", `${fmtNum(best.kg)}<small> kg</small>`, esc(fmtDate(best.date)))}
@@ -178,6 +182,18 @@ function weightTab() {
   )}</div>`;
 }
 
+const nameOf = (id) => findExercise(app.state, id)?.name;
+
+/** Serie di lavoro di questa settimana per gruppo muscolare (gruppo scelto nell'editor o predefinito). */
+function musclePanel() {
+  const monday = mondayOf(app.today.date);
+  const rows = weeklyMuscleSets(app.sessions, monday, addDays(monday, 6), (id) => muscleOf(findExercise(app.state, id)));
+  if (!rows.length) return empty("Nessuna serie questa settimana", "Compare dopo la prima seduta della settimana.");
+  const max = rows[0].sets;
+  return `<div class="hbars">${rows.map((x) => `<div class="hbar"><span>${esc(x.muscle)}</span><div class="bar" role="img" aria-label="${x.sets} serie"><div data-pct-w="${Math.round((x.sets / max) * 100)}"></div></div><strong>${x.sets}</strong></div>`).join("")}</div>
+    <p class="subtle">Serie di lavoro fatte, senza riscaldamento. Il gruppo di ogni esercizio si cambia dalla scheda in Palestra.</p>`;
+}
+
 function historyPanel() {
   const sessions = app.sessions.filter((s) => s.status === "done");
   return panel(
@@ -185,9 +201,8 @@ function historyPanel() {
     sessions.length
       ? sessions
           .map((s) => {
-            const names = Object.fromEntries((app.state.routines[s.routine] || []).map((e) => [e.id, e.name]));
             const done = s.sets.filter((x) => x.completed);
-            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(names[x.exercise_id] || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
+            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(nameOf(x.exercise_id) || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
           })
           .join("")
       : empty("Nessun allenamento registrato", "Inizia dalla schermata Palestra."),
@@ -195,7 +210,7 @@ function historyPanel() {
 }
 
 const trainingTab = () =>
-  `<div class="split"><div class="stack">${panel(`${icon("list-checks")}Costanza`, consistencyPanel())}${historyPanel()}</div>
+  `<div class="split"><div class="stack">${panel(`${icon("list-checks")}Costanza`, consistencyPanel())}${panel(`${icon("dumbbell")}Serie per gruppo · questa settimana`, musclePanel())}${historyPanel()}</div>
   ${panel(
     `${icon("trending-up")}Carichi`,
     `${tabs([["trend", "Per esercizio"], ["recent", "Ultimi carichi"]], ui.loads, "Carichi", "loads", "progress-loads-panel")}${tabpanel("progress-loads-panel", "Carichi", ui.loads, ui.loads === "recent" ? loadsTable() : exercisePanel())}`,
@@ -243,7 +258,6 @@ function editWeight(w) {
 }
 
 function editSession(s) {
-  const names = Object.fromEntries((app.state.routines[s.routine] || []).map((e) => [e.id, e.name]));
   const sets = [...s.sets].sort((a, b) => a.exercise_id.localeCompare(b.exercise_id) || a.set_index - b.set_index);
   const volume = () =>
     [...document.querySelectorAll(".es-row:not(.removed)")].reduce((v, r) => {
@@ -257,8 +271,8 @@ function editSession(s) {
       <div class="field"><label for="es-date">Giorno</label><select id="es-date">${dayOptions(s.date, 60)}</select></div>
       <div class="field"><label for="es-dur">Durata (min)</label><input id="es-dur" inputmode="numeric" value="${esc(s.duration_min == null ? "" : Math.round(s.duration_min))}"></div>
     </div>
-    <div class="es-list">${sets.map((x) => `<div class="es-row" data-ex="${esc(x.exercise_id)}" data-idx="${x.set_index}" data-rir="${x.rir ?? ""}">
-      <span class="es-name">${esc(names[x.exercise_id] || x.exercise_id)} <small>#${x.set_index}</small></span>
+    <div class="es-list">${sets.map((x) => `<div class="es-row" data-ex="${esc(x.exercise_id)}" data-idx="${x.set_index}" data-rir="${x.rir ?? ""}" data-kind="${esc(x.kind || "normal")}">
+      <span class="es-name">${esc(nameOf(x.exercise_id) || x.exercise_id)} <small>#${x.set_index}</small></span>
       <input name="kg" inputmode="decimal" aria-label="kg" value="${esc(x.kg == null ? "" : String(x.kg).replace(".", ","))}"><span class="es-x">kg ×</span>
       <input name="reps" inputmode="numeric" aria-label="ripetizioni" value="${esc(x.reps ?? "")}">
       <button type="button" class="icon-btn" data-m="remove" aria-label="Togli serie">${icon("x", "sm")}</button>
@@ -283,7 +297,7 @@ function editSession(s) {
         else {
           const reps = parse(row.querySelector("[name=reps]").value);
           if (reps == null) return toast("Ogni serie ha bisogno delle ripetizioni"), false;
-          enqueue("PUT", path, { kg: parse(row.querySelector("[name=kg]").value), reps, rir: parse(row.dataset.rir), completed: true }, `set:${row.dataset.ex}:${row.dataset.idx}:${s.id}`);
+          enqueue("PUT", path, { kg: parse(row.querySelector("[name=kg]").value), reps, rir: parse(row.dataset.rir), completed: true, kind: row.dataset.kind }, `set:${row.dataset.ex}:${row.dataset.idx}:${s.id}`);
         }
       }
       const dur = parse(document.getElementById("es-dur").value);
@@ -306,6 +320,7 @@ function editSession(s) {
 }
 
 export async function onClick(t) {
+  if (t.dataset.exPage) return openExercisePage(t.dataset.exPage), false;
   if (t.dataset.tab) return (ui.tab = t.dataset.tab), true;
   if (t.dataset.list) return (ui.list = t.dataset.list), true;
   if (t.dataset.loads) return (ui.loads = t.dataset.loads), true;

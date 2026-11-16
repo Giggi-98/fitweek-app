@@ -7,7 +7,7 @@ const clone = (v) => JSON.parse(JSON.stringify(v));
 
 // Elenchi con `id` (si fondono voce per voce), oggetti da fondere campo per campo, e la scheda: un elenco
 // di esercizi per ogni giornata (si fonde esercizio per esercizio).
-const LISTS = new Set(["weights", "groceries", "inventory", "workouts"]);
+const LISTS = new Set(["weights", "groceries", "inventory", "workouts", "exerciseArchive"]);
 const OBJECTS = new Set(["profile"]);
 const LISTS_BY_KEY = new Set(["routines"]);
 const label = (item) => item.name || item.date || item.id;

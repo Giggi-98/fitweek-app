@@ -118,10 +118,10 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.click('.bottom-nav [data-view=training]');
   await page.click('[data-pick-routine=A]');
   await page.click('[data-start]');
-  await page.waitForSelector('#ex-a1 [data-bump-ex]');
-  await page.click('#ex-a1 [data-bump-ex]');
+  await page.waitForSelector('#ex-a1 [data-goal]');
+  await page.click('#ex-a1 [data-goal]');
   const bumped = await page.locator('#ex-a1 .set-row').nth(0).locator('[data-field=kg]').inputValue();
-  check('proposta di aumento: serie precompilate a +2,5 kg', bumped === '42,5', bumped);
+  check('obiettivo della serie: in cima alle ripetizioni propone +2,5 kg', bumped === '42,5', bumped);
   await page.locator('#ex-a1 .set-row').nth(0).locator('[data-check]').click();
   await page.waitForSelector('#ex-a1 .rir-strip');
   await page.click('#ex-a1 .rir-strip [data-rir="2"]');

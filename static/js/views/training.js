@@ -3,12 +3,14 @@ import { CARDIO_MIN, PROGRAM_WEEKS, ROUTINES, cardioBpm } from "../constants.js"
 import { icon } from "../icons.js";
 import { bump, confetti, haptic, pop, ring } from "../motion.js";
 import { standalone } from "../platform.js";
-import { bestLoads, isRecord } from "../stats.js";
-import { app, refreshWorkouts } from "../store.js";
+import { app, persistState, refreshWorkouts } from "../store.js";
 import { choices, openModal, toast } from "../ui.js";
-import { $, clamp, esc, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
+import { $, esc, fmtClock, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
+import { RECORD_LABEL, exerciseBests, exerciseSessions, exerciseSummary, isWork, repRange, setRecords, setTarget } from "../workout/calc.js";
+import { openExerciseEditor, openExercisePage, openPicker, originalProgram, restLabel } from "../workout/exercise.js";
+import { archiveExercise, findExercise, moveExercise, patchExercise, plannedSets, restoreRoutine, routineChanges, sessionExercises } from "../workout/program.js";
 
 const EDITS_KEY = "fitweek.workoutEdits.v1";
 const LEGACY_DRAFTS_KEY = "fitweek.workoutDrafts.v1";
@@ -18,14 +20,19 @@ const LEGACY_DRAFTS_KEY = "fitweek.workoutDrafts.v1";
 // Un esercizio è completato solo quando lo conferma l'utente (edits.closed), non al raggiungimento delle
 // serie previste: le serie di oggi si possono aggiungere o togliere senza toccare la scheda.
 // rirFor: ultima serie segnata, per cui si può indicare lo sforzo (RIR) con un tocco facoltativo.
-const ui = { routine: null, week: null, summary: null, justDone: null, justComplete: null, rirFor: null, open: new Set() };
+// editing: la scheda della giornata scelta è in modifica (riordino, aggiunta, ripristino dal PDF).
+const ui = { routine: null, week: null, summary: null, justDone: null, justComplete: null, rirFor: null, open: new Set(), editing: false };
 
 // ---- dati derivati ------------------------------------------------------------------------
 const active = () => app.today?.active_session || null;
 const routineExercises = (r) => app.state.routines[r] || [];
-const plannedSets = (ex, week) => num(ex.sets[clamp(week, 1, ex.sets.length) - 1]);
 const lastDone = (routine, exceptId) =>
   app.sessions.find((s) => s.routine === routine && s.status === "done" && s.id !== exceptId) || null;
+/** Esercizi della seduta: la giornata della scheda con le scelte fatte solo per oggi (salta, sostituisci, aggiungi). */
+const exercisesOf = (session, ed = edits(session.id)) =>
+  sessionExercises(app.state, session.routine, session.week, ed.plan, [...new Set(session.sets.map((x) => x.exercise_id))]);
+/** Le serie di lavoro dell'ultima seduta conclusa in cui l'esercizio è stato fatto (in qualsiasi giornata). */
+const lastTime = (session, exId) => exerciseSessions(app.sessions.filter((x) => x.id !== session.id), exId).pop() || null;
 const setsOf = (session, exId) =>
   (session?.sets || []).filter((s) => s.exercise_id === exId).sort((a, b) => a.set_index - b.set_index);
 const logged = (session, exId, idx) => (session?.sets || []).find((s) => s.exercise_id === exId && s.set_index === idx);
@@ -34,7 +41,7 @@ const fmtSet = (s) => `${s.kg == null ? "—" : fmtNum(s.kg)}×${s.reps ?? "—"
 
 function edits(sessionId) {
   const e = storage.get(EDITS_KEY, null);
-  return e && e.sessionId === sessionId ? { closed: {}, ...e } : { sessionId, values: {}, extra: {}, closed: {} };
+  return e && e.sessionId === sessionId ? { closed: {}, plan: {}, kinds: {}, ...e } : { sessionId, values: {}, extra: {}, closed: {}, plan: {}, kinds: {} };
 }
 const saveEdits = (e) => storage.set(EDITS_KEY, e);
 
@@ -53,13 +60,17 @@ function suggestion(session, ex, idx, prev, ed) {
 }
 
 function progressOf(session) {
-  const exs = routineExercises(session.routine);
-  const planned = exs.reduce((n, ex) => n + plannedSets(ex, session.week), 0);
+  const planned = exercisesOf(session).reduce((n, ex) => n + ex.planned, 0);
   const done = session.sets.filter((s) => s.completed).length;
   return { planned, done };
 }
-const volume = (session) =>
-  session.sets.filter((s) => s.completed && s.kg != null && s.reps != null).reduce((v, s) => v + s.kg * s.reps, 0);
+const volume = (session) => session.sets.filter(isWork).reduce((v, s) => v + s.kg * s.reps, 0);
+
+// Tipo di serie: un tocco sul numero lo cambia. Il riscaldamento non conta in volume, record e obiettivi.
+const KINDS = ["normal", "warmup", "drop", "failure"];
+const KIND_MARK = { warmup: "R", drop: "D", failure: "C" };
+const KIND_NAME = { normal: "normale", warmup: "riscaldamento", drop: "drop set", failure: "a cedimento" };
+const kindOf = (session, ed, exId, idx) => logged(session, exId, idx)?.kind || ed.kinds[`${exId}:${idx}`] || "normal";
 
 const RIR_CHOICES = [[0, "0"], [1, "1"], [2, "2"], [3, "3"], [4, "4+"]];
 /** Dopo il ✓: "quante ne avevi ancora?". Un tocco se vuoi, altrimenti si ignora e sparisce alla serie dopo. */
@@ -73,20 +84,21 @@ function rirStrip(session, ex) {
   </div>`;
 }
 
-const repRange = (ex) => String(ex.reps).split(/[–-]/).map((x) => num(x.trim(), 0));
-/** La volta scorsa tutte le serie previste hanno raggiunto il massimo delle ripetizioni con lo stesso carico. */
-function completedTopRange(ex, prev, planned) {
-  const top = repRange(ex).pop();
-  if (!top || prev.length < planned || prev[0].kg == null) return false;
-  return prev.slice(0, planned).every((s) => s.kg === prev[0].kg && (s.reps ?? 0) >= top);
+/** Obiettivo della prossima serie da fare, calcolato da ciò che è stato fatto l'ultima volta. Una riga sola
+ *  per esercizio: sparisce quando i campi della serie contengono già quei valori. */
+function goalLine(session, ex, ed, last, count) {
+  const idx = Array.from({ length: count }, (_, k) => k + 1).find((i) => !logged(session, ex.id, i)?.completed);
+  if (!idx || !last || kindOf(session, ed, ex.id, idx) === "warmup") return "";
+  const goal = setTarget(last.sets[idx - 1] || last.sets[last.sets.length - 1], repRange(ex.reps), prefs().kgStep);
+  const typed = ed.values[`${ex.id}:${idx}`];
+  if (!goal || (typed && typed.kg === goal.kg && typed.reps === goal.reps)) return "";
+  return `<div class="ex-goal"><span>Obiettivo serie ${idx}<small>${goal.step === "load" ? `eri in cima alle ripetizioni: +${fmtNum(prefs().kgStep, 2)} kg` : "una ripetizione in più"}</small></span>
+    <strong>${fmtNum(goal.kg)} kg × ${goal.reps}</strong><button type="button" class="btn small" data-goal="${esc(ex.id)}:${idx}" data-kg="${goal.kg}" data-reps="${goal.reps}">Usa</button></div>`;
 }
 
-function exerciseExtras(session, ex, prev, planned, ed) {
+function exerciseNote(ex) {
   const note = app.exNotes[ex.id];
-  const untouched = !setsOf(session, ex.id).length && !ed.bumped?.[ex.id];
-  const step = prefs().kgStep;
-  return `${untouched && completedTopRange(ex, prev, planned) ? `<div class="ex-hint">${icon("trending-up", "sm")}<span>L'ultima volta hai chiuso tutte le serie a ${repRange(ex).pop()} ripetizioni.</span><button type="button" class="btn small" data-bump-ex="${esc(ex.id)}">Prova +${esc(String(step).replace(".", ","))} kg</button></div>` : ""}
-  <button type="button" class="ex-note ${note ? "has" : ""}" data-note-ex="${esc(ex.id)}">${icon("notebook-pen", "sm")}<span>${note ? esc(note) : "Aggiungi una nota (sedile, presa, fastidi…)"}</span></button>`;
+  return `<button type="button" class="ex-note ${note ? "has" : ""}" data-note-ex="${esc(ex.id)}">${icon("notebook-pen", "sm")}<span>${note ? esc(note) : "Aggiungi una nota (sedile, presa, fastidi…)"}</span></button>`;
 }
 
 // ---- render -------------------------------------------------------------------------------
@@ -157,30 +169,49 @@ function renderStart() {
       .join("")}</div>
     <div class="sticky-cta"><button class="btn primary xl full glow" data-start>${icon("play")}Inizia Giorno ${esc(routine)} · W${week}</button></div>
   </div>
-  <section class="panel">
-    <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3>${standalone ? "" : `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a>`}</div>
-    <div class="ex-preview">
-    ${exs
-      .map((ex, i) => {
-        const p = setsOf(prev, ex.id).filter((x) => x.completed);
-        return `<div class="ex-line"><span class="ex-idx">${i + 1}</span><div class="ex-line-main"><div class="entry-title">${esc(ex.name)}</div><div class="entry-sub">${p.length ? `ultima ${esc(p.map(fmtSet).join(" · "))}` : "prima volta"}</div></div><span class="ex-plan">${plannedSets(ex, week)} × ${esc(ex.reps)}</span></div>`;
-      })
-      .join("")}
-      <div class="ex-line"><span class="ex-idx">${icon("timer", "sm")}</span><div class="ex-line-main"><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">riferimento PDF ${cardioBpm(week)} BPM, non un obiettivo personalizzato</div></div><span class="ex-plan">${CARDIO_MIN}′</span></div>
-    </div>
-  </section>
+  ${programPanel(routine, week, exs, prev, info)}
   </div>`;
 }
 
-function setRow(session, ex, idx, prev, ed, planned, best) {
+/** La scheda della giornata. Ogni riga apre la scheda dell'esercizio; in modifica si riordina, si aggiunge e
+ *  si ripristina la giornata del PDF. */
+function programPanel(routine, week, exs, prev, info) {
+  const pdf = originalProgram()?.[routine];
+  const diff = pdf ? routineChanges(exs, pdf) : null;
+  const mark = (ex) => ({ changed: "modificato", added: "aggiunto" }[diff?.status.get(ex.id)] || "");
+  const lines = exs
+    .map((ex, i) => {
+      const p = setsOf(prev, ex.id).filter((x) => x.completed);
+      return `<div class="ex-line">
+        <span class="ex-idx">${i + 1}</span>
+        <button type="button" class="ex-line-main" data-ex-page="${esc(ex.id)}"><span class="entry-title">${esc(ex.name)}${mark(ex) ? ` <span class="pill">${mark(ex)}</span>` : ""}</span><span class="entry-sub">${p.length ? `ultima ${esc(p.map(fmtSet).join(" · "))}` : "prima volta"}</span></button>
+        ${ui.editing
+          ? `<span class="ex-move"><button type="button" class="icon-btn" data-move-ex="${esc(ex.id)}" data-dir="-1" aria-label="Sposta su ${esc(ex.name)}" ${i ? "" : "disabled"}>${icon("arrow-up", "sm")}</button><button type="button" class="icon-btn" data-move-ex="${esc(ex.id)}" data-dir="1" aria-label="Sposta giù ${esc(ex.name)}" ${i < exs.length - 1 ? "" : "disabled"}>${icon("arrow-down", "sm")}</button><button type="button" class="icon-btn" data-edit-ex="${esc(ex.id)}" aria-label="Modifica ${esc(ex.name)}">${icon("pencil", "sm")}</button></span>`
+          : `<span class="ex-plan">${plannedSets(ex, week)} × ${esc(ex.reps)}</span>`}
+      </div>`;
+    })
+    .join("");
+  return `<section class="panel" id="program-panel">
+    <div class="panel-head"><h3>${icon("notebook-pen")}Programma</h3><div class="panel-actions">${!ui.editing && !standalone ? `<a class="btn small" href="/api/original-pdf" target="_blank" rel="noopener">PDF ${icon("arrow-right", "sm")}</a>` : ""}<button type="button" class="btn small ${ui.editing ? "primary" : ""}" data-edit-program aria-pressed="${ui.editing}">${ui.editing ? "Fine" : `${icon("pencil", "sm")}Modifica`}</button></div></div>
+    ${diff?.modified ? `<p class="subtle">Scheda diversa da quella del PDF${diff.removed.length ? `: ${diff.removed.length === 1 ? "tolto" : "tolti"} ${esc(diff.removed.map((e) => e.name).join(", "))}` : ""}.</p>` : ""}
+    <div class="ex-preview">
+      ${lines || '<p class="subtle">Nessun esercizio in questa giornata.</p>'}
+      ${ui.editing ? "" : `<div class="ex-line"><span class="ex-idx">${icon("timer", "sm")}</span><div class="ex-line-main"><div class="entry-title">${esc(info?.cardio || "Cardio")}</div><div class="entry-sub">riferimento PDF ${cardioBpm(week)} BPM, non un obiettivo personalizzato</div></div><span class="ex-plan">${CARDIO_MIN}′</span></div>`}
+    </div>
+    ${ui.editing ? `<div class="button-row"><button type="button" class="btn" data-add-ex>${icon("plus", "sm")}Aggiungi esercizio</button>${diff?.modified ? `<button type="button" class="btn ghost" data-restore-routine>${icon("rotate-ccw", "sm")}Ripristina il Giorno ${esc(routine)} dal PDF</button>` : ""}</div>` : ""}
+  </section>`;
+}
+
+function setRow(session, ex, idx, prev, ed, bests) {
   const own = logged(session, ex.id, idx);
   const done = own?.completed;
-  const record = done && isRecord(best, ex.id, own.kg);
+  const kind = kindOf(session, ed, ex.id, idx);
+  const records = done ? setRecords(bests, own) : [];
   const v = suggestion(session, ex, idx, prev, ed);
-  const extra = idx > planned;
   const just = ui.justDone === `${ex.id}:${idx}` ? "just-done" : "";
-  return `<div class="set-row ${done ? "done" : ""} ${extra ? "extra" : ""} ${just}" data-ex="${esc(ex.id)}" data-idx="${idx}">
-    <span class="set-num ${record ? "pr" : ""}" aria-label="Serie ${idx}${record ? ", record di carico" : ""}"${record ? ' title="Record di carico"' : ""}>${record ? icon("trophy", "sm") : idx}</span>
+  const label = `Serie ${idx}, ${KIND_NAME[kind]}${records.length ? `, record di ${records.map((r) => RECORD_LABEL[r]).join(" e ")}` : ""}: tocca per cambiare tipo`;
+  return `<div class="set-row ${done ? "done" : ""} ${idx > ex.planned ? "extra" : ""} ${kind} ${just}" data-ex="${esc(ex.id)}" data-idx="${idx}">
+    <button type="button" class="set-num ${records.length ? "pr" : ""}" data-kind aria-label="${esc(label)}" title="${esc(label)}">${records.length ? icon("trophy", "sm") : KIND_MARK[kind] || idx}</button>
     <div class="stepper"><button type="button" data-step="kg" data-dir="-1" aria-label="Meno peso">${icon("minus")}</button><input data-field="kg" type="text" inputmode="decimal" autocomplete="off" aria-label="Peso serie ${idx} ${esc(ex.name)}" placeholder="kg" value="${esc(v.kg == null ? "" : String(v.kg).replace(".", ","))}"><button type="button" data-step="kg" data-dir="1" aria-label="Più peso">${icon("plus")}</button></div>
     <div class="stepper"><button type="button" data-step="reps" data-dir="-1" aria-label="Meno ripetizioni">${icon("minus")}</button><input data-field="reps" type="text" inputmode="numeric" autocomplete="off" aria-label="Ripetizioni serie ${idx} ${esc(ex.name)}" placeholder="${esc(String(ex.reps).split(/[–-]/)[0])}" value="${esc(v.reps ?? "")}"><button type="button" data-step="reps" data-dir="1" aria-label="Più ripetizioni">${icon("plus")}</button></div>
     <button type="button" class="set-check" data-check aria-pressed="${done ? "true" : "false"}" aria-label="${done ? "Annulla serie" : "Serie fatta"} ${idx}">${icon("check")}</button>
@@ -189,12 +220,11 @@ function setRow(session, ex, idx, prev, ed, planned, best) {
 
 function renderActive(session) {
   const ed = edits(session.id);
-  const prevSession = lastDone(session.routine, session.id);
-  const exs = routineExercises(session.routine);
+  const exs = exercisesOf(session, ed);
   const { planned, done } = progressOf(session);
   const info = ROUTINES[session.routine];
-  const best = bestLoads(app.sessions, session.id);
   const nextEx = exs.find((ex) => !ed.closed[ex.id]);
+  const skipped = (app.state.routines[session.routine] || []).filter((e) => ed.plan.skipped?.[e.id] && !exs.some((x) => x.id === e.id));
   const html = `
   <section class="wk-header">
     ${ring(planned ? done / planned : 0, { size: 62, stroke: 7, label: String(done), sub: `/${planned}` })}
@@ -206,8 +236,10 @@ function renderActive(session) {
   <div class="ex-grid">
   ${exs
     .map((ex, i) => {
-      const p = plannedSets(ex, session.week);
-      const prev = setsOf(prevSession, ex.id).filter((x) => x.completed);
+      const p = ex.planned;
+      const last = lastTime(session, ex.id);
+      const prev = last?.sets || [];
+      const bests = exerciseBests(app.sessions, ex.id, session.id);
       const loggedIdx = setsOf(session, ex.id).map((s) => s.set_index);
       const count = Math.max(1, p + num(ed.extra[ex.id]), ...loggedIdx);
       const canDrop = count > 1 && count > Math.max(0, ...loggedIdx); // si toglie solo una serie non registrata
@@ -222,16 +254,18 @@ function renderActive(session) {
           <button type="button" class="ex-toggle" ${isDone ? `data-toggle-ex="${esc(ex.id)}" aria-expanded="${open}"` : 'tabindex="-1"'}>
             <span class="ex-num">${isDone ? icon("check", "sm") : i + 1}</span>
             <span class="ex-main"><span class="ex-name">${esc(ex.name)}</span>
-            <span class="ex-meta">${p} × ${esc(ex.reps)} rip.${isDone && !open ? ` · ${esc(setsOf(session, ex.id).filter((x) => x.completed).map(fmtSet).join(" · "))}` : ""}</span>
+            <span class="ex-meta">${p} × ${esc(ex.reps)} rip. · ${esc(restLabel(ex))}${ex.swappedFor ? ` · al posto di ${esc(findExercise(app.state, ex.swappedFor)?.name || "")}, solo oggi` : ex.added ? " · aggiunto oggi" : ""}${isDone && !open ? ` · ${esc(setsOf(session, ex.id).filter((x) => x.completed).map(fmtSet).join(" · "))}` : ""}</span>
             <span class="ex-dots" aria-label="${completed} serie su ${p}">${dots}</span></span>
           </button>
           ${video ? `<a href="${esc(video)}" target="_blank" rel="noopener noreferrer" class="icon-link" aria-label="Video esecuzione">${icon("circle-play")}</a>` : ""}
+          <button type="button" class="icon-btn" data-ex-menu="${esc(ex.id)}" aria-label="Azioni per ${esc(ex.name)}">${icon("ellipsis")}</button>
         </div>
         ${open ? `
-        ${prev.length ? `<div class="ex-last">Ultima volta${prevSession ? ` (${esc(fmtDate(prevSession.date))}, W${esc(prevSession.week)})` : ""}: ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
-        ${exerciseExtras(session, ex, prev, p, ed)}
+        ${last ? `<div class="ex-last">Ultima volta (${esc(fmtDate(last.date))}, W${esc(last.week)}): ${esc(prev.map(fmtSet).join(" · "))}</div>` : '<div class="ex-last">Prima volta: scegli un carico con cui completi le ripetizioni con buona tecnica.</div>'}
+        ${goalLine(session, ex, ed, last, count)}
+        ${exerciseNote(ex)}
         <div class="set-legend" aria-hidden="true"><span>#</span><span>kg</span><span>rip.</span><span></span></div>
-        ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, p, best)).join("")}
+        ${Array.from({ length: count }, (_, k) => setRow(session, ex, k + 1, prev, ed, bests)).join("")}
         <div class="ex-foot">
           <button type="button" class="link-btn" data-add-set="${esc(ex.id)}">${icon("plus", "sm")}Serie extra</button>
           ${canDrop ? `<button type="button" class="link-btn" data-drop-set="${esc(ex.id)}">${icon("minus", "sm")}Togli serie</button>` : ""}
@@ -242,6 +276,8 @@ function renderActive(session) {
       </section>`;
     })
     .join("")}
+  <div class="ex-session-actions"><button type="button" class="btn" data-add-today>${icon("plus", "sm")}Aggiungi esercizio a questa seduta</button>
+    ${skipped.map((e) => `<button type="button" class="link-btn" data-unskip="${esc(e.id)}">Riprendi ${esc(e.name)} (saltato oggi)</button>`).join("")}</div>
   <section class="ex-card ${session.cardio_min ? "done" : ""}">
     <div class="ex-head"><span class="ex-num">${icon("timer", "sm")}</span><div class="ex-main"><h3 class="ex-name">${esc(info?.cardio || "Cardio")}</h3><div class="ex-meta">${CARDIO_MIN} minuti · riferimento PDF ${cardioBpm(session.week)} BPM</div><div class="ex-last">Le BPM della scheda non sono un obiettivo personalizzato.</div></div>
     <button type="button" class="set-check" data-cardio aria-pressed="${session.cardio_min ? "true" : "false"}" aria-label="Cardio fatto">${icon("check")}</button></div>
@@ -262,7 +298,9 @@ function renderSummary(s) {
   const prev = lastDone(s.routine, s.id);
   const prevVol = prev ? volume(prev) : null;
   const diff = prevVol ? Math.round(((vol - prevVol) / prevVol) * 100) : null;
-  const records = recordsOf(s);
+  const rows = exercisesOf(s).map((ex) => ({ ex, sum: exerciseSummary(app.sessions, s, ex.id) })).filter((x) => x.sum);
+  const records = rows.filter((x) => x.sum.records.length);
+  const delta = (sum) => (sum.prev ? `${sum.volume >= sum.prev.volume ? "+" : "−"}${fmtNum(Math.abs(sum.volume - sum.prev.volume), 0)} kg` : "prima volta");
   return `<section class="hero finish">
     <div class="trophy">${icon("trophy")}</div>
     <div><span class="eyebrow">Seduta completata · ${esc(fmtDate(s.date))}</span><h2>Giorno ${esc(s.routine)} · W${esc(s.week)}</h2></div>
@@ -271,21 +309,13 @@ function renderSummary(s) {
       <div class="metric"><div class="metric-label">Durata</div><div class="metric-value">${s.duration_min != null ? `<span data-count="${Math.round(s.duration_min)}">${esc(Math.round(s.duration_min))}</span><small>′</small>` : "—"}</div></div>
       <div class="metric"><div class="metric-label">Volume <span class="badge-calc">calc.</span></div><div class="metric-value"><span data-count="${Math.round(vol)}">${fmtNum(vol, 0)}</span><small> kg</small></div></div>
     </div>
-    <p class="subtle">${diff == null ? "Volume = Σ kg × ripetizioni." : `Volume ${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}.`} ${done < planned ? `${planned - done} serie non segnate: va bene, conta la costanza.` : "Tutte le serie fatte."}${s.cardio_min ? " Cardio ✓." : ""}</p>
-    ${records.length ? `<div class="record-note">${icon("trophy", "sm")}<span>${records.length === 1 ? "Record di carico" : `${records.length} record di carico`}: ${esc(records.map((r) => `${r.name} ${fmtNum(r.kg)} kg`).join(" · "))}</span></div>` : ""}
+    <p class="subtle">${diff == null ? "Volume = Σ kg × ripetizioni delle serie di lavoro." : `Volume ${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}.`} ${done < planned ? `${planned - done} serie non segnate: va bene, conta la costanza.` : "Tutte le serie fatte."}${s.cardio_min ? " Cardio ✓." : ""}</p>
+    ${records.length ? `<div class="record-note">${icon("trophy", "sm")}<span>${records.length === 1 ? "Record" : `${records.length} record`}: ${esc(records.map((x) => `${x.ex.name} (${x.sum.records.map((k) => RECORD_LABEL[k]).join(", ")})`).join(" · "))}</span></div>` : ""}
+    ${rows.length ? `<div class="table-scroll"><table class="sum-table"><thead><tr><th>Esercizio</th><th>Serie migliore</th><th>Volume vs ultima <span class="badge-calc">calc.</span></th></tr></thead><tbody>${rows
+      .map(({ ex, sum }) => `<tr><td>${esc(ex.name)}</td><td>${esc(fmtSet(sum.top))}${sum.prev ? `<small>ultima ${esc(fmtSet(sum.prev.top))}</small>` : ""}</td><td>${delta(sum)}</td></tr>`)
+      .join("")}</tbody></table></div>` : ""}
     <button class="btn primary xl full" data-close-summary>Fatto</button>
   </section>`;
-}
-
-/** Esercizi in cui la seduta ha superato il carico massimo precedente (uno per esercizio). */
-function recordsOf(session) {
-  const best = bestLoads(app.sessions, session.id);
-  return routineExercises(session.routine)
-    .map((ex) => {
-      const loads = setsOf(session, ex.id).filter((x) => x.completed && x.kg != null).map((x) => x.kg);
-      return { id: ex.id, name: ex.name, kg: loads.length ? Math.max(...loads) : null };
-    })
-    .filter((r) => isRecord(best, r.id, r.kg));
 }
 
 // ---- azioni -------------------------------------------------------------------------------
@@ -308,11 +338,12 @@ function rowValues(row) {
   return { kg: parseNum($("[data-field=kg]", row).value), reps: parseNum($("[data-field=reps]", row).value) };
 }
 
-function writeSet(session, exId, idx, values, completed, rir = logged(session, exId, idx)?.rir ?? null) {
+/** Registra o aggiorna una serie. RIR e tipo vanno rimandati a ogni modifica, altrimenti il server li azzera. */
+function writeSet(session, exId, idx, values, completed, { rir = logged(session, exId, idx)?.rir ?? null, kind = kindOf(session, edits(session.id), exId, idx) } = {}) {
   const rest = session.sets.filter((x) => !(x.exercise_id === exId && x.set_index === idx));
-  const item = { exercise_id: exId, set_index: idx, kg: values.kg, reps: values.reps, rir, completed, logged_at: new Date().toISOString() };
+  const item = { exercise_id: exId, set_index: idx, kg: values.kg, reps: values.reps, rir, completed, kind, logged_at: new Date().toISOString() };
   session.sets = [...rest, item];
-  enqueue("PUT", setPath(session, exId, idx), { kg: values.kg, reps: values.reps, rir, completed }, `set:${exId}:${idx}:${session.id}`);
+  enqueue("PUT", setPath(session, exId, idx), { kg: values.kg, reps: values.reps, rir, completed, kind }, `set:${exId}:${idx}:${session.id}`);
 }
 
 function toggleSet(row) {
@@ -341,8 +372,8 @@ function toggleSet(row) {
   const ed = edits(s.id);
   delete ed.values[`${exId}:${idx}`];
   saveEdits(ed);
-  startRest();
-  haptic(isRecord(bestLoads(app.sessions, s.id), exId, v.kg) ? [15, 40, 15, 40, 40] : 15);
+  startRest(findExercise(app.state, exId)?.rest || undefined); // il recupero dell'esercizio, se ne ha uno suo
+  haptic(setRecords(exerciseBests(app.sessions, exId, s.id), logged(s, exId, idx)).length ? [15, 40, 15, 40, 40] : 15);
   ui.justDone = `${exId}:${idx}`;
   ui.rirFor = { ex: exId, idx };
   return true;
@@ -424,7 +455,7 @@ async function finish() {
 }
 
 function editExerciseNote(exId) {
-  const ex = Object.values(app.state.routines).flat().find((e) => e.id === exId);
+  const ex = findExercise(app.state, exId);
   openModal(
     `<div class="modal-ic">${icon("notebook-pen")}</div>
     <h2 id="modal-title">${esc(ex?.name || "Nota")}</h2>
@@ -467,6 +498,120 @@ function importLegacyDraft(id) {
   toast("Bozza importata: controlla i valori e termina la seduta.");
 }
 
+// ---- tipo di serie e scelte valide solo per la seduta di oggi ---------------------------------------
+function cycleKind(row) {
+  const s = active();
+  const exId = row.dataset.ex, idx = num(row.dataset.idx);
+  const ed = edits(s.id);
+  const next = KINDS[(KINDS.indexOf(kindOf(s, ed, exId, idx)) + 1) % KINDS.length];
+  const own = logged(s, exId, idx);
+  if (own) return writeSet(s, exId, idx, { kg: own.kg, reps: own.reps }, own.completed, { kind: next });
+  ed.kinds[`${exId}:${idx}`] = next;
+  saveEdits(ed);
+}
+
+/** Cambia il piano della seduta (salta, sostituisci, aggiungi, ordine). Resta sul dispositivo, come le serie
+ *  extra: la scheda non viene toccata. */
+function changePlan(change) {
+  const ed = edits(active().id);
+  ed.plan = { skipped: {}, swapped: {}, added: [], order: [], ...ed.plan };
+  change(ed.plan);
+  saveEdits(ed);
+}
+
+/** Un esercizio scelto per oggi: se è nuovo entra tra "i tuoi esercizi", così lo storico avrà il suo nome. */
+function useToday(picked, isNew, change) {
+  if (isNew) {
+    app.state = archiveExercise(app.state, picked);
+    persistState();
+  }
+  changePlan(change);
+  app.render();
+  return false;
+}
+
+function addToday() {
+  const s = active();
+  openPicker({
+    title: "Aggiungi a questa seduta", hint: "Solo per oggi: la scheda non cambia.", exclude: exercisesOf(s).map((e) => e.id),
+    onPick: (picked, isNew) => useToday(picked, isNew, (plan) => plan.added.push(picked.id)),
+  });
+}
+
+const REST_QUICK = [60, 90, 120, 180];
+function openExerciseMenu(exId) {
+  const s = active();
+  const list = exercisesOf(s);
+  const ex = list.find((e) => e.id === exId);
+  const at = list.indexOf(ex);
+  const base = ex.swappedFor || ex.id; // l'esercizio della scheda a cui si riferisce la scelta di oggi
+  const started = setsOf(s, ex.id).length > 0;
+  const item = (m, ic, label, sub = "") => `<button type="button" class="pick" data-m="${m}"><span>${icon(ic, "sm")} ${label}</span>${sub ? `<small>${sub}</small>` : ""}</button>`;
+  openModal(
+    `<h2 id="modal-title">${esc(ex.name)}</h2>
+    <div class="pick-list">
+      ${item("page", "chart-line", "Storia e record")}
+      ${started ? "" : ex.added ? item("skip", "x", "Togli da questa seduta") : `${item("swap", "refresh-cw", "Sostituisci solo oggi", "macchina occupata")}${item("skip", "skip-forward", "Salta oggi")}`}
+      ${at > 0 ? item("up", "arrow-up", "Sposta prima") : ""}${at < list.length - 1 ? item("down", "arrow-down", "Sposta dopo") : ""}
+    </div>
+    <div class="pick-group"><span class="eyebrow">Recupero di questo esercizio</span>
+      <div class="chips" role="group" aria-label="Recupero">${[null, ...REST_QUICK].map((sec) => `<button type="button" class="chip ${(ex.rest || null) === sec ? "active" : ""}" aria-pressed="${(ex.rest || null) === sec}" data-rest="${sec ?? ""}">${sec ? fmtClock(sec) : `Predefinito ${fmtClock(prefs().restSeconds)}`}</button>`).join("")}</div></div>
+    ${started ? '<p class="subtle">Ha già serie segnate: per saltarlo o sostituirlo togli prima le serie.</p>' : ""}
+    <div class="modal-secondary"><button type="button" data-m="close">Chiudi</button></div>`,
+    (t) => {
+      const m = t.dataset.m;
+      if (m === "close") return true;
+      if (m === "page") return openExercisePage(ex.id), false;
+      if (t.dataset.rest !== undefined) {
+        app.state = patchExercise(app.state, ex.id, { rest: num(t.dataset.rest) || null });
+        persistState();
+      } else if (m === "skip") {
+        changePlan((plan) => {
+          if (ex.added) plan.added = plan.added.filter((id) => id !== ex.id);
+          else [plan.skipped[base], plan.swapped[base]] = [true, undefined];
+        });
+      } else if (m === "up" || m === "down") {
+        const ids = list.map((e) => e.id), to = at + (m === "up" ? -1 : 1);
+        [ids[at], ids[to]] = [ids[to], ids[at]];
+        changePlan((plan) => (plan.order = ids));
+      } else if (m === "swap") {
+        openPicker({
+          title: `Sostituisci ${ex.name}`, hint: "Solo per oggi: la scheda non cambia.", exclude: list.map((e) => e.id),
+          onPick: (picked, isNew) => useToday(picked, isNew, (plan) => (plan.swapped[base] = picked.id)),
+        });
+        return false;
+      } else return false;
+      app.render();
+      return true;
+    },
+  );
+}
+
+// ---- modifica della scheda (schermata di avvio) -------------------------------------------------
+function editProgram(t) {
+  const routine = ui.routine || app.today.routine || "A";
+  const list = app.state.routines[routine] || [];
+  if (t.dataset.editEx) return openExerciseEditor(routine, list.find((e) => e.id === t.dataset.editEx)), false;
+  if (t.dataset.moveEx) {
+    app.state = moveExercise(app.state, routine, t.dataset.moveEx, num(t.dataset.dir));
+    persistState();
+    return true;
+  }
+  if (t.matches("[data-add-ex]")) {
+    openPicker({
+      title: `Aggiungi al Giorno ${routine}`, exclude: list.map((e) => e.id),
+      // sempre dall'editor: serie, ripetizioni e recupero si confermano prima di entrare in scheda
+      onPick: (picked) => (openExerciseEditor(routine, picked), true),
+    });
+    return false;
+  }
+  if (!confirm(`Riportare il Giorno ${routine} alla scheda del PDF? Gli esercizi che hai aggiunto restano tra i tuoi esercizi e lo storico non cambia.`)) return false;
+  app.state = restoreRoutine(app.state, routine, originalProgram()[routine]);
+  persistState();
+  toast(`Giorno ${routine} ripristinato dal PDF`);
+  return true;
+}
+
 // ---- eventi (chiamati da main.js) --------------------------------------------------------
 export async function onClick(t) {
   if (t.matches("[data-start]")) {
@@ -491,24 +636,24 @@ export async function onClick(t) {
     const own = logged(s, ui.rirFor.ex, ui.rirFor.idx);
     if (!own) return false;
     const value = num(t.dataset.rir);
-    writeSet(s, ui.rirFor.ex, ui.rirFor.idx, { kg: own.kg, reps: own.reps }, true, own.rir === value ? null : value);
+    writeSet(s, ui.rirFor.ex, ui.rirFor.idx, { kg: own.kg, reps: own.reps }, true, { rir: own.rir === value ? null : value });
     haptic(8);
     return true;
   }
   if (t.dataset.noteEx) return editExerciseNote(t.dataset.noteEx), false;
-  if (t.dataset.bumpEx) {
-    // Proposta, non regola: precompila le serie con il carico dell'ultima volta + un passo.
-    const s = active();
-    const ex = routineExercises(s.routine).find((e) => e.id === t.dataset.bumpEx);
-    const prev = setsOf(lastDone(s.routine, s.id), ex.id).filter((x) => x.completed);
-    const ed = edits(s.id);
-    for (let idx = 1; idx <= plannedSets(ex, s.week); idx++) {
-      ed.values[`${ex.id}:${idx}`] = { kg: Math.round((prev[0].kg + prefs().kgStep) * 100) / 100, reps: repRange(ex)[0] };
-    }
-    ed.bumped = { ...ed.bumped, [ex.id]: true };
+  if (t.dataset.goal) {
+    const ed = edits(active().id);
+    ed.values[t.dataset.goal] = { kg: num(t.dataset.kg), reps: num(t.dataset.reps) };
     saveEdits(ed);
     return true;
   }
+  if (t.matches("[data-kind]")) return cycleKind(t.closest(".set-row")), true;
+  if (t.dataset.exMenu) return openExerciseMenu(t.dataset.exMenu), false;
+  if (t.matches("[data-add-today]")) return addToday(), false;
+  if (t.dataset.unskip) return changePlan((plan) => delete plan.skipped[t.dataset.unskip]), true;
+  if (t.dataset.exPage) return openExercisePage(t.dataset.exPage, ui.routine || app.today.routine || "A"), false;
+  if (t.matches("[data-edit-program]")) return (ui.editing = !ui.editing), true;
+  if (t.dataset.editEx || t.dataset.moveEx || t.matches("[data-add-ex], [data-restore-routine]")) return editProgram(t);
   if (t.dataset.toggleEx) {
     const id = t.dataset.toggleEx;
     if (ui.open.has(id)) ui.open.delete(id);
@@ -595,6 +740,7 @@ export function todayStatus() {
 export const resetUi = () => {
   ui.summary = null;
   ui.rirFor = null;
+  ui.editing = false;
   ui.open.clear();
 };
 

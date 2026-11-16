@@ -425,6 +425,13 @@ def _m009_set_tombstones(c: sqlite3.Connection) -> None:
     )
 
 
+def _m010_set_kind(c: sqlite3.Connection) -> None:
+    """Tipo di serie (normale, riscaldamento, drop set, a cedimento). Solo una colonna nuova con valore
+    predefinito: le serie già registrate restano "normal" e nient'altro viene toccato."""
+    if "kind" not in {row[1] for row in c.execute("PRAGMA table_info(set_logs)")}:
+        c.execute("ALTER TABLE set_logs ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal'")
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -435,6 +442,7 @@ MIGRATIONS: list[Migration] = [
     (7, "sleep_notes_spend", _m007_sleep_notes_spend),
     (8, "sessions_and_quantities", _m008_sessions_and_quantities),
     (9, "set_tombstones", _m009_set_tombstones),
+    (10, "set_kind", _m010_set_kind),
 ]
 
 

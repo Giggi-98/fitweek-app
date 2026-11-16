@@ -132,3 +132,54 @@ def test_migration_copies_blob_workouts(tmp_path):
     assert c.execute("SELECT count(*) FROM set_logs").fetchone()[0] == 2
     blob = json.loads(c.execute("SELECT json FROM app_state").fetchone()[0])
     assert len(blob["workouts"]) == 1, "il blob resta intatto"
+
+
+def test_set_kind_is_stored_validated_and_defaults_to_normal(auth_client):
+    new_session(auth_client)
+    base = f"/api/v1/workout-sessions/{SID}/sets/a1"
+    assert auth_client.put(f"{base}/1", json={"kg": 20, "reps": 12, "kind": "warmup"}).status_code == 200
+    assert auth_client.put(f"{base}/2", json={"kg": 40, "reps": 9}).status_code == 200
+    assert auth_client.put(f"{base}/3", json={"kg": 40, "reps": 8, "kind": "inventato"}).status_code == 422
+    kinds = [s["kind"] for s in auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["sets"]]
+    assert kinds == ["warmup", "normal"]
+    # una modifica successiva senza tipo riporta la serie a "normale": il tipo va rimandato come il RIR
+    auth_client.put(f"{base}/1", json={"kg": 20, "reps": 12})
+    assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["sets"][0]["kind"] == "normal"
+
+
+def test_set_kind_survives_backup_and_restore(auth_client):
+    new_session(auth_client)
+    auth_client.put(f"/api/v1/workout-sessions/{SID}/sets/a1/1", json={"kg": 30, "reps": 10, "kind": "drop"})
+    backup = auth_client.get("/api/backup").json()
+    assert backup["workout_sessions"][0]["sets"][0]["kind"] == "drop"
+    auth_client.put(f"/api/v1/workout-sessions/{SID}/sets/a1/1", json={"kg": 30, "reps": 10})
+    assert auth_client.post("/api/v1/restore", json=backup).status_code == 200
+    assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["sets"][0]["kind"] == "drop"
+    del backup["workout_sessions"][0]["sets"][0]["kind"]  # backup fatto prima della 1.13
+    assert auth_client.post("/api/v1/restore", json=backup).status_code == 200
+    assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["sets"][0]["kind"] == "normal"
+
+
+def test_original_program_is_the_verified_pdf_table_and_needs_a_session(client, auth_client):
+    from app.seed import ROUTINES
+    out = auth_client.get("/api/v1/program/original").json()
+    assert out == {"routines": ROUTINES}
+    assert [e["sets"] for e in out["routines"]["B"] if e["id"] == "b6"] == [[3, 3, 3, 3, 4, 4, 4, 4]]
+    client.cookies.clear()
+    assert client.get("/api/v1/program/original").status_code == 401
+
+
+def test_program_edits_and_exercise_archive_are_accepted_in_the_state(auth_client):
+    state = auth_client.get("/api/state").json()
+    data = state["data"]
+    removed = data["routines"]["A"].pop(1)
+    data["routines"]["A"][0].update({"rest": 120, "muscle": "Dorsali", "sets": [4] * 8})
+    data["routines"]["A"].append({"id": "x-new1", "name": "Rematore manubrio", "reps": "8–10", "sets": [3] * 8, "video": "", "rest": 90, "muscle": "Dorsali"})
+    data["exerciseArchive"] = [removed]
+    assert auth_client.put("/api/state", json=state).status_code == 200
+    saved = auth_client.get("/api/state").json()["data"]
+    assert saved["routines"]["A"][0]["rest"] == 120 and saved["exerciseArchive"][0]["id"] == removed["id"]
+    for bad in ({"rest": 5}, {"name": ""}, {"video": "http://insicuro.example"}):
+        broken = auth_client.get("/api/state").json()
+        broken["data"]["routines"]["A"][0].update(bad)
+        assert auth_client.put("/api/state", json=broken).status_code == 422, bad

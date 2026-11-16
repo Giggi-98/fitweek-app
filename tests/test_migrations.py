@@ -169,10 +169,11 @@ def test_migration_9_adds_deletion_marks_without_touching_logged_sets(tmp_path):
         assert not c.execute("SELECT 1 FROM sqlite_master WHERE name='set_tombstones'").fetchone()
     version_before, state_before = db_state(db)
 
-    assert run_migrations(db, tmp_path / "backups") == 9
+    assert run_migrations(db, tmp_path / "backups") == 10
     assert db_state(db) == (version_before, state_before), "lo stato dell'utente non cambia"
     c = sqlite3.connect(db)
-    assert c.execute("SELECT kg, reps FROM set_logs").fetchall() == [(40.0, 10)]
+    # schema 10: la serie già registrata resta com'è e diventa una serie "normale"
+    assert c.execute("SELECT kg, reps, kind FROM set_logs").fetchall() == [(40.0, 10, "normal")]
     assert c.execute("SELECT count(*) FROM set_tombstones").fetchone()[0] == 0
     assert len(list((tmp_path / "backups").glob("pre-migration-009-*.sqlite"))) == 1
     c.execute("PRAGMA foreign_keys=ON")

@@ -27,8 +27,9 @@ export function movingAverage(readings, days = 7) {
   return out;
 }
 
+// Le serie di riscaldamento non entrano in storia, record e volumi (vedi workout/calc.js).
 const doneSets = (session, exerciseId) =>
-  (session.sets || []).filter((x) => x.exercise_id === exerciseId && x.completed && x.kg != null);
+  (session.sets || []).filter((x) => x.exercise_id === exerciseId && x.completed && x.kg != null && x.kind !== "warmup");
 
 /**
  * Storia di un esercizio: per ogni seduta conclusa la serie più pesante e il volume.
@@ -56,7 +57,7 @@ export function bestLoads(sessions, exceptId = null) {
   for (const s of sessions) {
     if (s.status !== "done" || s.id === exceptId) continue;
     for (const x of s.sets || []) {
-      if (!x.completed || x.kg == null) continue;
+      if (!x.completed || x.kg == null || x.kind === "warmup") continue;
       if (x.kg > (best.get(x.exercise_id) ?? 0)) best.set(x.exercise_id, x.kg);
     }
   }
