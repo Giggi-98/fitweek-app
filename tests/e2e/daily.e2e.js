@@ -187,7 +187,7 @@ function romeMinuteAgo() {
 
   // 8. Backup v3
   const backup = await api('/api/backup');
-  check('backup v4 con pasti e promemoria', backup.format === 'fitweek-backup-v4' && backup.meal_logs.length >= 2 && backup.reminders.length > 30);
+  check('backup v5 con pasti e promemoria', backup.format === 'fitweek-backup-v5' && backup.meal_logs.length >= 2 && backup.reminders.length > 30);
 
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();

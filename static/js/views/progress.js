@@ -69,6 +69,11 @@ const eveningClock = (v) => {
   return `${String(Math.floor(m / 60)).padStart(2, "0")}:${String(m % 60).padStart(2, "0")}`;
 };
 
+const minutesText = (m) => (m < 60 ? `${m} min` : fmtDuration(m));
+const STAGE_NAMES = [["deep_min", "profondo"], ["light_min", "leggero"], ["rem_min", "REM"], ["awake_min", "sveglio"]];
+/** Fasi della notte registrate dall'orologio; "" se non ci sono. */
+const stagesText = (n) => STAGE_NAMES.filter(([k]) => n[k] != null).map(([k, name]) => `${name} ${minutesText(n[k])}`).join(" · ");
+
 function sleepTab() {
   const add = `<button class="btn small" data-add-sleep>${icon("plus", "sm")}Notte</button>`;
   const nights = app.sleep.items;
@@ -80,6 +85,7 @@ function sleepTab() {
   const ticks = [];
   for (let v = lo; v <= hi; v += hi - lo > 240 ? 120 : 60) ticks.push(v);
   const last = nights[nights.length - 1];
+  const staged = [...nights].reverse().find((n) => stagesText(n));
   return `<div class="tiles three">
       ${stat(`${icon("clock", "sm")}Durata media`, esc(fmtDuration(sum.duration_avg_min)), `${sum.nights} ${sum.nights === 1 ? "notte" : "notti"}`, { calc: true })}
       ${stat(`${icon("moon", "sm")}A letto in media`, esc(sum.bedtime_avg), "ultimi 60 giorni", { calc: true })}
@@ -89,7 +95,7 @@ function sleepTab() {
       `${icon("moon")}Orario in cui vai a letto`,
       nights.length > 1
         ? lineChart({
-            points: nights.map((n, i) => ({ date: n.date, value: values[i], tip: `sveglia ${n.wake_time} · ${fmtDuration(n.duration_min)}` })),
+            points: nights.map((n, i) => ({ date: n.date, value: values[i], tip: [`sveglia ${n.wake_time} · ${fmtDuration(n.duration_min)}`, stagesText(n)].filter(Boolean).join(" · ") })),
             ticks, format: eveningClock, area: false, // un orario non è una quantità: niente area sotto la linea
             label: `Orario in cui sei andato a letto in ${nights.length} notti, in media alle ${sum.bedtime_avg}. Valori nell'elenco accanto.`,
           })
@@ -97,8 +103,47 @@ function sleepTab() {
       add,
     )}${panel(
       `${icon("list-checks")}Ultime notti`,
-      `<div class="table-scroll"><table><thead><tr><th>Risveglio</th><th>A letto</th><th>Sveglia</th><th>Durata</th></tr></thead><tbody>${[...nights].reverse().slice(0, 7).map((n) => `<tr class="clickable" role="button" tabindex="0" data-edit-sleep="${esc(n.date)}" aria-label="Modifica la notte del ${esc(fmtDate(n.date))}"><td>${esc(fmtDate(n.date))}</td><td>${esc(n.bed_time)}</td><td>${esc(n.wake_time)}</td><td>${esc(fmtDuration(n.duration_min))}</td></tr>`).join("")}</tbody></table></div>`,
+      `<div class="table-scroll"><table><thead><tr><th>Risveglio</th><th>A letto</th><th>Sveglia</th><th>Durata</th></tr></thead><tbody>${[...nights].reverse().slice(0, 7).map((n) => `<tr class="clickable" role="button" tabindex="0" data-edit-sleep="${esc(n.date)}" aria-label="Modifica la notte del ${esc(fmtDate(n.date))}"><td>${esc(fmtDate(n.date))}${n.source === "health_connect" ? ` <span class="subtle" title="Dall'orologio" aria-label="dall'orologio">${icon("watch", "sm")}</span>` : ""}</td><td>${esc(n.bed_time)}</td><td>${esc(n.wake_time)}</td><td>${esc(fmtDuration(n.duration_min))}</td></tr>`).join("")}</tbody></table></div>${staged ? `<p class="subtle">Fasi della notte del ${esc(fmtDate(staged.date))}: ${esc(stagesText(staged))}.</p>` : ""}`,
     )}</div>`;
+}
+
+// ---- dati dall'orologio (Health Connect, D-040): solo letti e mostrati, nessuna soglia né obiettivo -------
+function heartTab() {
+  const steps = app.health.filter((d) => d.steps != null);
+  const resting = app.health.filter((d) => d.resting_hr != null);
+  if (!steps.length && !resting.length) {
+    return panel(`${icon("watch")}Dall'orologio`, empty("Nessun dato dall'orologio", "Arrivano dall'app Android: Impostazioni → App Android → Dati dall'orologio."));
+  }
+  const today = app.today.date;
+  const todaySteps = steps.find((d) => d.date === today)?.steps;
+  const week = steps.filter((d) => d.date >= addDays(today, -7) && d.date < today); // oggi non è finito: non conta
+  const weekAvg = week.length ? Math.round(week.reduce((a, d) => a + d.steps, 0) / week.length) : null;
+  const last = resting[resting.length - 1];
+  const tiles = [
+    steps.length && stat(`${icon("footprints", "sm")}Passi oggi`, todaySteps == null ? "—" : esc(fmtNum(todaySteps, 0)), todaySteps == null ? "nessun dato di oggi" : "fino all'ultima lettura"),
+    weekAvg != null && stat(`${icon("chart-line", "sm")}Passi in media`, esc(fmtNum(weekAvg, 0)), `${week.length} ${week.length === 1 ? "giorno" : "giorni"}, oggi escluso`, { calc: true }),
+    last && stat(`${icon("heart-pulse", "sm")}Battito a riposo`, `${esc(last.resting_hr)}<small> bpm</small>`, esc(fmtDate(last.date))),
+  ].filter(Boolean);
+  const withAvg = resting.length >= 3;
+  // tacche intere: il battito non ha decimali
+  const bpm = resting.map((d) => d.resting_hr);
+  const [lo, hi] = [Math.min(...bpm) - 1, Math.max(...bpm) + 1];
+  const step = hi - lo > 12 ? 5 : hi - lo > 6 ? 2 : 1;
+  const ticks = [];
+  for (let v = Math.floor(lo / step) * step; v <= hi; v += step) ticks.push(v);
+  const chart = resting.length > 1
+    ? panel(`${icon("heart-pulse")}Battito a riposo`, lineChart({
+        points: resting.map((d) => ({ date: d.date, value: d.resting_hr })),
+        overlay: withAvg ? { name: "media 7 gg", points: movingAverage(resting.map((d) => ({ date: d.date, weight: d.resting_hr }))) } : null,
+        dots: withAvg ? "raw" : "series",
+        unit: "bpm",
+        ticks, format: (v) => String(Math.round(v)),
+        label: `Battito a riposo in ${resting.length} giorni, l'ultimo ${last.resting_hr} bpm.`,
+        legend: withAvg ? [["raw", "Valore del giorno"], ["line", 'Media mobile 7 giorni <span class="badge-calc">calcolata</span>']] : [],
+      }))
+    : "";
+  return `<div class="tiles ${tiles.length === 3 ? "three" : "pair"}">${tiles.join("")}</div>${chart}
+    <p class="subtle">Valori letti dall'orologio tramite Health Connect.</p>`;
 }
 
 function consistencyPanel() {
@@ -202,7 +247,7 @@ function historyPanel() {
       ? sessions
           .map((s) => {
             const done = s.sets.filter((x) => x.completed);
-            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(nameOf(x.exercise_id) || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
+            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.heart ? ` · battito medio ${esc(s.heart.avg_bpm)}, max ${esc(s.heart.max_bpm)} bpm` : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(nameOf(x.exercise_id) || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
           })
           .join("")
       : empty("Nessun allenamento registrato", "Inizia dalla schermata Palestra."),
@@ -218,8 +263,8 @@ const trainingTab = () =>
   )}</div>`;
 
 export function render() {
-  const body = ui.tab === "training" ? trainingTab() : ui.tab === "sleep" ? sleepTab() : weightTab();
-  return `${tabs([["weight", "Peso", "scale"], ["training", "Allenamento", "dumbbell"], ["sleep", "Sonno", "moon"]], ui.tab, "Progressi", "tab", "progress-panel")}${tabpanel("progress-panel", "Progressi", ui.tab, body)}`;
+  const body = ui.tab === "training" ? trainingTab() : ui.tab === "sleep" ? sleepTab() : ui.tab === "heart" ? heartTab() : weightTab();
+  return `${tabs([["weight", "Peso", "scale"], ["training", "Allenamento", "dumbbell"], ["sleep", "Sonno", "moon"], ["heart", "Orologio", "watch"]], ui.tab, "Progressi", "tab", "progress-panel")}${tabpanel("progress-panel", "Progressi", ui.tab, body)}`;
 }
 
 // ---- modifica successiva -------------------------------------------------------------------

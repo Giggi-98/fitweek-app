@@ -13,6 +13,7 @@ import { isNative, nativeStatus, openExactAlarmSettings, startUpdate, syncNotifi
 import { checkForUpdate, updateStatus } from "../update.js";
 import { serverUrl, standalone } from "../platform.js";
 import { canScan, isBarcode, lookup, portion, scan } from "../barcode.js";
+import { canReadHealth, connectHealth, healthStatus, importHealth, openHealthSettings, refreshHealthStatus } from "../watch.js";
 
 export const THEME_KEY = "fitweek.theme.v1";
 
@@ -74,6 +75,7 @@ function refreshPanel(id, html) {
   if (el) el.outerHTML = html;
 }
 window.addEventListener("fitweek:native-synced", () => refreshPanel("android-panel", androidPanel()));
+window.addEventListener("fitweek:health-status", () => refreshPanel("watch-panel", watchPanel()));
 const mb = (n) => `${(n / 1048576).toLocaleString("it-IT", { maximumFractionDigits: 1 })} MB`;
 const PERM = { granted: "consentite ✓", denied: "bloccate ✗", prompt: "da consentire", "prompt-with-rationale": "da consentire", unknown: "…" };
 
@@ -130,6 +132,40 @@ function androidPanel() {
       <li>Impostazioni → App → FitWeek → Batteria → <em>Senza restrizioni</em>; se richiesto consenti <em>Sveglie e promemoria</em>.</li>
     </ol></div>`,
     "", "", "android-panel",
+  );
+}
+
+// ---- dati dall'orologio: Health Connect sul telefono (static/js/watch.js, D-040) -------------------------
+const HC_TYPES = [["sleep", "sonno"], ["steps", "passi"], ["resting_heart_rate", "battito a riposo"], ["heart_rate", "battito in palestra"]];
+let watchChecked = false;
+const clock = (iso) => new Date(iso).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
+
+function watchPanel() {
+  const h = healthStatus;
+  const title = `${icon("watch")}Dati dall'orologio`;
+  if (!watchChecked) {
+    watchChecked = true;
+    refreshHealthStatus(); // risponde con "fitweek:health-status", che ridisegna questo pannello
+  }
+  if (h.availability !== "available") {
+    const text = { unknown: "Controllo di Health Connect…", update_required: "Health Connect va aggiornato dal Play Store, poi torna qui.", unavailable: "Health Connect non è disponibile su questo telefono." }[h.availability] || h.availability;
+    return panel(title, `<p class="subtle">${esc(text)}</p>`, "", "", "watch-panel");
+  }
+  const granted = HC_TYPES.filter(([k]) => h.granted.includes(k)).map(([, l]) => l);
+  const missing = HC_TYPES.filter(([k]) => !h.granted.includes(k)).map(([, l]) => l);
+  const actions = granted.length
+    ? `<button class="btn primary" data-watch="import">${icon("refresh-cw")}Importa ora</button><button class="btn" data-watch="settings">Permessi</button>`
+    : `<button class="btn primary" data-watch="connect">${icon("watch")}Collega Health Connect</button>`;
+  return panel(
+    title,
+    `<div class="summary-list">
+      <div class="summary-row"><i>${icon("circle-check", "sm")}</i><div><strong>${granted.length ? `Legge: ${esc(granted.join(", "))}` : "Nessun dato consentito"}</strong><small>${missing.length ? `Non consentiti: ${esc(missing.join(", "))}. Si cambiano da Permessi.` : "Tutti i dati che FitWeek usa."}</small></div></div>
+      <div class="summary-row"><i>${icon("clock", "sm")}</i><div><strong>${h.last ? `Ultima importazione: ${esc(clock(h.last))}` : "Mai importato"}</strong><small>${h.imported == null ? "All'apertura dell'app, al massimo ogni 15 minuti." : h.imported ? `${h.imported} ${h.imported === 1 ? "valore nuovo inviato" : "valori nuovi inviati"} al server.` : "Niente di nuovo dall'ultima volta."}</small></div></div>
+    </div>
+    ${h.error ? `<div class="inline-note warn">Errore: ${esc(h.error)}</div>` : ""}
+    <div class="button-row">${actions}</div>
+    <p class="subtle">I dati vanno solo al tuo server. Le notti che scrivi o elimini a mano non cambiano.</p>`,
+    "", "", "watch-panel",
   );
 }
 
@@ -287,7 +323,7 @@ export function render() {
       `${icon("info")}Privacy`,
       `<div class="summary-list"><div class="summary-row"><i>${icon("package", "sm")}</i><div><strong>Dati solo sul tuo server</strong><small>SQLite in un volume Docker.</small></div></div><div class="summary-row"><i>${icon("utensils", "sm")}</i><div><strong>Ricerca prodotti</strong><small>Quando cerchi un alimento, il solo testo cercato va a Open Food Facts. Nient'altro esce dal server.</small></div></div><div class="summary-row"><i>${icon("user", "sm")}</i><div><strong>Accesso protetto</strong><small>Sessioni revocabili, tentativi di accesso limitati.</small></div></div></div><p class="subtle">Uso personale. Le indicazioni alimentari sono orientative, non prescrizioni mediche.</p>`,
     )}</div>`;
-  const body = ui.tab === "reminders" ? remindersPanel() : ui.tab === "app" ? androidPanel() : ui.tab === "data" ? data() : general();
+  const body = ui.tab === "reminders" ? remindersPanel() : ui.tab === "app" ? (canReadHealth() ? `<div class="stack">${androidPanel()}${watchPanel()}</div>` : androidPanel()) : ui.tab === "data" ? data() : general();
   return `${tabs([["general", "Generale", "user"], ["reminders", "Promemoria", "bell"], ["app", "App Android", "smartphone"], ["data", "Dati e accesso", "download"]], ui.tab, "Impostazioni", "tab", "settings-panel")}${tabpanel("settings-panel", "Impostazioni", ui.tab, body)}`;
 }
 
@@ -311,6 +347,13 @@ export async function onClick(t) {
     return true;
   }
   if (t.dataset.native === "exact") return openExactAlarmSettings(), false;
+  if (t.dataset.watch === "connect") return await connectHealth().catch((e) => toast(e.message)), false;
+  if (t.dataset.watch === "settings") return openHealthSettings(), false;
+  if (t.dataset.watch === "import") {
+    await importHealth({ force: true });
+    toast(healthStatus.error ? `Importazione non riuscita: ${healthStatus.error}` : healthStatus.imported ? `${healthStatus.imported} valori importati` : "Nessun dato nuovo");
+    return false; // il riquadro si ridisegna con "fitweek:health-status"
+  }
   if (t.dataset.native === "update") return startUpdate(), false;
   if (t.dataset.native === "check") {
     const up = await checkForUpdate();

@@ -65,6 +65,7 @@ const canon = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && 
     { name: 'Miele', category: 'altro', qty: 1, kcal: 61, protein_g: null, nutrition_source: 'estimate', takeaway: false }] });
   await server('/api/v1/meal-logs/e2e-novalues', 'PUT', { date: today, slot: 'other', description: 'Caffè al bar' });
   await server(`/api/v1/sleep/${today}`, 'PUT', { bed_time: '00:40', wake_time: '07:25' });
+  await server(`/api/v1/health-days/${today}`, 'PUT', { steps: 6500, resting_hr: 62 });
   await server('/api/v1/workout-sessions', 'POST', { id: 'e2e-done', routine: 'A', week, date: today });
   await server('/api/v1/workout-sessions/e2e-done/sets/a1/1', 'PUT', { kg: 40, reps: 10 });
   await server('/api/v1/workout-sessions/e2e-done', 'PATCH', { status: 'done', duration_min: 55 });
@@ -80,16 +81,16 @@ const canon = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && 
     const { request } = await import('/static/js/api.js');
     const { readLocal, normalizeDb } = await import('/static/js/local.js');
     const fresh = (path) => request(path, { fresh: true });
-    const [snap, state, sessions, agenda, weekly, sleep, logsToday] = await Promise.all([
-      fresh('/api/v1/sync/snapshot'), fresh('/api/state'), fresh('/api/v1/workout-sessions?limit=200'), fresh('/api/v1/agenda'), fresh('/api/v1/weekly-summary'), fresh('/api/v1/sleep'),
+    const [snap, state, sessions, agenda, weekly, sleep, health, logsToday] = await Promise.all([
+      fresh('/api/v1/sync/snapshot'), fresh('/api/state'), fresh('/api/v1/workout-sessions?limit=200'), fresh('/api/v1/agenda'), fresh('/api/v1/weekly-summary'), fresh('/api/v1/sleep'), fresh('/api/v1/health-days'),
       fresh(`/api/v1/meal-logs?from=${new Date().toLocaleDateString('sv')}&to=${new Date().toLocaleDateString('sv')}`)]);
     const local = (path) => readLocal(path, normalizeDb(snap), { state: state.data, sessions: sessions.items, now: new Date() });
     const noDue = (a) => ({ ...a, items: a.items.map(({ due_at, ...i }) => i) }); // il server lo scrive con il fuso, il telefono in ora locale
     const day = new Date().toLocaleDateString('sv');
     return { agenda: [noDue(agenda), noDue(local('/api/v1/agenda'))], weekly: [weekly, local('/api/v1/weekly-summary')], sleep: [sleep, local('/api/v1/sleep')],
-      logs: [logsToday, local(`/api/v1/meal-logs?from=${day}&to=${day}`)] };
+      health: [health, local('/api/v1/health-days')], logs: [logsToday, local(`/api/v1/meal-logs?from=${day}&to=${day}`)] };
   });
-  for (const [name, label] of [['agenda', 'agenda di oggi'], ['weekly', 'riepilogo settimanale'], ['sleep', 'sonno e medie'], ['logs', 'diario del giorno']]) {
+  for (const [name, label] of [['agenda', 'agenda di oggi'], ['weekly', 'riepilogo settimanale'], ['sleep', 'sonno e medie'], ['health', 'passi e battito a riposo'], ['logs', 'diario del giorno']]) {
     const [fromServer, fromPhone] = parity[name].map(canon);
     check(`telefono = server: ${label}`, fromServer === fromPhone, fromServer === fromPhone ? '' : `server ${fromServer.slice(0, 400)} ≠ telefono ${fromPhone.slice(0, 400)}`);
   }
