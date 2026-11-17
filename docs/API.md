@@ -111,6 +111,22 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.14 (2026-11-17) — dati dall'orologio (Health Connect, D-040)
+
+I valori li legge l'app Android da Health Connect e li invia dalla coda offline, con `X-Edited-At`; il server non legge mai l'orologio.
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/api/v1/health-days?from=&to=` | Passi e battito a riposo per giorno (default: ultimi 60 giorni) → `{items: [{date, steps, resting_hr}]}`; `null` = l'orologio non l'ha registrato. |
+| PUT | `/api/v1/health-days/{date}` | `{steps?: 0–200000, resting_hr?: 25–220}` → upsert; scrittura più vecchia del dato salvato → `{ok, stale: true}`. |
+| PUT | `/api/v1/workout-heart/{session_id}` | `{avg_bpm: 30–230, max_bpm: 30–240, samples ≥ 1}` (media ≤ massimo) → upsert. 404 se la seduta non esiste; su una seduta eliminata `{ok, kept: true}` senza applicare. |
+
+Modifiche a endpoint esistenti:
+- `PUT /api/v1/sleep/{date}`: campi facoltativi `deep_min`, `light_min`, `rem_min`, `awake_min` (0–1440, `null` = fase non registrata). Con `source: health_connect` la scrittura **non si applica** se la notte è stata scritta a mano o eliminata: risposta `{ok, kept: true}`. `GET /sleep` restituisce anche i quattro campi.
+- `GET /api/v1/workout-sessions[/{id}]`: ogni seduta ha `heart: {avg_bpm, max_bpm, samples}` o `null`.
+- `GET /api/v1/sync/snapshot`: aggiunge `health_days`, `sleep_owned` (giorni delle notti scritte o eliminate dall'utente, che l'importazione non tocca) e i minuti per fase in `sleep_logs`.
+- `GET /api/backup` → `fitweek-backup-v5`: aggiunge il dominio facoltativo `health_days`; il battito di ogni seduta viaggia dentro la seduta (`workout_sessions[].heart`). Il ripristino accetta v1–v5.
+
 ## API 1.13 (2026-11-16) — scheda modificabile e tipo di serie
 
 - `GET /api/v1/program/original` → `{routines: {A: [...], B: [...], C: [...]}}`: la scheda verificata sul PDF, in sola lettura (per mostrare le differenze e ripristinare).
@@ -136,12 +152,13 @@ Modifiche a endpoint esistenti:
 
 Regola: conta la **presenza del campo** nel file, non l'etichetta `format`. Campo presente, anche se elenco vuoto → il dominio viene sostituito (svuotato, se vuoto). Campo assente o `null` → il dominio resta com'è.
 
-| Dominio (chiave) | Tabelle | v1 | v2 | v3 | v4 |
-|---|---|---|---|---|---|
-| `state` | `app_state` (profilo, scheda, piano pasti, lista spesa, dispensa, pesate) | sostituito | sostituito | sostituito | sostituito |
-| `workouts` | `workout_sessions`, `set_logs` | sostituito (convertito da `data.workouts`) | sostituito | sostituito | sostituito |
-| `meal_templates`, `meal_logs`, `reminders`, `foods` | omonime | resta | resta | sostituito | sostituito |
-| `sleep_logs`, `exercise_notes`, `grocery_spend` | omonime | resta | resta | resta | sostituito |
+| Dominio (chiave) | Tabelle | v1 | v2 | v3 | v4 | v5 |
+|---|---|---|---|---|---|---|
+| `state` | `app_state` (profilo, scheda, piano pasti, lista spesa, dispensa, pesate) | sostituito | sostituito | sostituito | sostituito | sostituito |
+| `workouts` | `workout_sessions`, `set_logs`, `workout_heart` (1.14) | sostituito (convertito da `data.workouts`) | sostituito | sostituito | sostituito | sostituito |
+| `meal_templates`, `meal_logs`, `reminders`, `foods` | omonime | resta | resta | sostituito | sostituito | sostituito |
+| `sleep_logs`, `exercise_notes`, `grocery_spend` | omonime | resta | resta | resta | sostituito | sostituito |
+| `health_days` (1.14) | omonima | resta | resta | resta | resta | sostituito |
 
 La colonna indica i file prodotti da quella versione dell'app; un file modificato a mano segue la regola della presenza del campo.
 
@@ -174,7 +191,7 @@ Nessun contratto cambia; cambiano due comportamenti (finding FW-REV-002 e FW-REV
 
 ## API 1.10.1 (2026-11-12) — orario della modifica
 
-Le scritture che passano dalla coda offline dichiarano quando sono state fatte con l'intestazione `X-Edited-At` (ISO 8601, es. `2026-11-12T17:05:00.000Z`). Vale per `PUT`/`DELETE` di `/api/v1/workout-sessions/{id}/sets/{exercise}/{n}`, `/api/v1/meal-logs/{id}`, `/api/v1/sleep/{giorno}` e per `PUT /api/v1/exercise-notes/{exercise}`.
+Le scritture che passano dalla coda offline dichiarano quando sono state fatte con l'intestazione `X-Edited-At` (ISO 8601, es. `2026-11-12T17:05:00.000Z`). Vale per `PUT`/`DELETE` di `/api/v1/workout-sessions/{id}/sets/{exercise}/{n}`, `/api/v1/meal-logs/{id}`, `/api/v1/sleep/{giorno}` e per `PUT /api/v1/exercise-notes/{exercise}`, `/api/v1/health-days/{giorno}` e `/api/v1/workout-heart/{seduta}` (1.14).
 
 - Se il dato salvato è stato modificato **dopo** quell'orario, la scrittura non viene applicata e la risposta è `200 {"ok": true, "stale": true}` (non è un errore: il client non deve ritentare).
 - Altrimenti la scrittura è applicata e l'orario salvato (`logged_at` per le serie, `updated_at` per gli altri) è quello dichiarato, mai nel futuro.

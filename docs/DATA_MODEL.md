@@ -164,3 +164,15 @@ Un segno per ogni posizione di serie eliminata, con l'orario dell'eliminazione p
 Migrazione 10: `set_logs.kind TEXT NOT NULL DEFAULT 'normal'` (`normal|warmup|drop|failure`, validato dall'API). Solo aggiunta: le serie esistenti restano `normal`.
 Blob: `routines[giorno][]` con `rest` (secondi) e `muscle` facoltativi; `exerciseArchive[]` = esercizi tolti, sostituiti o usati solo in una seduta (danno un nome allo storico). La scheda del PDF non è nel DB: sta in `app/seed.py` ed è esposta da `GET /api/v1/program/original`.
 Sul dispositivo: `fitweek.workoutEdits.v1` contiene anche il piano della seduta in corso (`plan`: saltati, sostituiti, aggiunti, ordine) e il tipo delle serie non ancora registrate (`kinds`).
+
+## Stato dopo 1.14.0 (schema 11, 2026-11-17)
+
+Dati dall'orologio letti dall'app Android su Health Connect (D-040). Migrazione 11, solo aggiunte:
+```
+sleep_logs + deep_min, light_min, rem_min, awake_min INTEGER   -- minuti per fase, NULL = non registrata
+health_days(date PK, steps INTEGER CHECK(steps >= 0), resting_hr INTEGER, updated_at)
+workout_heart(session_id PK → workout_sessions ON DELETE CASCADE, avg_bpm, max_bpm, samples, updated_at)
+```
+- Una notte con `source = 'health_connect'` è dell'orologio: un'importazione successiva la aggiorna. Una notte `manual`, o eliminata (`deleted_at`), è dell'utente: l'importazione non la tocca mai.
+- Il battito della seduta è in una tabella a parte (non tocca la sincronizzazione delle serie) ma nell'API e nel backup viaggia dentro la seduta (`heart`).
+- Nessun campione grezzo è salvato: il telefono invia solo i riassunti.

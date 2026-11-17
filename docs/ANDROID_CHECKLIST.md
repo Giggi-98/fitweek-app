@@ -54,6 +54,18 @@ Premessa: server alla 1.12.0 e APK compilato dopo il deploy.
 - [ ] **Editor con una mano**: le schede "Nel piatto" / "Aggiungi" e il pulsante di salvataggio si raggiungono con il pollice; la tastiera non copre il totale.
 - [ ] **Senza rete (app β)**: in modalità aereo registra un pasto e rinomina un promemoria; giornata, proteine e diario si aggiornano subito; chiudi e riapri l'app: c'è ancora tutto. Togli la modalità aereo: l'indicatore torna "Sincronizzato" e dal PC si vedono le stesse modifiche.
 
+## 7. Dati dall'orologio (1.14.0)
+Premessa: server alla 1.14.0 e APK compilato dopo il deploy; OHealth con la scrittura su Health Connect attiva (verificato dall'utente il 2026-11-17).
+- [ ] **Collegamento**: *Impostazioni → App Android → Dati dall'orologio → Collega Health Connect* apre la finestra di Android con sonno, passi, battito e battito a riposo; dopo il consenso il pannello dice cosa legge e cosa no.
+- [ ] **Spiegazione dei dati**: nella finestra dei permessi, il link su come vengono usati i dati apre FitWeek senza errori.
+- [ ] **Prima importazione**: in *Progressi → Sonno* compaiono le ultime notti con l'icona dell'orologio, gli orari corrispondono a OHealth (±1 minuto) e sotto l'elenco ci sono le fasi dell'ultima notte.
+- [ ] **Notte a mano**: scrivi a mano una notte già importata, poi *Importa ora*: la notte resta come l'hai scritta. Eliminane un'altra: non ricompare.
+- [ ] **Passi**: in *Progressi → Orologio* i passi di ieri coincidono con OHealth (con più fonti, ad esempio telefono e orologio, possono differire: annota di quanto).
+- [ ] **Battito a riposo**: compare solo se OHealth lo scrive su Health Connect; se manca, annota se OHealth lo mostra comunque.
+- [ ] **Battito in palestra**: dopo una seduta conclusa con l'orologio al polso, in *Progressi → Allenamento → Storico* compare "battito medio …, max … bpm"; confronta con OHealth.
+- [ ] **Senza rete**: in modalità aereo *Importa ora* mette i valori in coda e Progressi li mostra; togliendo la modalità aereo arrivano al server (dal PC si vedono gli stessi numeri).
+- [ ] **Permessi tolti**: toglili da *Permessi*; tornando nell'app il pannello lo dice e l'importazione non dà errori.
+
 ---
 
 ### Note / esito della prova

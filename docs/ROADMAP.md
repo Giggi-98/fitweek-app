@@ -222,6 +222,16 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.14.0 (2026-11-17) — dati dall'orologio (Health Connect)
+
+Richiesta dell'utente (D-040): l'Oppo Watch scrive con OHealth su Health Connect (verificato dall'utente); l'app Android legge da lì e invia al server. Nel repository, **non in produzione**; richiede la migrazione 11 (colonne e tabelle nuove, con backup automatico all'avvio).
+- **Sonno**: notte per giorno di risveglio con le fasi; le notti scritte o eliminate a mano non vengono mai toccate.
+- **Passi e battito a riposo** per giorno, nuova scheda *Progressi → Orologio*; **battito medio e massimo** di ogni seduta nello storico.
+- **Impostazioni → App Android → Dati dall'orologio**: collegamento, cosa viene letto, ultima importazione, "Importa ora", permessi.
+- **Server**: `GET/PUT /health-days`, `PUT /workout-heart/{seduta}`, fasi in `/sleep`, `heart` nelle sedute, backup v5.
+
+Verificato dal maker: 128 pytest, 137 test JS, 282 controlli e2e in 11 file (nuovo: `health`, con Health Connect simulato), compilazione di un APK `next` di prova in una cartella temporanea con una chiave usa-e-getta (plugin Kotlin compilato, permessi e dichiarazioni di Health Connect nel manifest, minSdk 26). **Non verificato: nulla su telefono** (quali dati scrive davvero OHealth, permessi, ritardi); migrazione 11 mai eseguita sul DB reale.
+
 ## 1.13.0 (2026-11-16) — scheda modificabile, gestione per esercizio, calcoli
 
 Richiesta dell'utente (D-039). Nel repository, **non in produzione**; richiede la migrazione 10 (una colonna, con backup automatico all'avvio).

@@ -1,3 +1,3 @@
 """FitWeek backend package."""
 
-APP_VERSION = "1.13.0"
+APP_VERSION = "1.14.0"

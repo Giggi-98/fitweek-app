@@ -39,6 +39,7 @@ Esposizione: solo LAN, `192.168.222.200:8088 → 8080`, HTTP non cifrato (rischi
 | Profilo, scheda (`routines`), piano pasti, lista spesa, dispensa, pesate | blob `app_state` | `PUT /api/state` con l'intero stato e la versione letta | controllo ottimistico: 409 se la versione è cambiata, poi fusione a tre vie nel client (`static/js/sync.js`) |
 | Sedute e serie | `workout_sessions`, `set_logs`, `set_tombstones` | una richiesta per serie (`PUT`/`DELETE` idempotenti) | vince l'ultima modifica **fatta**: `X-Edited-At` al millisecondo; un'eliminazione lascia un segno |
 | Diario pasti, sonno, note esercizi | `meal_logs`, `sleep_logs`, `exercise_notes` | `PUT`/`DELETE` per voce | come sopra (`X-Edited-At`) |
+| Dati dall'orologio (1.14) | `health_days`, `workout_heart`, `sleep_logs` (`source = health_connect`) | `PUT` per giorno / per seduta, solo dall'app Android | come sopra; un'importazione non tocca le notti scritte o eliminate dall'utente |
 | Pasti abituali, catalogo alimenti, promemoria e risposte, spesa pagata | `meal_templates`, `foods`, `reminders`, `reminder_acks`, `grocery_spend` | `PUT`/`DELETE` per voce | vince l'ultima arrivata |
 | Accessi | `sessions` | login, logout, revoca | — |
 
@@ -85,10 +86,11 @@ Moduli che fanno da contratto: `api.js` (unico punto HTTP, tempi massimi e stato
 - `stable` carica le pagine dal server: segue sempre la versione installata sul server, l'APK va ricompilato solo se cambia `mobile/`.
 - `next` contiene le pagine: ogni modifica al frontend richiede un nuovo APK, e se il frontend usa qualcosa di nuovo del server (rotta, campo, intestazione) l'APK va compilato **dopo** il deploy. Non esiste un controllo automatico di versione minima tra APK e server.
 - Nessun APK è stato ancora provato su un telefono reale dopo la 1.10.2 (`docs/ANDROID_CHECKLIST.md`).
+- **Dati dall'orologio** (1.14, D-040): il plugin nativo `HealthConnect` legge Health Connect sul telefono con l'app aperta (avvio, ritorno in primo piano al massimo ogni 15 minuti, "Importa ora"); `static/js/health.js` riassume (notte per giorno di risveglio, passi e battito a riposo per giorno, battito per seduta) e `static/js/watch.js` accoda solo ciò che differisce dalla copia locale. Il flusso è quello di ogni altra scrittura: coda, `X-Edited-At`, server che fa fede.
 
 ### Non implementato (pianificato o solo ipotizzato)
 
-Service worker e PWA installabile; copia offline nella webapp da browser; accesso da Internet con HTTPS; assistente AI (M8) e lettura del menu della mensa sul telefono; importazione del sonno da Health Connect; estrazione dal blob di pesate, spesa e dispensa; controllo di versione tra APK e server.
+Service worker e PWA installabile; copia offline nella webapp da browser; accesso da Internet con HTTPS; assistente AI (M8) e lettura del menu della mensa sul telefono; estrazione dal blob di pesate, spesa e dispensa; controllo di versione tra APK e server.
 
 ---
 
