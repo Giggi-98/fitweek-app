@@ -26,6 +26,7 @@ export const app = {
   foods: [], // catalogo piatti (mensa e casa)
   dayLogs: [], // pasti registrati oggi (per aprirli dalla giornata e per il consiglio sulle proteine)
   sleep: { items: [], summary: null }, // ultime 60 notti (/api/v1/sleep)
+  health: [], // passi e battito a riposo degli ultimi 60 giorni, dall'orologio (/api/v1/health-days)
   exNotes: {}, // note per esercizio: id → testo
   spend: [], // spesa reale per settimana, più recenti prima
   view: "dashboard",
@@ -107,6 +108,8 @@ export function watchQueue(read) {
   queuedOps = read;
 }
 const currentMirror = () => (mirror ??= confirmed && withPending(confirmed, queuedOps()));
+/** La copia dei dati sul telefono con le scritture in coda (solo app autonoma; null finché non è arrivata). */
+export const localCopy = () => (standalone && confirmed ? currentMirror() : null);
 /** Dalla coda, a ogni scrittura accodata. */
 export function mirrorWrite(op) {
   if (mirror) mirror = applyWrite(mirror, op);
@@ -147,12 +150,13 @@ export async function loadAll() {
 export async function refreshDaily() {
   if (standalone) await pullMirror().catch(() => {}); // senza una copia valgono le vecchie risposte in memoria
   const day = net.offlineSince == null ? app.today.date : isoDate();
-  const [agenda, weekly, templates, foods, sleep, logs, reminders] = await Promise.all([
+  const [agenda, weekly, templates, foods, sleep, health, logs, reminders] = await Promise.all([
     request("/api/v1/agenda"),
     request("/api/v1/weekly-summary"),
     request("/api/v1/meal-templates"),
     request("/api/v1/foods"),
     request("/api/v1/sleep"),
+    request("/api/v1/health-days"),
     request(`/api/v1/meal-logs?from=${day}&to=${day}`),
     standalone ? request("/api/v1/reminders") : null, // nell'app serve per ricostruire l'agenda senza rete
   ]);
@@ -161,6 +165,7 @@ export async function refreshDaily() {
   app.templates = templates.items;
   app.foods = foods.items;
   app.sleep = sleep;
+  app.health = health.items;
   app.dayLogs = logs.items;
   if (net.offlineSince != null) adoptOfflineDay(agenda, reminders);
 }

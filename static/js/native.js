@@ -6,6 +6,7 @@ import { buildSchedule } from "./schedule.js";
 import { app } from "./store.js";
 import { closeModal, modalOpen, toast } from "./ui.js";
 import { checkForUpdate, installUpdate, updateStatus } from "./update.js";
+import { importHealth } from "./watch.js";
 
 const cap = () => globalThis.Capacitor;
 export const isNative = () => Boolean(cap()?.isNativePlatform?.());
@@ -119,9 +120,11 @@ export function initNative({ openReminderById }) {
   AppPlugin()?.addListener("resume", () => {
     syncNotifications();
     announceUpdate(false);
+    importHealth();
   });
   window.addEventListener("fitweek:changed", () => syncNotifications());
   window.addEventListener("fitweek:reminders-changed", () => syncNotifications());
   syncNotifications({ ask: true });
   announceUpdate(true);
+  importHealth();
 }

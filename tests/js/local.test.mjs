@@ -130,3 +130,26 @@ test("la coda si riapplica in ordine sulla copia del server; percorsi di altri d
   assert.deepEqual(db.meal_logs.map((m) => m.id), ["m2"]);
   assert.equal(readLocal("/api/v1/today", db, ctx()), undefined); // non ricostruibile qui: vale la vecchia risposta
 });
+
+test("orologio: la notte importata non tocca quelle scritte o eliminate dall'utente, come sul server", () => {
+  const night = { bed_time: "00:20", wake_time: "07:40", source: "health_connect", note: "", deep_min: 80, light_min: 230, rem_min: 95, awake_min: 15 };
+  let db = put(base(), `/api/v1/sleep/${MON}`, night);
+  assert.equal(readLocal(`/api/v1/sleep?from=${MON}&to=${MON}`, db, ctx()).items[0].rem_min, 95);
+  assert.deepEqual(db.sleep_owned, [], "una notte importata resta dell'orologio");
+  db = put(db, `/api/v1/sleep/${MON}`, { bed_time: "23:50", wake_time: "07:40" });
+  const hand = readLocal(`/api/v1/sleep?from=${MON}&to=${MON}`, db, ctx()).items[0];
+  assert.deepEqual([hand.source, hand.deep_min], ["manual", null], "corretta a mano: diventa dell'utente e perde le fasi");
+  assert.equal(put(db, `/api/v1/sleep/${MON}`, night), db, "l'importazione dopo non la cambia");
+  db = del(put(db, "/api/v1/sleep/2026-11-10", night), "/api/v1/sleep/2026-11-10");
+  assert.deepEqual(db.sleep_owned, [MON, "2026-11-10"]);
+  assert.equal(put(db, "/api/v1/sleep/2026-11-10", night), db, "eliminata: non torna con l'importazione");
+});
+
+test("orologio: passi e battito a riposo per giorno, letti dalla copia", () => {
+  let db = put(base(), `/api/v1/health-days/${MON}`, { steps: 8000 });
+  db = put(db, "/api/v1/health-days/2026-11-08", { steps: null, resting_hr: 62 });
+  db = put(db, `/api/v1/health-days/${MON}`, { steps: 9100, resting_hr: 60 });
+  assert.deepEqual(readLocal(`/api/v1/health-days?from=2026-11-01&to=${MON}`, db, ctx()).items,
+    [{ date: "2026-11-08", steps: null, resting_hr: 62 }, { date: MON, steps: 9100, resting_hr: 60 }]);
+  assert.equal(applyWrite(db, { method: "PUT", path: "/api/v1/workout-heart/s1", body: { avg_bpm: 1 }, at: MON }), db, "il battito delle sedute non è nella copia");
+});

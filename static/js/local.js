@@ -2,13 +2,15 @@
 // `db` è la copia delle righe (`GET /api/v1/sync/snapshot`) con sopra le modifiche ancora in coda:
 // `applyWrite` riproduce ciò che il server farà di ogni scrittura, `readLocal` risponde alle letture quando il
 // server non è raggiungibile. Le regole sono le stesse di app/daily.py, app/tracking.py e app/domain.py: se
-// cambiano lì cambiano qui (tests/e2e/standalone.e2e.js confronta le due risposte sugli stessi dati).
+// cambiano lì cambiano qui (tests/e2e/localfirst.e2e.js confronta le due risposte sugli stessi dati).
 import { DAYS, GYM } from "./constants.js";
 import { addDays, mondayOf } from "./stats.js";
 import { programWeek } from "./sync.js";
 
 const SCHEDULE = Object.fromEntries(DAYS.map((d, i) => [i, GYM[d]]).filter(([, r]) => r));
-const TABLES = ["meal_logs", "meal_templates", "foods", "reminders", "reminder_acks", "sleep_logs", "exercise_notes", "grocery_spend"];
+// `sleep_owned`: giorni delle notti scritte o eliminate dall'utente, che un'importazione dall'orologio non tocca.
+const TABLES = ["meal_logs", "meal_templates", "foods", "reminders", "reminder_acks", "sleep_logs", "sleep_owned", "exercise_notes", "grocery_spend", "health_days"];
+const STAGES = ["deep_min", "light_min", "rem_min", "awake_min"];
 const pad = (n) => String(n).padStart(2, "0");
 const isoOf = (d) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 const weekdayOf = (iso) => (new Date(`${iso}T12:00:00Z`).getUTCDay() + 6) % 7;
@@ -68,7 +70,8 @@ const sleepRows = (db, first, last) =>
   db.sleep_logs
     .filter((n) => n.date >= first && n.date <= last)
     .sort(by("date"))
-    .map((n) => ({ date: n.date, bed_time: n.bed_time, wake_time: n.wake_time, source: n.source, note: n.note, duration_min: sleepMinutes(n.bed_time, n.wake_time) }));
+    .map((n) => ({ date: n.date, bed_time: n.bed_time, wake_time: n.wake_time, source: n.source, note: n.note,
+      ...Object.fromEntries(STAGES.map((k) => [k, n[k] ?? null])), duration_min: sleepMinutes(n.bed_time, n.wake_time) }));
 
 // ---- letture ----------------------------------------------------------------------------------
 function agenda(db, ctx, day) {
@@ -186,6 +189,10 @@ export function readLocal(path, db, ctx) {
       const items = sleepRows(db, q("from") || addDays(last, -59), last);
       return { items, summary: sleepSummary(items) };
     }
+    case "/api/v1/health-days": {
+      const last = q("to") || today, first = q("from") || addDays(last, -59);
+      return { items: db.health_days.filter((d) => d.date >= first && d.date <= last).sort(by("date")).map(({ date, steps, resting_hr }) => ({ date, steps, resting_hr })) };
+    }
     case "/api/v1/agenda": {
       const date = q("date") || today;
       return { date, items: agenda(db, ctx, date) };
@@ -263,8 +270,15 @@ export function applyWrite(db, { method, path, body = {}, at }) {
       return del
         ? { ...db, reminders: without(db.reminders, "id", id), reminder_acks: without(db.reminder_acks, "reminder_id", id) }
         : { ...db, reminders: upsert(db.reminders, "id", { slot: null, action: "none", enabled: true, ...body, id, updated_at: at }) };
-    case "sleep":
-      return { ...db, sleep_logs: del ? without(db.sleep_logs, "date", id) : upsert(db.sleep_logs, "date", { source: "manual", note: "", ...body, date: id }) };
+    case "sleep": {
+      const imported = !del && body.source === "health_connect";
+      if (imported && db.sleep_owned.includes(id)) return db; // come il server: la notte l'ha decisa l'utente
+      const owned = imported ? db.sleep_owned : [...new Set([...db.sleep_owned, id])].sort();
+      return { ...db, sleep_owned: owned, sleep_logs: del ? without(db.sleep_logs, "date", id)
+        : upsert(db.sleep_logs, "date", { source: "manual", note: "", ...Object.fromEntries(STAGES.map((k) => [k, null])), ...body, date: id }) };
+    }
+    case "health-days":
+      return del ? db : { ...db, health_days: upsert(db.health_days, "date", { steps: null, resting_hr: null, ...body, date: id }) };
     case "exercise-notes":
       return del ? db : { ...db, exercise_notes: upsert(db.exercise_notes, "exercise_id", { exercise_id: id, note: (body.note || "").trim(), updated_at: at }) };
     case "grocery-spend": {

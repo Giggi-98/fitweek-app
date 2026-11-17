@@ -300,6 +300,201 @@ JAVA
 sed -i "s#^dependencies {#dependencies {\\n    implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'#" android/app/build.gradle
 grep -q 'play-services-code-scanner' android/app/build.gradle || { echo "build.gradle non riconosciuto: lo scanner dei codici a barre non è stato aggiunto" >&2; exit 1; }
 
+# Plugin nativo HealthConnect (D-040): legge da Health Connect sonno, passi, battito a riposo e battito, solo
+# con l'app aperta e solo i tipi consentiti dall'utente. Non scrive nulla su Health Connect. Il JS riassume e
+# invia al server (static/js/watch.js). Libreria 1.1.0-alpha08: l'ultima che compila con compileSdk 34 e
+# AGP 8.2.1 di Capacitor 6 (dalla 1.1.0-alpha09 serve compileSdk 35, dalla 1.1.0 compileSdk 36 e AGP 8.9.1).
+# È in Kotlin perché la libreria espone solo funzioni sospese: si aggiunge il plugin Kotlin a Gradle.
+cat > "$PKG_DIR/HealthConnectPlugin.kt" <<'KOTLIN'
+package __APP_ID__
+
+import android.content.Intent
+import androidx.activity.result.ActivityResult
+import androidx.health.connect.client.HealthConnectClient
+import androidx.health.connect.client.PermissionController
+import androidx.health.connect.client.permission.HealthPermission
+import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.Record
+import androidx.health.connect.client.records.RestingHeartRateRecord
+import androidx.health.connect.client.records.SleepSessionRecord
+import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
+import androidx.health.connect.client.request.ReadRecordsRequest
+import androidx.health.connect.client.time.TimeRangeFilter
+import com.getcapacitor.JSArray
+import com.getcapacitor.JSObject
+import com.getcapacitor.Plugin
+import com.getcapacitor.PluginCall
+import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.ActivityCallback
+import com.getcapacitor.annotation.CapacitorPlugin
+import java.time.Instant
+import java.time.LocalDateTime
+import java.time.OffsetDateTime
+import java.time.Period
+import java.time.ZoneId
+import kotlin.reflect.KClass
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
+
+@CapacitorPlugin(name = "HealthConnect")
+class HealthConnectPlugin : Plugin() {
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+
+    // Nome usato dal JS → permesso di lettura di Health Connect
+    private val kinds: Map<String, String> = mapOf(
+        "sleep" to HealthPermission.getReadPermission(SleepSessionRecord::class),
+        "steps" to HealthPermission.getReadPermission(StepsRecord::class),
+        "heart_rate" to HealthPermission.getReadPermission(HeartRateRecord::class),
+        "resting_heart_rate" to HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+    )
+
+    private fun client() = HealthConnectClient.getOrCreate(context)
+    private fun namesOf(granted: Set<String>) = JSArray(kinds.filterValues { it in granted }.keys.toList())
+    private fun instant(call: PluginCall, key: String): Instant =
+        OffsetDateTime.parse(call.getString(key) ?: throw IllegalArgumentException("manca $key")).toInstant()
+
+    /** Esegue `block` e risponde; ogni errore diventa un rifiuto leggibile, mai un crash dell'app. */
+    private fun run(call: PluginCall, block: suspend () -> JSObject) {
+        scope.launch {
+            try {
+                call.resolve(block())
+            } catch (e: Exception) {
+                call.reject(e.message ?: "Health Connect non risponde")
+            }
+        }
+    }
+
+    @PluginMethod
+    fun availability(call: PluginCall) {
+        val status = when (HealthConnectClient.getSdkStatus(context)) {
+            HealthConnectClient.SDK_AVAILABLE -> "available"
+            HealthConnectClient.SDK_UNAVAILABLE_PROVIDER_UPDATE_REQUIRED -> "update_required"
+            else -> "unavailable"
+        }
+        call.resolve(JSObject().put("status", status))
+    }
+
+    @PluginMethod
+    fun grantedPermissions(call: PluginCall) = run(call) {
+        JSObject().put("granted", namesOf(client().permissionController.getGrantedPermissions()))
+    }
+
+    @PluginMethod
+    fun requestAccess(call: PluginCall) {
+        val intent = PermissionController.createRequestPermissionResultContract().createIntent(context, kinds.values.toSet())
+        startActivityForResult(call, intent, "permissionsResult")
+    }
+
+    @ActivityCallback
+    fun permissionsResult(call: PluginCall, result: ActivityResult) {
+        // La finestra di Android può essere chiusa senza scegliere: conta ciò che risulta concesso adesso.
+        grantedPermissions(call)
+    }
+
+    @PluginMethod
+    fun openSettings(call: PluginCall) {
+        val intent = Intent(HealthConnectClient.ACTION_HEALTH_CONNECT_SETTINGS).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+        call.resolve()
+    }
+
+    private suspend fun <T : Record> readAll(type: KClass<T>, from: Instant, to: Instant): List<T> {
+        val out = mutableListOf<T>()
+        var page: String? = null
+        do {
+            val response = client().readRecords(ReadRecordsRequest(type, TimeRangeFilter.between(from, to), pageToken = page))
+            out += response.records
+            page = response.pageToken
+        } while (!page.isNullOrEmpty())
+        return out
+    }
+
+    private fun stageName(type: Int) = when (type) {
+        SleepSessionRecord.STAGE_TYPE_DEEP -> "deep"
+        SleepSessionRecord.STAGE_TYPE_LIGHT -> "light"
+        SleepSessionRecord.STAGE_TYPE_REM -> "rem"
+        SleepSessionRecord.STAGE_TYPE_AWAKE, SleepSessionRecord.STAGE_TYPE_AWAKE_IN_BED -> "awake"
+        else -> "other"
+    }
+
+    @PluginMethod
+    fun readSleep(call: PluginCall) = run(call) {
+        val sessions = JSArray()
+        for (s in readAll(SleepSessionRecord::class, instant(call, "from"), instant(call, "to"))) {
+            val stages = JSArray()
+            for (st in s.stages) {
+                stages.put(JSObject().put("start", st.startTime.toString()).put("end", st.endTime.toString()).put("stage", stageName(st.stage)))
+            }
+            sessions.put(JSObject().put("start", s.startTime.toString()).put("end", s.endTime.toString()).put("stages", stages))
+        }
+        JSObject().put("sessions", sessions)
+    }
+
+    /** Passi per giorno locale, sommati da Health Connect senza contare due volte le stesse fonti. */
+    @PluginMethod
+    fun readSteps(call: PluginCall) = run(call) {
+        val zone = ZoneId.systemDefault()
+        val from = LocalDateTime.ofInstant(instant(call, "from"), zone).toLocalDate().atStartOfDay()
+        val to = LocalDateTime.ofInstant(instant(call, "to"), zone)
+        val groups = client().aggregateGroupByPeriod(
+            AggregateGroupByPeriodRequest(setOf(StepsRecord.COUNT_TOTAL), TimeRangeFilter.between(from, to), Period.ofDays(1)),
+        )
+        val days = JSArray()
+        for (g in groups) {
+            val steps = g.result[StepsRecord.COUNT_TOTAL] ?: continue
+            days.put(JSObject().put("date", g.startTime.toLocalDate().toString()).put("steps", steps))
+        }
+        JSObject().put("days", days)
+    }
+
+    @PluginMethod
+    fun readRestingHeartRate(call: PluginCall) = run(call) {
+        val records = JSArray()
+        for (r in readAll(RestingHeartRateRecord::class, instant(call, "from"), instant(call, "to"))) {
+            records.put(JSObject().put("time", r.time.toString()).put("bpm", r.beatsPerMinute))
+        }
+        JSObject().put("records", records)
+    }
+
+    @PluginMethod
+    fun readHeartRate(call: PluginCall) = run(call) {
+        val samples = JSArray()
+        for (r in readAll(HeartRateRecord::class, instant(call, "from"), instant(call, "to"))) {
+            for (s in r.samples) samples.put(JSObject().put("time", s.time.toString()).put("bpm", s.beatsPerMinute))
+        }
+        JSObject().put("samples", samples)
+    }
+
+    override fun handleOnDestroy() {
+        scope.cancel()
+    }
+}
+KOTLIN
+sed -i "s/__APP_ID__/${APP_ID}/" "$PKG_DIR/HealthConnectPlugin.kt"
+
+# Gradle: plugin Kotlin (stessa JVM 17 di Capacitor), libreria Health Connect, minSdk 26 richiesto dalla libreria.
+sed -i "s#\(classpath 'com.android.tools.build:gradle:[^']*'\)#\1\n        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25'#" android/build.gradle
+grep -q 'kotlin-gradle-plugin' android/build.gradle || { echo "build.gradle principale non riconosciuto: plugin Kotlin non aggiunto" >&2; exit 1; }
+sed -i "s#^apply plugin: 'com.android.application'#apply plugin: 'com.android.application'\napply plugin: 'kotlin-android'#" android/app/build.gradle
+sed -i "s#^android {#android {\n    kotlinOptions { jvmTarget = '17' }#" android/app/build.gradle
+sed -i "s#^dependencies {#dependencies {\n    implementation 'androidx.health.connect:connect-client:1.1.0-alpha08'\n    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'#" android/app/build.gradle
+grep -q "apply plugin: 'kotlin-android'" android/app/build.gradle && grep -q 'connect-client' android/app/build.gradle && grep -q "jvmTarget = '17'" android/app/build.gradle \
+  || { echo "build.gradle dell'app non riconosciuto: Health Connect non aggiunto" >&2; exit 1; }
+sed -i 's/minSdkVersion = [0-9]*/minSdkVersion = 26/' android/variables.gradle
+grep -q 'minSdkVersion = 26' android/variables.gradle || { echo "variables.gradle non riconosciuto: minSdk non portato a 26" >&2; exit 1; }
+
+# Manifest: permessi di sola lettura, visibilità dell'app Health Connect (Android 13 e precedenti) e la schermata
+# che spiega l'uso dei dati, senza la quale Android non mostra la richiesta dei permessi: apre l'app stessa.
+sed -i 's#</manifest>#    <uses-permission android:name="android.permission.health.READ_SLEEP" />\n    <uses-permission android:name="android.permission.health.READ_STEPS" />\n    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />\n    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />\n    <queries><package android:name="com.google.android.apps.healthdata" /></queries>\n</manifest>#' "$MANIFEST"
+sed -i 's#</application>#    <activity-alias android:name="ViewPermissionUsageActivity" android:exported="true" android:targetActivity=".MainActivity" android:permission="android.permission.START_VIEW_PERMISSION_USAGE">\n            <intent-filter>\n                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />\n                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />\n            </intent-filter>\n        </activity-alias>\n    </application>#' "$MANIFEST"
+sed -i '0,/<intent-filter>/s#<intent-filter>#<intent-filter>\n                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />\n            </intent-filter>\n            <intent-filter>#' "$MANIFEST"
+grep -q 'READ_SLEEP' "$MANIFEST" && grep -q 'HEALTH_PERMISSIONS' "$MANIFEST" && grep -q 'ACTION_SHOW_PERMISSIONS_RATIONALE' "$MANIFEST" \
+  || { echo "Manifest non riconosciuto: permessi di Health Connect non inseriti" >&2; exit 1; }
+
 cat > "$PKG_DIR/MainActivity.java" <<JAVA
 package ${APP_ID};
 
@@ -312,6 +507,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(SecureTokenPlugin.class);
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(BarcodeScanPlugin.class);
+        registerPlugin(HealthConnectPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
