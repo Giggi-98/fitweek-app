@@ -7,7 +7,7 @@ impediscono tipi errati (es. HTML al posto di un numero) e payload anomali.
 from datetime import date as _date
 from typing import Annotated, Any, Literal, Optional
 
-from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints
+from pydantic import AfterValidator, BaseModel, ConfigDict, Field, StringConstraints, model_validator
 
 
 def _real_date(v: str) -> str:
@@ -178,6 +178,19 @@ class SessionPatch(Strict):
     notes: Optional[Text(5000)] = None
 
 
+class WorkoutHeartPut(Strict):
+    """Battito durante una seduta, riassunto sul telefono dai campioni dell'orologio (Health Connect)."""
+    avg_bpm: int = Field(ge=30, le=230)
+    max_bpm: int = Field(ge=30, le=240)
+    samples: int = Field(ge=1, le=100_000)
+
+    @model_validator(mode="after")
+    def _avg_not_above_max(self) -> "WorkoutHeartPut":
+        if self.avg_bpm > self.max_bpm:
+            raise ValueError("il battito medio supera il massimo")
+        return self
+
+
 SetKind = Literal["normal", "warmup", "drop", "failure"]
 
 
@@ -193,18 +206,19 @@ class ProgramWeekPut(Strict):
     week: int = Field(ge=1, le=52)
 
 
-# Domini facoltativi di un backup JSON, nell'ordine in cui sono stati aggiunti al formato (v3, poi v4).
+# Domini facoltativi di un backup JSON, nell'ordine in cui sono stati aggiunti al formato (v3, v4, v5).
 # Stato a blob e sedute ci sono sempre. Vedi `BackupRestore` e il contratto del ripristino in docs/API.md.
 BACKUP_OPTIONAL_DOMAINS = ("meal_templates", "meal_logs", "reminders", "foods",
-                           "sleep_logs", "exercise_notes", "grocery_spend")
+                           "sleep_logs", "exercise_notes", "grocery_spend", "health_days")
 
 
 class BackupRestore(BaseModel):
-    """Backup v1 (solo stato), v2 (stato + sedute), v3 e v4 (più i domini facoltativi). Conta la presenza del
+    """Backup v1 (solo stato), v2 (stato + sedute), v3, v4 e v5 (più i domini facoltativi). Conta la presenza del
     campo, non l'etichetta del formato: un dominio assente (o `null`) NON viene toccato dal ripristino, uno
     presente, anche vuoto, viene sostituito. Le sedute sono validate qui sotto."""
     model_config = ConfigDict(extra="ignore")
-    format: Literal["fitweek-backup-v1", "fitweek-backup-v2", "fitweek-backup-v3", "fitweek-backup-v4"]
+    format: Literal["fitweek-backup-v1", "fitweek-backup-v2", "fitweek-backup-v3", "fitweek-backup-v4",
+                    "fitweek-backup-v5"]
     data: AppState
     workout_sessions: list["BackupSession"] = Field(default_factory=list, max_length=10_000)
     # v3: assenti nei backup precedenti → None = non toccare le tabelle esistenti
@@ -216,6 +230,8 @@ class BackupRestore(BaseModel):
     sleep_logs: Optional[list["BackupSleep"]] = Field(default=None, max_length=20_000)
     exercise_notes: Optional[list["BackupExerciseNote"]] = Field(default=None, max_length=1000)
     grocery_spend: Optional[list["BackupGrocerySpend"]] = Field(default=None, max_length=2000)
+    # v5
+    health_days: Optional[list["BackupHealthDay"]] = Field(default=None, max_length=20_000)
 
 
 class BackupSet(Strict):
@@ -244,6 +260,7 @@ class BackupSession(Strict):
     created_at: Text(40)
     updated_at: Text(40)
     sets: list[BackupSet] = Field(default_factory=list, max_length=500)
+    heart: Optional[WorkoutHeartPut] = None  # v5
 
 
 
@@ -320,11 +337,25 @@ class ReminderAck(Strict):
     snooze_minutes: Optional[int] = Field(default=None, ge=1, le=240)
 
 
+StageMinutes = Optional[Annotated[int, Field(ge=0, le=1440)]]
+
+
 class SleepPut(Strict):
     bed_time: HHMM
     wake_time: HHMM
     source: Literal["manual", "health_connect"] = "manual"
     note: Text(300) = ""
+    # minuti per fase, solo dall'orologio (Health Connect); null = fase non registrata
+    deep_min: StageMinutes = None
+    light_min: StageMinutes = None
+    rem_min: StageMinutes = None
+    awake_min: StageMinutes = None
+
+
+class HealthDayPut(Strict):
+    """Valori del giorno letti dall'orologio; null = l'orologio non li ha registrati."""
+    steps: Optional[int] = Field(default=None, ge=0, le=200_000)
+    resting_hr: Optional[int] = Field(default=None, ge=25, le=220)
 
 
 class ExerciseNotePut(Strict):
@@ -377,6 +408,11 @@ class BackupExerciseNote(_Stamps, ExerciseNotePut):
 class BackupGrocerySpend(_Stamps, GrocerySpendPut):
     model_config = ConfigDict(extra="ignore")
     week_start: IsoDate
+
+
+class BackupHealthDay(_Stamps, HealthDayPut):
+    model_config = ConfigDict(extra="ignore")
+    date: IsoDate
 
 
 BackupRestore.model_rebuild()

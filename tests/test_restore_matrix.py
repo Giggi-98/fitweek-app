@@ -10,8 +10,11 @@ WEEK = "2026-11-09"
 ALWAYS = ["state", "workouts"]
 V3 = ["meal_templates", "meal_logs", "reminders", "foods"]
 V4 = ["sleep_logs", "exercise_notes", "grocery_spend"]
+V5 = ["health_days"]
 # formato → campi presenti nel file oltre a stato e sedute
-FORMATS = {"fitweek-backup-v1": [], "fitweek-backup-v2": [], "fitweek-backup-v3": V3, "fitweek-backup-v4": V3 + V4}
+FORMATS = {"fitweek-backup-v1": [], "fitweek-backup-v2": [], "fitweek-backup-v3": V3, "fitweek-backup-v4": V3 + V4,
+           "fitweek-backup-v5": V3 + V4 + V5}
+STEPS = {"prima": 1111, "dopo": 4444}
 
 
 def write_all(c, tag: str) -> None:
@@ -29,6 +32,7 @@ def write_all(c, tag: str) -> None:
     assert c.put(f"/api/v1/sleep/{DAY}", json={"bed_time": "00:10", "wake_time": "07:30", "note": tag}).status_code == 200
     assert c.put("/api/v1/exercise-notes/a1", json={"note": tag}).status_code == 200
     assert c.put(f"/api/v1/grocery-spend/{WEEK}", json={"amount": 40, "note": tag}).status_code == 200
+    assert c.put(f"/api/v1/health-days/{DAY}", json={"steps": STEPS[tag]}).status_code == 200
 
 
 def tags(c) -> dict[str, bool]:
@@ -44,6 +48,7 @@ def tags(c) -> dict[str, bool]:
         "sleep_logs": has(c.get(f"/api/v1/sleep?from={DAY}&to={DAY}").json()["items"], "note"),
         "exercise_notes": has(c.get("/api/v1/exercise-notes").json()["items"], "note"),
         "grocery_spend": has(c.get("/api/v1/grocery-spend").json()["items"], "note"),
+        "health_days": c.get(f"/api/v1/health-days?from={DAY}&to={DAY}").json()["items"][0]["steps"] == STEPS["dopo"],
     }
 
 
@@ -65,7 +70,7 @@ def test_restore_replaces_only_the_domains_in_the_file_and_says_so(auth_client, 
     assert r.status_code == 200
     out = r.json()
     assert out["replaced"] == ALWAYS + present
-    assert out["kept"] == [d for d in V3 + V4 if d not in present]
+    assert out["kept"] == [d for d in V3 + V4 + V5 if d not in present]
     after = tags(auth_client)
     assert {d for d, still_new in after.items() if not still_new} == set(out["replaced"]), after
     assert {d for d, still_new in after.items() if still_new} == set(out["kept"]), after

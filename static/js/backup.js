@@ -3,7 +3,7 @@
 // (stesso elenco e stesso ordine di BACKUP_OPTIONAL_DOMAINS in app/schemas.py). I backup più vecchi non li
 // hanno tutti: quei dati restano come sono ora, e l'utente lo deve leggere PRIMA di confermare.
 const ALWAYS = ["state", "workouts"];
-const OPTIONAL = ["meal_templates", "meal_logs", "reminders", "foods", "sleep_logs", "exercise_notes", "grocery_spend"];
+const OPTIONAL = ["meal_templates", "meal_logs", "reminders", "foods", "sleep_logs", "exercise_notes", "grocery_spend", "health_days"];
 export const DOMAIN_LABELS = {
   state: "profilo, scheda, piano pasti, lista della spesa, dispensa e pesate",
   workouts: "sedute e serie di allenamento",
@@ -14,9 +14,10 @@ export const DOMAIN_LABELS = {
   sleep_logs: "sonno",
   exercise_notes: "note degli esercizi",
   grocery_spend: "spese settimanali",
+  health_days: "passi e battito a riposo dall'orologio",
 };
 
-export const isBackup = (obj) => /^fitweek-backup-v[1234]$/.test(obj?.format || "");
+export const isBackup = (obj) => /^fitweek-backup-v[1-5]$/.test(obj?.format || "");
 
 /** @returns {{replaced: string[], kept: string[]}} chiavi dei domini, come nella risposta di /api/v1/restore */
 export function restorePlan(obj) {

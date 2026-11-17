@@ -75,7 +75,7 @@ def test_backup_v4_roundtrip_keeps_new_tables(auth_client):
     auth_client.put("/api/v1/exercise-notes/a1", json={"note": "Sedile 4"})
     auth_client.put("/api/v1/grocery-spend/2026-11-09", json={"amount": 41})
     backup = auth_client.get("/api/backup").json()
-    assert backup["format"] == "fitweek-backup-v4" and len(backup["sleep_logs"]) == 1
+    assert backup["format"] == "fitweek-backup-v5" and len(backup["sleep_logs"]) == 1
     auth_client.delete("/api/v1/sleep/2026-11-10")
     auth_client.put("/api/v1/exercise-notes/a1", json={"note": "cambiata"})
     assert auth_client.post("/api/v1/restore", json=backup).status_code == 200

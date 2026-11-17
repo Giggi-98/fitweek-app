@@ -206,9 +206,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             extra["sleep_logs"] = [dict(r) for r in c.execute("SELECT * FROM sleep_logs WHERE deleted_at IS NULL")]
             extra["exercise_notes"] = [dict(r) for r in c.execute("SELECT * FROM exercise_notes")]
             extra["grocery_spend"] = [dict(r) for r in c.execute("SELECT * FROM grocery_spend")]
+            extra["health_days"] = [dict(r) for r in c.execute("SELECT * FROM health_days")]
         stamp = time.strftime("%Y%m%d")
         return JSONResponse(
-            {"format": "fitweek-backup-v4", "version": version, "data": json.loads(blob),
+            {"format": "fitweek-backup-v5", "version": version, "data": json.loads(blob),
              "workout_sessions": sessions_, **extra},
             headers={"Content-Disposition": f'attachment; filename="fitweek-backup-{stamp}.json"'},
         )
@@ -242,6 +243,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     c.execute("DELETE FROM workout_sessions")
                     for s in sessions_in:
                         sets = s.pop("sets")
+                        heart = s.pop("heart", None)
                         cols = ", ".join(s)
                         c.execute(f"INSERT OR REPLACE INTO workout_sessions ({cols}) VALUES ({','.join('?' * len(s))})",
                                   tuple(s.values()))
@@ -252,6 +254,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                 (s["id"], x["exercise_id"], x["set_index"], x["kg"], x["reps"], x["rir"],
                                  int(x["completed"]), x.get("kind", "normal"), x["logged_at"]),
                             )
+                        if heart:
+                            c.execute("INSERT INTO workout_heart VALUES (?,?,?,?,?)",
+                                      (s["id"], heart["avg_bpm"], heart["max_bpm"], heart["samples"], s["updated_at"]))
                     now = now_iso()
                     if body.meal_templates is not None:
                         c.execute("DELETE FROM meal_templates")
@@ -279,8 +284,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if body.sleep_logs is not None:
                         c.execute("DELETE FROM sleep_logs")
                         for s in body.sleep_logs:
-                            c.execute("INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, updated_at)"
-                                      " VALUES (?,?,?,?,?,?)", (s.date, s.bed_time, s.wake_time, s.source, s.note, now))
+                            c.execute("INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, deep_min,"
+                                      " light_min, rem_min, awake_min, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?)",
+                                      (s.date, s.bed_time, s.wake_time, s.source, s.note, s.deep_min, s.light_min,
+                                       s.rem_min, s.awake_min, now))
                     if body.exercise_notes is not None:
                         c.execute("DELETE FROM exercise_notes")
                         for n in body.exercise_notes:
@@ -289,6 +296,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                         c.execute("DELETE FROM grocery_spend")
                         for g in body.grocery_spend:
                             c.execute("INSERT INTO grocery_spend VALUES (?,?,?,?)", (g.week_start, g.amount, g.note, now))
+                    if body.health_days is not None:
+                        c.execute("DELETE FROM health_days")
+                        for h in body.health_days:
+                            c.execute("INSERT INTO health_days VALUES (?,?,?,?)", (h.date, h.steps, h.resting_hr, now))
                     if body.reminders is not None:
                         c.execute("DELETE FROM reminder_acks")
                         c.execute("DELETE FROM reminders")

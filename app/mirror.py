@@ -13,6 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from .config import Settings
 from .daily import parse_items
 from .db import connect, snapshot
+from .tracking import SLEEP_COLS
 from .workouts import now_iso, today
 
 
@@ -26,8 +27,9 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
 
     @r.get("/sync/snapshot")
     def get_snapshot(days: int = Query(default=60, ge=7, le=400)):
-        """Righe non eliminate dei domini giornalieri. Diario, sonno e conferme dei promemoria sono limitati
-        agli ultimi `days` giorni; cataloghi e promemoria sono completi. Lo stato a blob e le sedute hanno
+        """Righe non eliminate dei domini giornalieri. Diario, sonno, dati dell'orologio e conferme dei promemoria
+        sono limitati agli ultimi `days` giorni; cataloghi e promemoria sono completi. `sleep_owned` elenca le
+        notti scritte o eliminate dall'utente, che l'importazione dall'orologio non tocca (D-040). Lo stato a blob e le sedute hanno
         già le loro API (`/api/state`, `/api/v1/workout-sessions`)."""
         since = (today() - timedelta(days=days - 1)).isoformat()
         with connect(settings.db_path) as c, snapshot(c):
@@ -43,8 +45,13 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                 "foods": _rows(c, "SELECT * FROM foods WHERE deleted_at IS NULL ORDER BY category, use_count DESC, name"),
                 "reminders": reminders,
                 "reminder_acks": _rows(c, "SELECT * FROM reminder_acks WHERE date >= ?", (since,)),
-                "sleep_logs": _rows(c, "SELECT date, bed_time, wake_time, source, note FROM sleep_logs"
+                "sleep_logs": _rows(c, f"SELECT {SLEEP_COLS} FROM sleep_logs"
                                        " WHERE date >= ? AND deleted_at IS NULL ORDER BY date", (since,)),
+                "sleep_owned": [r[0] for r in c.execute(
+                    "SELECT date FROM sleep_logs WHERE date >= ? AND (source = 'manual' OR deleted_at IS NOT NULL)"
+                    " ORDER BY date", (since,))],
+                "health_days": _rows(c, "SELECT date, steps, resting_hr FROM health_days WHERE date >= ? ORDER BY date",
+                                     (since,)),
                 "exercise_notes": _rows(c, "SELECT exercise_id, note, updated_at FROM exercise_notes WHERE note <> ''"),
                 "grocery_spend": _rows(c, "SELECT week_start, amount, note FROM grocery_spend ORDER BY week_start DESC"),
             }

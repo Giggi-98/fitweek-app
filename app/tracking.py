@@ -1,7 +1,10 @@
-"""API v1 per i dati "leggeri" della routine: sonno, note per esercizio, spesa reale settimanale.
+"""API v1 per i dati "leggeri" della routine: sonno, note per esercizio, spesa reale settimanale, passi e
+battito a riposo letti dall'orologio.
 
 Sono tutti inserimenti facoltativi e modificabili; lo storico non viene mai sovrascritto in blocco.
 Il sonno è indicizzato sul giorno del RISVEGLIO (la notte tra lunedì e martedì è di martedì).
+Le notti importate dall'orologio (`source = health_connect`) non prendono mai il posto di una notte scritta o
+eliminata dall'utente (D-040).
 """
 import sqlite3
 from datetime import date, timedelta
@@ -12,7 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from . import domain
 from .config import Settings
 from .db import connect, transaction
-from .schemas import ExerciseNotePut, GrocerySpendPut, IsoDate, SleepPut
+from .schemas import ExerciseNotePut, GrocerySpendPut, HealthDayPut, IsoDate, SleepPut
 from .security import check_origin
 from .workouts import STALE, edit_time, is_stale, today
 
@@ -22,8 +25,12 @@ def _rows(c: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
     return [dict(r) for r in c.execute(sql, params)]
 
 
+SLEEP_COLS = "date, bed_time, wake_time, source, note, deep_min, light_min, rem_min, awake_min"
+KEPT = {"ok": True, "kept": True}  # importazione non applicata: quella notte l'ha decisa l'utente
+
+
 def sleep_rows(c: sqlite3.Connection, first: str, last: str) -> list[dict]:
-    rows = _rows(c, "SELECT date, bed_time, wake_time, source, note FROM sleep_logs"
+    rows = _rows(c, f"SELECT {SLEEP_COLS} FROM sleep_logs"
                     " WHERE date BETWEEN ? AND ? AND deleted_at IS NULL ORDER BY date", (first, last))
     for r in rows:
         r["duration_min"] = domain.sleep_minutes(r["bed_time"], r["wake_time"])
@@ -47,6 +54,13 @@ def _saved_at(c: sqlite3.Connection, table: str, key: str, value: str) -> str | 
     return row[0] if row else None
 
 
+def user_owns_night(c: sqlite3.Connection, day: str) -> bool:
+    """Vero se la notte è stata scritta a mano o eliminata: un'importazione dall'orologio non la tocca.
+    Stessa regola sul telefono: `sleep_owned` in static/js/local.js (confronto in tests/e2e/health.e2e.js)."""
+    row = c.execute("SELECT source, deleted_at FROM sleep_logs WHERE date=?", (day,)).fetchone()
+    return bool(row and (row[0] == "manual" or row[1]))
+
+
 def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     r = APIRouter(prefix="/api/v1", dependencies=[Depends(require_session)])
     writes = [Depends(check_origin)]
@@ -65,13 +79,19 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     def put_sleep(day: IsoDate, body: SleepPut, edited: str = Depends(edit_time)):
         now = edited
         with connect(settings.db_path) as c, transaction(c):
+            if body.source == "health_connect" and user_owns_night(c, day):
+                return KEPT
             if is_stale(_saved_at(c, "sleep_logs", "date", day), edited):
                 return STALE
             c.execute(
-                "INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
+                "INSERT INTO sleep_logs (date, bed_time, wake_time, source, note, deep_min, light_min, rem_min,"
+                " awake_min, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(date) DO UPDATE SET bed_time=excluded.bed_time, wake_time=excluded.wake_time,"
-                " source=excluded.source, note=excluded.note, updated_at=excluded.updated_at, deleted_at=NULL",
-                (day, body.bed_time, body.wake_time, body.source, body.note, now),
+                " source=excluded.source, note=excluded.note, deep_min=excluded.deep_min,"
+                " light_min=excluded.light_min, rem_min=excluded.rem_min, awake_min=excluded.awake_min,"
+                " updated_at=excluded.updated_at, deleted_at=NULL",
+                (day, body.bed_time, body.wake_time, body.source, body.note, body.deep_min, body.light_min,
+                 body.rem_min, body.awake_min, now),
             )
         return {"ok": True, "duration_min": domain.sleep_minutes(body.bed_time, body.wake_time)}
 
@@ -129,6 +149,29 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
     def delete_grocery_spend(week_start: IsoDate):
         with connect(settings.db_path) as c, transaction(c):
             c.execute("DELETE FROM grocery_spend WHERE week_start=?", (week_start,))
+        return {"ok": True}
+
+    # ---- passi e battito a riposo per giorno (dall'orologio, via Health Connect) ------------------
+    @r.get("/health-days")
+    def list_health_days(date_from: IsoDate | None = Query(default=None, alias="from"),
+                         date_to: IsoDate | None = Query(default=None, alias="to")):
+        last = date_to or today().isoformat()
+        first = date_from or (date.fromisoformat(last) - timedelta(days=59)).isoformat()
+        with connect(settings.db_path) as c:
+            return {"items": _rows(c, "SELECT date, steps, resting_hr FROM health_days WHERE date BETWEEN ? AND ?"
+                                      " ORDER BY date", (first, last))}
+
+    @r.put("/health-days/{day}", dependencies=writes)
+    def put_health_day(day: IsoDate, body: HealthDayPut, edited: str = Depends(edit_time)):
+        with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "health_days", "date", day), edited):
+                return STALE
+            c.execute(
+                "INSERT INTO health_days (date, steps, resting_hr, updated_at) VALUES (?, ?, ?, ?)"
+                " ON CONFLICT(date) DO UPDATE SET steps=excluded.steps, resting_hr=excluded.resting_hr,"
+                " updated_at=excluded.updated_at",
+                (day, body.steps, body.resting_hr, edited),
+            )
         return {"ok": True}
 
     return r

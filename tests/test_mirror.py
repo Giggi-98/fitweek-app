@@ -26,7 +26,8 @@ def test_snapshot_has_every_daily_domain(auth_client):
     assert snap["reminders"] == auth_client.get("/api/v1/reminders").json()["items"]
     assert snap["foods"] == auth_client.get("/api/v1/foods").json()["items"]
     assert snap["meal_templates"] == auth_client.get("/api/v1/meal-templates").json()["items"]
-    assert snap["sleep_logs"] == [{"date": MON, "bed_time": "00:10", "wake_time": "07:30", "source": "manual", "note": ""}]
+    assert snap["sleep_logs"] == [{"date": MON, "bed_time": "00:10", "wake_time": "07:30", "source": "manual", "note": "",
+                                  "deep_min": None, "light_min": None, "rem_min": None, "awake_min": None}]
     assert snap["exercise_notes"][0]["exercise_id"] == "a1"
     assert snap["grocery_spend"] == [{"week_start": MON, "amount": 41.5, "note": ""}]
     assert [(a["reminder_id"], a["status"]) for a in snap["reminder_acks"]] == [(rid, "dismissed")]

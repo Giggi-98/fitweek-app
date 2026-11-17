@@ -432,6 +432,33 @@ def _m010_set_kind(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE set_logs ADD COLUMN kind TEXT NOT NULL DEFAULT 'normal'")
 
 
+def _m011_watch_data(c: sqlite3.Connection) -> None:
+    """Dati dall'orologio letti da Health Connect (D-040): minuti per fase del sonno, passi e battito a riposo
+    per giorno, battito medio e massimo per seduta. Colonne nullable e tabelle nuove: nulla di esistente cambia.
+    Il battito sparisce con la seduta (ON DELETE CASCADE), come i segni di eliminazione delle serie."""
+    cols = {row[1] for row in c.execute("PRAGMA table_info(sleep_logs)")}
+    for col in ("deep_min", "light_min", "rem_min", "awake_min"):
+        if col not in cols:
+            c.execute(f"ALTER TABLE sleep_logs ADD COLUMN {col} INTEGER")
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS health_days (
+            date TEXT PRIMARY KEY,
+            steps INTEGER CHECK(steps IS NULL OR steps >= 0),
+            resting_hr INTEGER,
+            updated_at TEXT NOT NULL
+        )"""
+    )
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS workout_heart (
+            session_id TEXT PRIMARY KEY REFERENCES workout_sessions(id) ON DELETE CASCADE,
+            avg_bpm INTEGER NOT NULL,
+            max_bpm INTEGER NOT NULL,
+            samples INTEGER NOT NULL,
+            updated_at TEXT NOT NULL
+        )"""
+    )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -443,6 +470,7 @@ MIGRATIONS: list[Migration] = [
     (8, "sessions_and_quantities", _m008_sessions_and_quantities),
     (9, "set_tombstones", _m009_set_tombstones),
     (10, "set_kind", _m010_set_kind),
+    (11, "watch_data", _m011_watch_data),
 ]
 
 

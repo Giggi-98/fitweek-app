@@ -7,6 +7,7 @@ import { DOMAIN_LABELS, isBackup, restoreConfirmText, restoreDoneText, restorePl
 
 const V3 = ["meal_templates", "meal_logs", "reminders", "foods"];
 const V4 = ["sleep_logs", "exercise_notes", "grocery_spend"];
+const V5 = ["health_days"];
 const file = (format, fields) => ({ format, data: {}, workout_sessions: [], ...Object.fromEntries(fields.map((f) => [f, []])) });
 
 test("FW-ARCH-001: stesso elenco di domini del server, nello stesso ordine", () => {
@@ -18,7 +19,7 @@ test("FW-ARCH-001: stesso elenco di domini del server, nello stesso ordine", () 
 
 test("FW-ARCH-001: backup v1 e v2 sostituiscono solo stato e sedute, il resto resta", () => {
   for (const format of ["fitweek-backup-v1", "fitweek-backup-v2"]) {
-    assert.deepEqual(restorePlan(file(format, [])), { replaced: ["state", "workouts"], kept: [...V3, ...V4] });
+    assert.deepEqual(restorePlan(file(format, [])), { replaced: ["state", "workouts"], kept: [...V3, ...V4, ...V5] });
     const text = restoreConfirmText(file(format, []));
     assert.match(text, /RESTANO come sono ora/);
     assert.match(text, /diario dei pasti/);
@@ -26,16 +27,18 @@ test("FW-ARCH-001: backup v1 e v2 sostituiscono solo stato e sedute, il resto re
   }
 });
 
-test("FW-ARCH-001: backup v3 tiene sonno, note e spese; v4 sostituisce tutto e non parla di dati che restano", () => {
-  assert.deepEqual(restorePlan(file("fitweek-backup-v3", V3)).kept, V4);
-  const v4 = file("fitweek-backup-v4", [...V3, ...V4]);
-  assert.deepEqual(restorePlan(v4).kept, []);
-  assert.doesNotMatch(restoreConfirmText(v4), /RESTANO/);
-  assert.match(restoreConfirmText(v4), /salva una copia di tutti i dati attuali/);
+test("FW-ARCH-001: backup v3 tiene sonno, note e spese; v4 tiene i dati dell'orologio; v5 sostituisce tutto", () => {
+  assert.deepEqual(restorePlan(file("fitweek-backup-v3", V3)).kept, [...V4, ...V5]);
+  assert.deepEqual(restorePlan(file("fitweek-backup-v4", [...V3, ...V4])).kept, V5);
+  const v5 = file("fitweek-backup-v5", [...V3, ...V4, ...V5]);
+  assert.deepEqual(restorePlan(v5).kept, []);
+  assert.doesNotMatch(restoreConfirmText(v5), /RESTANO/);
+  assert.match(restoreConfirmText(v5), /salva una copia di tutti i dati attuali/);
+  assert.equal(isBackup(v5), true);
 });
 
 test("FW-ARCH-001: conta la presenza del campo: assente o null resta, vuoto viene sostituito", () => {
-  const odd = { ...file("fitweek-backup-v4", [...V3, "grocery_spend"]), exercise_notes: null };
+  const odd = { ...file("fitweek-backup-v5", [...V3, "grocery_spend", ...V5]), exercise_notes: null };
   assert.deepEqual(restorePlan(odd).kept, ["sleep_logs", "exercise_notes"]);
   assert.ok(restorePlan(odd).replaced.includes("grocery_spend"));
 });

@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from . import domain
 from .config import Settings
 from .db import connect, transaction
-from .schemas import ProgramWeekPut, SessionCreate, SessionPatch, SetLogPut
+from .schemas import ProgramWeekPut, SessionCreate, SessionPatch, SetLogPut, WorkoutHeartPut
 from .security import check_origin
 from .seed import ROUTINES
 
@@ -59,9 +59,10 @@ def today() -> date:
     return datetime.now(TZ).date()
 
 
-def _session_dict(row: sqlite3.Row, sets: list[dict]) -> dict[str, Any]:
+def _session_dict(row: sqlite3.Row, sets: list[dict], heart: dict | None) -> dict[str, Any]:
     d = dict(row)
     d["sets"] = sets
+    d["heart"] = heart
     return d
 
 
@@ -85,7 +86,10 @@ def load_sessions(c: sqlite3.Connection, where: str = "", params: tuple = (), li
         item = dict(s)
         item["completed"] = bool(item["completed"])
         sets[item.pop("session_id")].append(item)
-    return [_session_dict(r, sets[r["id"]]) for r in rows]
+    heart = {h["session_id"]: {"avg_bpm": h["avg_bpm"], "max_bpm": h["max_bpm"], "samples": h["samples"]}
+             for h in c.execute(f"SELECT session_id, avg_bpm, max_bpm, samples FROM workout_heart"
+                                f" WHERE session_id IN ({marks})", ids)}
+    return [_session_dict(r, sets[r["id"]], heart.get(r["id"])) for r in rows]
 
 
 def build_router(settings: Settings, require_session: Callable) -> APIRouter:
@@ -188,6 +192,27 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                 cols = ", ".join(f"{k}=?" for k in changes)
                 c.execute(f"UPDATE workout_sessions SET {cols} WHERE id=?", (*changes.values(), sid))
             return get_one(c, sid)
+
+    @r.put("/workout-heart/{sid}", dependencies=writes)
+    def put_heart(sid: str, body: WorkoutHeartPut, edited: str = Depends(edit_time)):
+        """Battito della seduta letto dall'orologio. Su una seduta eliminata non si applica (e non è un errore:
+        la scrittura può essere partita dal telefono prima di sapere dell'eliminazione)."""
+        with connect(settings.db_path) as c, transaction(c):
+            session = c.execute("SELECT deleted_at FROM workout_sessions WHERE id=?", (sid,)).fetchone()
+            if not session:
+                raise HTTPException(status_code=404, detail="Seduta non trovata")
+            if session[0]:
+                return {"ok": True, "kept": True}
+            saved = c.execute("SELECT updated_at FROM workout_heart WHERE session_id=?", (sid,)).fetchone()
+            if is_stale(saved[0] if saved else None, edited):
+                return STALE
+            c.execute(
+                "INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, updated_at) VALUES (?, ?, ?, ?, ?)"
+                " ON CONFLICT(session_id) DO UPDATE SET avg_bpm=excluded.avg_bpm, max_bpm=excluded.max_bpm,"
+                " samples=excluded.samples, updated_at=excluded.updated_at",
+                (sid, body.avg_bpm, body.max_bpm, body.samples, edited),
+            )
+        return {"ok": True}
 
     @r.delete("/workout-sessions/{sid}", dependencies=writes)
     def delete_session(sid: str):
