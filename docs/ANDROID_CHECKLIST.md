@@ -80,6 +80,17 @@ Premessa: server alla 1.15.0 e APK compilato dopo il deploy.
 - [ ] **Riepilogo**: a fine seduta compaiono battito medio, massimo e la curva con le tacche delle serie (subito o dopo poco).
 - [ ] **Storico**: in *Progressi → Allenamento*, "Dettaglio" di una seduta mostra il picco per serie e la curva; confronta un paio di valori con OHealth.
 
+## 10. App per l'orologio Wear OS (1.19.0)
+Premessa: server alla 1.19.0, APK del telefono e dell'orologio compilati insieme (`scripts/build-apk.sh`, stessa chiave).
+- [ ] **Installazione**: sull'orologio *Impostazioni → Sistema → Info → tocca 7 volte il numero di build*, poi *Opzioni sviluppatore → Debug ADB* e *Debug tramite Wi-Fi* (annota indirizzo e porta). Dal server: `adb connect IP:PORTA` e `adb install mobile/dist/fitweek-wear.apk`. FitWeek compare tra le app dell'orologio.
+- [ ] **Permessi**: al primo avvio l'orologio chiede sensori del corpo, attività fisica e notifiche: consenti.
+- [ ] **Collegamento**: con FitWeek aperto sul telefono, l'orologio mostra "Oggi: giorno A/B/C" e "Inizia seduta".
+- [ ] **Avvio dal polso**: "Inizia seduta" apre la seduta anche sul telefono; l'orologio mostra il primo esercizio.
+- [ ] **Battito**: entro pochi secondi la testata della seduta sul telefono mostra il battito, che cambia ogni 1–2 s; a schermo dell'orologio spento continua ad arrivare.
+- [ ] **Serie dal polso**: gira la corona per cambiare le ripetizioni, tocca "Serie fatta": la serie compare segnata sul telefono e parte il recupero su entrambi; alla fine l'orologio vibra.
+- [ ] **Telefono in tasca**: con lo schermo del telefono spento per qualche minuto, segna una serie dal polso; riaccendendo, la serie e il battito ci sono.
+- [ ] **Fine seduta** (dal telefono): il riepilogo mostra il battito con la curva; l'orologio torna a "Inizia seduta" e smette di misurare.
+
 ---
 
 ### Note / esito della prova
