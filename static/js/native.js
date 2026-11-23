@@ -7,6 +7,7 @@ import { app } from "./store.js";
 import { closeModal, modalOpen, toast } from "./ui.js";
 import { checkForUpdate, installUpdate, updateStatus } from "./update.js";
 import { importHealth, startLiveHeart } from "./watch.js";
+import { restEnd } from "./workout/timer.js";
 
 const cap = () => globalThis.Capacitor;
 export const isNative = () => Boolean(cap()?.isNativePlatform?.());
@@ -31,6 +32,7 @@ async function ensurePermission(ask) {
 
 let syncing = null;
 const TEST_ID = 999999;
+const REST_ID = 999998; // fine del recupero con l'app in secondo piano (non è un promemoria: il riallineamento la lascia)
 const isoLocal = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
 
 /** Riallinea le notifiche dei prossimi 14 giorni ai promemoria. Prima programma le nuove (stesso id = sostituita),
@@ -59,7 +61,7 @@ export function syncNotifications({ ask = false } = {}) {
         });
       }
       const wanted = new Set(plan.map((n) => n.id));
-      const obsolete = pending.notifications.filter((n) => !wanted.has(n.id) && n.id !== TEST_ID);
+      const obsolete = pending.notifications.filter((n) => !wanted.has(n.id) && n.id !== TEST_ID && n.id !== REST_ID);
       if (obsolete.length) await ln.cancel({ notifications: obsolete.map((n) => ({ id: n.id })) });
       Object.assign(nativeStatus, { scheduled: plan.length, lastSync: new Date(), error: null });
     } catch (e) {
@@ -103,8 +105,25 @@ async function announceUpdate(force) {
   else toast(`FitWeek ${up.version} è disponibile: vedi Impostazioni → App Android`, { timeout: 8000 });
 }
 
-/** Da chiamare all'avvio: listener per tocco sulle notifiche, tasto indietro, riallineamento. */
-export function initNative({ openReminderById }) {
+/** Recupero in corso quando l'app va in secondo piano (telefono in tasca): una notifica all'orario in cui finisce.
+ *  Tornando nell'app si toglie, perché lì c'è già il timer con suono e vibrazione. */
+async function restNotification(background) {
+  try {
+    await LN().cancel({ notifications: [{ id: REST_ID }] });
+    const end = restEnd();
+    if (background && end > Date.now() + 1000) {
+      await LN().schedule({ notifications: [{ id: REST_ID, title: "Recupero finito", body: "Pronto per la prossima serie", channelId: CHANNEL, schedule: { at: new Date(end), allowWhileIdle: true } }] });
+    }
+  } catch {
+    /* notifiche non consentite: resta il timer nell'app */
+  }
+}
+
+/** Scorciatoie tenendo premuta l'icona dell'app (fitweek://open/<azione>, dichiarate in build-inside.sh). */
+const shortcutOf = (url) => /^fitweek:\/\/open\/([a-z]+)$/.exec(url || "")?.[1] || null;
+
+/** Da chiamare all'avvio: listener per tocco sulle notifiche, tasto indietro, riallineamento, scorciatoie. */
+export function initNative({ openReminderById, openShortcut }) {
   if (!isNative()) return;
   document.documentElement.classList.add("native");
   LN()?.addListener("localNotificationActionPerformed", ({ notification }) => {
@@ -117,7 +136,11 @@ export function initNative({ openReminderById }) {
     if (canGoBack) return history.back();
     AppPlugin().minimizeApp();
   });
+  AppPlugin()?.addListener("pause", () => restNotification(true));
+  AppPlugin()?.addListener("appUrlOpen", ({ url }) => shortcutOf(url) && openShortcut(shortcutOf(url)));
+  AppPlugin()?.getLaunchUrl?.().then((r) => shortcutOf(r?.url) && openShortcut(shortcutOf(r.url))).catch(() => {});
   AppPlugin()?.addListener("resume", () => {
+    restNotification(false);
     syncNotifications();
     announceUpdate(false);
     importHealth();

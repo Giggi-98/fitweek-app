@@ -601,6 +601,28 @@ sed -i '0,/<intent-filter>/s#<intent-filter>#<intent-filter>\n                <a
 grep -q 'READ_SLEEP' "$MANIFEST" && grep -q 'HEALTH_PERMISSIONS' "$MANIFEST" && grep -q 'ACTION_SHOW_PERMISSIONS_RATIONALE' "$MANIFEST" \
   || { echo "Manifest non riconosciuto: permessi di Health Connect non inseriti" >&2; exit 1; }
 
+# Scorciatoie tenendo premuta l'icona (1.21, tappa 8): aprono fitweek://open/<azione>, che l'app riceve dal plugin
+# App (appUrlOpen / getLaunchUrl) e gestisce in static/js/native.js. Nessun permesso in più.
+mkdir -p android/app/src/main/res/xml
+cat > android/app/src/main/res/xml/shortcuts.xml <<XML
+<?xml version="1.0" encoding="utf-8"?>
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+  <shortcut android:shortcutId="training" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/sc_training">
+    <intent android:action="android.intent.action.VIEW" android:targetPackage="${APP_ID}" android:targetClass="${APP_ID}.MainActivity" android:data="fitweek://open/training" />
+  </shortcut>
+  <shortcut android:shortcutId="meal" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/sc_meal">
+    <intent android:action="android.intent.action.VIEW" android:targetPackage="${APP_ID}" android:targetClass="${APP_ID}.MainActivity" android:data="fitweek://open/meal" />
+  </shortcut>
+  <shortcut android:shortcutId="weight" android:enabled="true" android:icon="@mipmap/ic_launcher" android:shortcutShortLabel="@string/sc_weight">
+    <intent android:action="android.intent.action.VIEW" android:targetPackage="${APP_ID}" android:targetClass="${APP_ID}.MainActivity" android:data="fitweek://open/weight" />
+  </shortcut>
+</shortcuts>
+XML
+STRINGS=android/app/src/main/res/values/strings.xml
+sed -i 's#</resources>#    <string name="sc_training">Allenamento</string>\n    <string name="sc_meal">Pasto</string>\n    <string name="sc_weight">Pesata</string>\n</resources>#' "$STRINGS"
+sed -i '0,/<\/activity>/s#</activity>#    <intent-filter>\n                <action android:name="android.intent.action.VIEW" />\n                <category android:name="android.intent.category.DEFAULT" />\n                <data android:scheme="fitweek" android:host="open" />\n            </intent-filter>\n            <meta-data android:name="android.app.shortcuts" android:resource="@xml/shortcuts" />\n        </activity>#' "$MANIFEST"
+grep -q 'sc_training' "$STRINGS" && grep -q 'android.app.shortcuts' "$MANIFEST" || { echo "Manifest o strings non riconosciuti: scorciatoie non aggiunte" >&2; exit 1; }
+
 cat > "$PKG_DIR/MainActivity.java" <<JAVA
 package ${APP_ID};
 

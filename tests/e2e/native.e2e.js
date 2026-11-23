@@ -161,6 +161,53 @@ const FAKE_CAPACITOR = () => {
     check('download APK (nessun APK montato nel container di test)', true);
   }
 
+  // Tappa 8: notifica di fine recupero solo con l'app in secondo piano, tolta al rientro
+  await page.evaluate(async () => (await import('/static/js/workout/timer.js')).startRest(90));
+  await page.evaluate(() => window.__ln.listeners['app:pause']());
+  await page.waitForTimeout(300);
+  const restScheduled = await page.evaluate(() => window.__ln.scheduled.find((n) => n.id === 999998));
+  check('in secondo piano con il recupero in corso: notifica alla fine del recupero', restScheduled && /Recupero finito/.test(restScheduled.title) && Math.abs(new Date(restScheduled.schedule.at) - Date.now() - 90000) < 5000, JSON.stringify(restScheduled?.schedule));
+  await page.evaluate(() => window.dispatchEvent(new Event('fitweek:changed'))); // riallineamento dei promemoria
+  await page.waitForTimeout(800);
+  check('il riallineamento dei promemoria non toglie la notifica del recupero', await page.evaluate(() => window.__ln.scheduled.some((n) => n.id === 999998)));
+  await page.evaluate(() => window.__ln.listeners['app:resume']());
+  await page.waitForTimeout(800);
+  check('di nuovo nell\'app: la notifica del recupero è tolta (c\'è il timer)', await page.evaluate(() => !window.__ln.scheduled.some((n) => n.id === 999998)));
+  await page.evaluate(async () => (await import('/static/js/workout/timer.js')).stopRest());
+
+  // Tappa 8: scorciatoie dall'icona dell'app
+  await page.evaluate(() => document.querySelector('#modal')?.close());
+  await page.evaluate(() => window.__ln.listeners['app:appUrlOpen']({ url: 'fitweek://open/weight' }));
+  await page.waitForSelector('#modal[open] #m-weight', { timeout: 5000 });
+  check('scorciatoia "Pesata": si apre la pesata', true);
+  await page.evaluate(() => document.querySelector('#modal')?.close());
+  await page.evaluate(() => window.__ln.listeners['app:appUrlOpen']({ url: 'fitweek://open/training' }));
+  await page.waitForTimeout(500);
+  check('scorciatoia "Allenamento": si apre la palestra', (await page.evaluate(() => location.hash)) === '#training');
+  await page.evaluate(() => window.__ln.listeners['app:appUrlOpen']({ url: 'https://altro.example/open/weight' }));
+  await page.waitForTimeout(300);
+  check('un indirizzo che non è una scorciatoia non fa nulla', (await page.locator('#modal[open]').count()) === 0);
+
+  // Tappa 8: tasti rapidi sul computer
+  await wp.evaluate(() => (location.hash = '#dashboard'));
+  await wp.keyboard.press('3');
+  check('tasto 3: Pasti', (await wp.evaluate(() => location.hash)) === '#meals');
+  await wp.keyboard.press('Shift+?');
+  await wp.waitForSelector('#modal[open]');
+  check('tasto ?: elenco dei tasti', /Tasti rapidi/.test(await wp.textContent('#modal')));
+  await wp.screenshot({ path: `${SHOTS}/v122-keys-1280.png` });
+  await wp.click('#modal [data-m=close]');
+  await wp.keyboard.press('n');
+  await wp.waitForSelector('#modal[open] .composer');
+  check('tasto N: nuovo pasto', true);
+  await wp.click('#modal [data-close]');
+  await wp.evaluate(() => (location.hash = '#progress'));
+  await wp.click('#content [data-tab=weight]');
+  await wp.click('#content details.free summary');
+  await wp.focus('#w-note');
+  await wp.keyboard.type('2');
+  check('scrivendo in un campo i tasti rapidi non scattano', (await wp.evaluate(() => location.hash)) === '#progress' && (await wp.inputValue('#w-note')) === '2');
+
   check('nessun errore JS', errors.length === 0, errors.join(' | '));
   await browser.close();
   console.log(out.join('\n'));

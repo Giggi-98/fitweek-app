@@ -3,14 +3,15 @@ import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
 import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
 import { app, loadAll, refreshDaily, refreshExtras, refreshState, refreshWorkouts, syncState } from "./store.js";
-import { applyDynamicStyles, fitTabStrips, initModal, markStripEnd, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
+import { applyDynamicStyles, fitTabStrips, initModal, markStripEnd, modalOpen, openModal, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
 import { startLive, stopLive } from "./live.js";
 import { openStatus } from "./status.js";
 import { keepAwake } from "./workout/awake.js";
 import { initWatch, sendState } from "./wear.js";
 import { pollLiveHeart } from "./watch.js";
 import { mountCharts } from "./chart.js";
-import { openReminder, startReminders } from "./reminders.js";
+import { guessSlot, openReminder, openWeighIn, startReminders } from "./reminders.js";
+import { openComposer } from "./composer.js";
 import { initNative } from "./native.js";
 import { $, $$, fmtDate, normalizeTime } from "./util.js";
 import { icon } from "./icons.js";
@@ -156,6 +157,7 @@ async function boot() {
         if (item.action === "start_workout") location.hash = "#training";
         else openReminder(item);
       },
+      openShortcut,
     });
   } else {
     flush();
@@ -204,6 +206,36 @@ function renderWhenIdle() {
   if (modalOpen() || typing || unsaved()) return void (renderLater = setTimeout(renderWhenIdle, 1500));
   render();
 }
+
+// ---- scorciatoie: icona dell'app su Android (native.js) e tastiera sul computer --------------------
+/** Azioni rapide comuni: aprire la palestra, registrare un pasto, registrare il peso. */
+function openShortcut(action) {
+  if (!app.state) return;
+  if (action === "training") location.hash = "#training";
+  else if (action === "meal") openComposer({ slot: guessSlot() });
+  else if (action === "weight") openWeighIn();
+}
+
+const VIEW_KEYS = { 1: "dashboard", 2: "training", 3: "meals", 4: "shopping", 5: "progress", 6: "settings" };
+function openKeys() {
+  const line = (k, text) => `<div class="summary-row"><i><kbd>${k}</kbd></i><div><strong>${text}</strong></div></div>`;
+  openModal(
+    `<h2 id="modal-title">Tasti rapidi</h2>
+    <div class="summary-list">${Object.entries(VIEW_KEYS).map(([k, v]) => line(k, VIEWS[v].title)).join("")}${line("N", "Nuovo pasto")}${line("P", "Pesata")}${line("?", "Questo elenco")}</div>
+    <div class="modal-secondary"><button type="button" data-m="close">Chiudi</button></div>`,
+    (t) => t.dataset.m === "close",
+  );
+}
+document.addEventListener("keydown", (e) => {
+  if (!app.state || e.ctrlKey || e.metaKey || e.altKey || modalOpen() || e.target.closest?.("input, textarea, select, [contenteditable]")) return;
+  const key = e.key.toLowerCase();
+  if (VIEW_KEYS[key]) location.hash = `#${VIEW_KEYS[key]}`;
+  else if (key === "n") openShortcut("meal");
+  else if (key === "p") openShortcut("weight");
+  else if (e.key === "?") openKeys();
+  else return;
+  e.preventDefault();
+});
 
 // ---- eventi --------------------------------------------------------------------------------
 window.addEventListener("hashchange", route);
