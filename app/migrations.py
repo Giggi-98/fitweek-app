@@ -468,6 +468,13 @@ def _m012_watch_more(c: sqlite3.Connection) -> None:
             c.execute(f"ALTER TABLE health_days ADD COLUMN {col} {kind}")
 
 
+def _m013_heart_curve(c: sqlite3.Connection) -> None:
+    """Curva del battito della seduta (1.17): punti ogni 30 s con media e massimo, in JSON, per il grafico e il
+    picco di ogni serie. Nullable: il battito già salvato resta com'era, senza curva."""
+    if "curve" not in {row[1] for row in c.execute("PRAGMA table_info(workout_heart)")}:
+        c.execute("ALTER TABLE workout_heart ADD COLUMN curve TEXT")
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -481,6 +488,7 @@ MIGRATIONS: list[Migration] = [
     (10, "set_kind", _m010_set_kind),
     (11, "watch_data", _m011_watch_data),
     (12, "watch_more", _m012_watch_more),
+    (13, "heart_curve", _m013_heart_curve),
 ]
 
 

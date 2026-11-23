@@ -179,16 +179,24 @@ class SessionPatch(Strict):
     notes: Optional[Text(5000)] = None
 
 
+HeartPoint = Annotated[list[int], Field(min_length=3, max_length=3)]  # [secondi dall'inizio, media, massimo]
+
+
 class WorkoutHeartPut(Strict):
-    """Battito durante una seduta, riassunto sul telefono dai campioni dell'orologio (Health Connect)."""
+    """Battito durante una seduta, riassunto sul telefono dai campioni dell'orologio (Health Connect).
+    `curve`: un punto ogni 30 s (1.17), per il grafico della seduta e il picco di ogni serie."""
     avg_bpm: int = Field(ge=30, le=230)
     max_bpm: int = Field(ge=30, le=240)
     samples: int = Field(ge=1, le=100_000)
+    curve: Optional[list[HeartPoint]] = Field(default=None, max_length=1000)
 
     @model_validator(mode="after")
-    def _avg_not_above_max(self) -> "WorkoutHeartPut":
+    def _consistent(self) -> "WorkoutHeartPut":
         if self.avg_bpm > self.max_bpm:
             raise ValueError("il battito medio supera il massimo")
+        for sec, avg, peak in self.curve or []:
+            if not (0 <= sec <= 21_600 and 30 <= avg <= peak <= 240):
+                raise ValueError("punto della curva non valido")
         return self
 
 

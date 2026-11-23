@@ -71,7 +71,7 @@ def test_workout_heart_is_part_of_the_session(auth_client):
     assert auth_client.put(f"/api/v1/workout-heart/{SID}", json={"avg_bpm": 170, "max_bpm": 160, "samples": 90}).status_code == 422
     assert auth_client.put(f"/api/v1/workout-heart/{SID}", json={"avg_bpm": 118, "max_bpm": 161, "samples": 140}).status_code == 200
     heart = auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["heart"]
-    assert heart == {"avg_bpm": 118, "max_bpm": 161, "samples": 140}
+    assert heart == {"avg_bpm": 118, "max_bpm": 161, "samples": 140, "curve": None}
     assert auth_client.put(f"/api/v1/workout-heart/{SID}", json={"avg_bpm": 90, "max_bpm": 95, "samples": 10},
                            headers=OLDER).json()["stale"] is True
     auth_client.delete(f"/api/v1/workout-sessions/{SID}")
@@ -129,7 +129,7 @@ def test_migration_11_adds_watch_tables_without_touching_nights(tmp_path):
     c.execute("PRAGMA foreign_keys=ON")
     c.execute("INSERT INTO workout_sessions (id, routine, week, date, status, created_at, updated_at)"
               " VALUES ('s1', 'A', 1, '2026-11-09', 'done', 't', 't')")
-    c.execute("INSERT INTO workout_heart VALUES ('s1', 120, 150, 60, 't')")
+    c.execute("INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, updated_at) VALUES ('s1', 120, 150, 60, 't')")
     c.execute("DELETE FROM workout_sessions WHERE id='s1'")
     assert c.execute("SELECT count(*) FROM workout_heart").fetchone()[0] == 0, "sparisce con la seduta"
 
@@ -156,8 +156,8 @@ def test_migration_12_adds_hrv_and_spo2_and_keeps_saved_days(tmp_path):
                     fn(c)
                     c.execute("INSERT INTO schema_migrations VALUES (?, ?, 'x')", (version, name))
         c.execute("INSERT INTO health_days (date, steps, resting_hr, updated_at) VALUES ('2026-11-10', 8000, 60, 't')")
-    assert run_migrations(db, tmp_path / "backups") == 12
-    assert run_migrations(db, tmp_path / "backups") == 12, "ripetibile"
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS)
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS), "ripetibile"
     c = sqlite3.connect(db)
     assert c.execute("SELECT date, steps, resting_hr, hrv_ms, spo2 FROM health_days").fetchall() == [("2026-11-10", 8000, 60, None, None)]
 
@@ -172,3 +172,40 @@ def test_weight_from_the_scale_keeps_its_source_and_old_weights_stay_manual(auth
     assert saved["w2"]["source"] == "health_connect" and saved["w1"]["source"] == "manual"
     s["data"]["weights"][0]["source"] = "bilancia"
     assert auth_client.put("/api/state", json=s).status_code == 422
+
+
+def test_heart_curve_is_stored_validated_and_travels_in_the_backup(auth_client):
+    new_session(auth_client)
+    curve = [[0, 98, 104], [30, 121, 140], [60, 133, 151]]
+    body = {"avg_bpm": 117, "max_bpm": 151, "samples": 90, "curve": curve}
+    assert auth_client.put(f"/api/v1/workout-heart/{SID}", json=body).status_code == 200
+    assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["heart"]["curve"] == curve
+    assert auth_client.put(f"/api/v1/workout-heart/{SID}", json=body | {"curve": [[0, 150, 120]]}).status_code == 422, "media sopra il massimo"
+    assert auth_client.put(f"/api/v1/workout-heart/{SID}", json=body | {"curve": [[0, 100]]}).status_code == 422
+    backup = auth_client.get("/api/backup").json()
+    auth_client.put(f"/api/v1/workout-heart/{SID}", json=body | {"curve": None})
+    assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["heart"]["curve"] is None
+    assert auth_client.post("/api/v1/restore", json=backup).status_code == 200
+    assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["heart"]["curve"] == curve
+
+
+def test_migration_13_adds_the_heart_curve_and_keeps_saved_heart(tmp_path):
+    from app.db import connect, transaction
+    from app.migrations import _applied
+
+    db = tmp_path / "f.sqlite"
+    legacy_db(db)
+    with connect(db) as c:  # schema 12, come la 1.15/1.16
+        _applied(c)
+        for version, name, fn in MIGRATIONS:
+            if version <= 12:
+                with transaction(c):
+                    fn(c)
+                    c.execute("INSERT INTO schema_migrations VALUES (?, ?, 'x')", (version, name))
+        c.execute("INSERT INTO workout_sessions (id, routine, week, date, status, created_at, updated_at)"
+                  " VALUES ('s1', 'A', 1, '2026-11-09', 'done', 't', 't')")
+        c.execute("INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, updated_at) VALUES ('s1', 120, 150, 60, 't')")
+    assert run_migrations(db, tmp_path / "backups") == 13
+    assert run_migrations(db, tmp_path / "backups") == 13, "ripetibile"
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT avg_bpm, max_bpm, samples, curve FROM workout_heart").fetchall() == [(120, 150, 60, None)]

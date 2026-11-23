@@ -55,6 +55,10 @@ def is_stale(stored: str | None, edited: str) -> bool:
     return bool(saved and incoming and saved > incoming)
 
 
+def heart_curve_json(curve: list[list[int]] | None) -> str | None:
+    return json.dumps(curve, separators=(",", ":")) if curve else None
+
+
 def today() -> date:
     return datetime.now(TZ).date()
 
@@ -86,8 +90,9 @@ def load_sessions(c: sqlite3.Connection, where: str = "", params: tuple = (), li
         item = dict(s)
         item["completed"] = bool(item["completed"])
         sets[item.pop("session_id")].append(item)
-    heart = {h["session_id"]: {"avg_bpm": h["avg_bpm"], "max_bpm": h["max_bpm"], "samples": h["samples"]}
-             for h in c.execute(f"SELECT session_id, avg_bpm, max_bpm, samples FROM workout_heart"
+    heart = {h["session_id"]: {"avg_bpm": h["avg_bpm"], "max_bpm": h["max_bpm"], "samples": h["samples"],
+                               "curve": json.loads(h["curve"]) if h["curve"] else None}
+             for h in c.execute(f"SELECT session_id, avg_bpm, max_bpm, samples, curve FROM workout_heart"
                                 f" WHERE session_id IN ({marks})", ids)}
     return [_session_dict(r, sets[r["id"]], heart.get(r["id"])) for r in rows]
 
@@ -207,10 +212,10 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             if is_stale(saved[0] if saved else None, edited):
                 return STALE
             c.execute(
-                "INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, updated_at) VALUES (?, ?, ?, ?, ?)"
-                " ON CONFLICT(session_id) DO UPDATE SET avg_bpm=excluded.avg_bpm, max_bpm=excluded.max_bpm,"
-                " samples=excluded.samples, updated_at=excluded.updated_at",
-                (sid, body.avg_bpm, body.max_bpm, body.samples, edited),
+                "INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, curve, updated_at)"
+                " VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(session_id) DO UPDATE SET avg_bpm=excluded.avg_bpm,"
+                " max_bpm=excluded.max_bpm, samples=excluded.samples, curve=excluded.curve, updated_at=excluded.updated_at",
+                (sid, body.avg_bpm, body.max_bpm, body.samples, heart_curve_json(body.curve), edited),
             )
         return {"ok": True}
 

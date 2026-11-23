@@ -27,7 +27,7 @@ from .security import (
     request_token,
 )
 from . import daily, events, foodsearch, mirror, tracking
-from .workouts import build_router, load_sessions, now_iso
+from .workouts import build_router, heart_curve_json, load_sessions, now_iso
 
 log = logging.getLogger("fitweek.http")
 STATIC_DIR = BASE_DIR / "static"
@@ -261,8 +261,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                                  int(x["completed"]), x.get("kind", "normal"), x["logged_at"]),
                             )
                         if heart:
-                            c.execute("INSERT INTO workout_heart VALUES (?,?,?,?,?)",
-                                      (s["id"], heart["avg_bpm"], heart["max_bpm"], heart["samples"], s["updated_at"]))
+                            c.execute("INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, curve,"
+                                      " updated_at) VALUES (?,?,?,?,?,?)",
+                                      (s["id"], heart["avg_bpm"], heart["max_bpm"], heart["samples"],
+                                       heart_curve_json(heart.get("curve")), s["updated_at"]))
                     now = now_iso()
                     if body.meal_templates is not None:
                         c.execute("DELETE FROM meal_templates")
