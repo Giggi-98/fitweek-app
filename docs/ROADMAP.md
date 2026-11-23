@@ -222,6 +222,10 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.21.0 (2026-11-23) — ciclo dei dati (tappa 4 di 8)
+
+Richiede la migrazione 14 (una tabella). D-046: finestra "Stato dei dati" dall'indicatore in alto; un promemoria eliminato non torna più da una modifica più vecchia arrivata dopo.
+
 ## 1.20.0 (2026-11-23) — pasti, spesa e Oggi più rapidi (tappa 7 di 8)
 
 Solo frontend. D-045: "Frequenti" e "Come l'ultimo pranzo/cena" nell'editor del pasto, pasti abituali in righe con finestra di modifica, spesa con gli spuntati in fondo al reparto, sonno profondo in Oggi.

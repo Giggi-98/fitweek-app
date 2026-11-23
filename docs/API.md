@@ -111,6 +111,12 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.21 (2026-11-23) — promemoria eliminati con il segno (D-046)
+
+- `DELETE /api/v1/reminders/{id}`: legge `X-Edited-At`; se il promemoria è stato modificato dopo, risponde `{ok, stale: true}` e resta. Altrimenti lo elimina e lascia un segno (`reminder_tombstones`) con l'orario.
+- `PUT /api/v1/reminders/{id}`: una modifica più vecchia del segno di eliminazione risponde `{ok, stale: true}` e non ricrea il promemoria; una più nuova lo ricrea e toglie il segno. Chiude il limite di D-036 (e la frase "`DELETE /reminders/{id}` … senza questo controllo" della sezione 1.12).
+- Ripristino con il dominio `reminders`: i segni di eliminazione vengono azzerati.
+
 ## API 1.17 (2026-11-23) — curva del battito della seduta (D-042)
 
 - `PUT /api/v1/workout-heart/{session_id}`: campo facoltativo `curve` = `[[secondi dall'inizio 0–21600, media, massimo], …]` (al più 1000 punti, battito 30–240, media ≤ massimo; altrimenti 422). Senza `curve` (o `null`) la curva salvata si cancella.

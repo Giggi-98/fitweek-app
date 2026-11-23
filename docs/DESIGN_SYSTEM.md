@@ -1,5 +1,9 @@
 # Design system
 
+## Aggiunte 1.21.0 (2026-11-23, tappa 4)
+
+- **Indicatore dei dati** (`#sync`, in alto): è un pulsante (stesso aspetto, almeno 36 px di altezza, etichetta "Stato dei dati"); il testo resta una regione `status`. Apre la finestra "Stato dei dati": righe `.summary-row` (icona, titolo, dettaglio), un'azione principale solo quando c'è qualcosa da inviare ("Invia ora"), "Chiudi" secondaria.
+
 ## Aggiunte 1.18.0 (2026-11-23, tappa 6)
 
 - **Riga della serie**: ✓ con le ripetizioni vuote usa quelle proposte; nessun avviso in mezzo.
