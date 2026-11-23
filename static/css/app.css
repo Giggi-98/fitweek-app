@@ -206,7 +206,7 @@ body.has-rest .toast { bottom: calc(var(--nav-h) + 110px + env(safe-area-inset-b
 .metrics { display: grid; gap: var(--space-3); grid-template-columns: repeat(2, 1fr); }
 .metric { background: var(--color-surface); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: var(--space-4); box-shadow: var(--shadow-1); transition: border-color var(--dur-2); }
 .hero .metric, .panel .metric { background: var(--color-surface-2); box-shadow: none; }
-.metric-label { display: flex; align-items: center; gap: 6px; font-size: var(--text-xs); color: var(--color-text-muted); font-weight: 650; }
+.metric-label { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 6px; font-size: var(--text-xs); color: var(--color-text-muted); font-weight: 650; }
 .metric-value { font-size: var(--text-xl); font-weight: 800; letter-spacing: var(--tracking-tight); margin-top: 6px; }
 .metric-value small { white-space: nowrap; font-size: var(--text-sm); color: var(--color-text-muted); font-weight: 600; letter-spacing: 0; }
 .metric-sub { font-size: var(--text-xs); color: var(--color-text-muted); margin-top: 2px; }
@@ -749,10 +749,16 @@ input[type="file"]::file-selector-button { margin-right: var(--space-3); min-hei
 .view-bar .tabs { flex: 1 1 auto; border-bottom: 0; }
 .view-bar > .btn { flex: none; margin-bottom: 6px; }
 .tiles.three > :last-child { grid-column: 1 / -1; }
+/* Telefono: le schede principali di una vista mostrano l'icona e il nome solo della scheda attiva (le altre
+   tengono il nome per i lettori di schermo), così quattro schede stanno in 390 px senza scorrere. */
 @media (max-width: 599px) {
-  .view-bar .tab .icon { display: none; }
-  .view-bar .tab { padding: 0 var(--space-3); }
+  #content > .tabs .tab, .view-bar .tab { padding: 0 var(--space-3); min-width: 44px; justify-content: center; }
+  #content > .tabs .tab:not(.active) > span, .view-bar .tab:not(.active) > span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 }
+/* Una fila di schede più larga dello schermo scorre da sola; la sfumatura dice che continua. */
+.tabs.scrolls:not(.at-end) { mask-image: linear-gradient(90deg, #000 calc(100% - 32px), transparent); }
+/* Un elemento di griglia non deve allargare la pagina per il suo contenuto (es. una fila di schede). */
+#content > *, .tabpanel > * { min-width: 0; }
 @media (min-width: 600px) {
   .tiles.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .tiles.three > :last-child { grid-column: auto; }
@@ -896,3 +902,4 @@ table.cons td .icon { display: block; margin: auto; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
+#page-eyebrow:empty { display: none; }

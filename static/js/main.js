@@ -3,7 +3,7 @@ import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
 import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
 import { app, loadAll, refreshDaily, refreshExtras, refreshState, refreshWorkouts, syncState } from "./store.js";
-import { applyDynamicStyles, initModal, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
+import { applyDynamicStyles, fitTabStrips, initModal, markStripEnd, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
 import { startLive, stopLive } from "./live.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
@@ -26,10 +26,10 @@ settings.applyTheme();
 const VIEWS = {
   dashboard: { title: "Oggi", mod: dashboard, eyebrow: () => fmtDate(app.today?.date || "") },
   training: { title: "Palestra", mod: training, eyebrow: () => `Settimana ${app.today?.program_week ?? ""} di 8` },
-  meals: { title: "Pasti", mod: meals, eyebrow: () => "Diario e pasti abituali" },
+  meals: { title: "Pasti", mod: meals },
   shopping: { title: "Spesa e dispensa", mod: shopping, eyebrow: () => "Consegna il lunedì" },
-  progress: { title: "Progressi", mod: progress, eyebrow: () => "Registrati e calcolati, sempre distinti" },
-  settings: { title: "Impostazioni", mod: settings, eyebrow: () => "App, promemoria e dati" },
+  progress: { title: "Progressi", mod: progress },
+  settings: { title: "Impostazioni", mod: settings },
 };
 const current = () => VIEWS[app.view].mod;
 
@@ -39,6 +39,7 @@ function render() {
   $("#content").innerHTML = current().render();
   hydrateIcons($("#content"));
   applyDynamicStyles($("#content"));
+  fitTabStrips($("#content"));
   mountCharts($("#content"));
   window.scrollTo({ top: y });
   current().afterRender?.();
@@ -188,6 +189,7 @@ function renderWhenIdle() {
 
 // ---- eventi --------------------------------------------------------------------------------
 window.addEventListener("hashchange", route);
+document.addEventListener("scroll", (e) => e.target.classList?.contains("scrolls") && markStripEnd(e.target), true);
 
 document.addEventListener("click", async (e) => {
   if (e.target.closest("#modal")) return; // gestiti dalla modale stessa

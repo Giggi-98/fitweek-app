@@ -33,14 +33,18 @@ function expiryLabel(iso) {
 }
 const byExpiry = (a, b) => (a.expiry || "9999").localeCompare(b.expiry || "9999");
 
+const priced = (items) => items.filter((x) => num(x.price) > 0);
+/** Somma dei prezzi inseriti, o null se nessuno ha un prezzo: un prezzo che manca non vale zero. */
+const priceSum = (items) => (priced(items).length ? priced(items).reduce((s, x) => s + num(x.price), 0) : null);
+
 function tiles(g, budget) {
-  const total = g.reduce((s, x) => s + num(x.price), 0);
-  const open = g.filter((x) => !x.checked);
-  const ratio = budget ? Math.min(100, Math.round((total / budget) * 100)) : 0;
+  const total = priceSum(g);
+  const unpriced = g.length - priced(g).length;
+  const ratio = budget && total != null ? Math.min(100, Math.round((total / budget) * 100)) : 0;
   const spent = app.spend.find((s) => s.week_start === thisWeek());
-  return `<div class="tiles three">
-    <div class="metric tile"><div class="metric-label">${icon("list-checks", "sm")}Da prendere</div><div class="metric-value">${open.length}<small> ${open.length === 1 ? "articolo" : "articoli"}</small></div><div class="metric-sub">${money(open.reduce((s, x) => s + num(x.price), 0))} stimati</div></div>
-    <div class="metric tile"><div class="metric-label">${icon("shopping-cart", "sm")}Lista <span class="badge-calc">stima</span></div><div class="metric-value">${money(total)}<small> / ${money(budget)}</small></div><div class="bar ${total > budget ? "over" : ""}" role="img" aria-label="${ratio}% del budget"><div data-pct-w="${ratio}"></div></div><div class="metric-sub">${total > budget ? "sopra il budget stimato" : "nel budget, consegna esclusa"}</div></div>
+  const listSub = total == null ? "prezzi non ancora inseriti" : `${total > budget ? "sopra il budget" : "nel budget"}, consegna esclusa${unpriced ? ` · ${unpriced} senza prezzo` : ""}`;
+  return `<div class="tiles pair">
+    <div class="metric tile"><div class="metric-label">${icon("shopping-cart", "sm")}Lista <span class="badge-calc">stima</span></div><div class="metric-value">${total == null ? "—" : money(total)}<small> / ${money(budget)}</small></div>${total == null ? "" : `<div class="bar ${total > budget ? "over" : ""}" role="img" aria-label="${ratio}% del budget"><div data-pct-w="${ratio}"></div></div>`}<div class="metric-sub">${listSub}</div></div>
     <button type="button" class="metric tile" data-spend="${thisWeek()}"><div class="metric-label">${icon("check", "sm")}Pagato questa settimana</div><div class="metric-value">${spent ? money(spent.amount) : "—"}</div><div class="metric-sub">${spent ? (spent.amount > budget ? `${money(spent.amount - budget)} sopra il budget` : `${money(budget - spent.amount)} sotto il budget`) : "tocca per inserire il totale"}</div></button>
   </div>`;
 }
@@ -54,7 +58,7 @@ function listPanel(g) {
   const anyChecked = g.some((x) => x.checked);
   const group = (cat) => {
     const items = g.filter((x) => (x.category || "Altro") === cat);
-    return `<div class="shop-group"><div class="group-head"><span class="tiny-label">${esc(cat)}</span><span class="tiny-label num">${money(items.reduce((s, x) => s + num(x.price), 0))}</span></div>${items.map(row).join("")}</div>`;
+    return `<div class="shop-group"><div class="group-head"><span class="tiny-label">${esc(cat)}</span><span class="tiny-label num">${priceSum(items) == null ? "" : money(priceSum(items))}</span></div>${items.map(row).join("")}</div>`;
   };
   const unitOpts = UNITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");
   return panel(

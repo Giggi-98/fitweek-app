@@ -97,7 +97,7 @@ function romeMinuteAgo() {
 
   // 5. Diario
   await page.click('.bottom-nav [data-view=meals]');
-  await page.waitForSelector('.day-foot');
+  await page.waitForSelector('#diary-day-panel');
   const diary = await page.textContent('#content');
   check('diario: pasti di oggi con stima', /Banana/.test(diary) && /stima/.test(diary) && /Piadina/.test(diary) && /625/.test(diary), diary.replace(/\s+/g, ' ').slice(0, 160));
   await page.screenshot({ path: `${SHOTS}/m4-3-diary.png`, fullPage: true });

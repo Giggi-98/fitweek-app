@@ -89,8 +89,9 @@ function diary() {
     ${panel(
       `${icon("utensils")}${esc(fmtDate(day))}${day === today ? " · oggi" : ""}`,
       `${logs.length ? logs.map((m) => `<div class="entry ${m.status} clickable" data-edit-log="${esc(m.id)}" role="button" tabindex="0" aria-label="Modifica pasto"><div class="entry-main"><span class="slot-ic">${icon(SLOT_ICON[m.slot] || "utensils")}</span><div><div class="entry-title">${m.status === "skipped" ? "Saltato" : esc(m.description || "—")}</div><div class="entry-sub">${esc(SLOTS[m.slot] || m.slot)}${m.status === "skipped" ? "" : ` · ${esc(kcalLabel(m))}`}</div></div></div><button type="button" class="icon-btn" data-del-log="${esc(m.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button></div>`).join("") : '<p class="subtle">Niente registrato.</p>'}
-        <div class="day-foot"><span>${eaten.length ? `Totale teorico <span class="kcal">~${fmtNum(kcal, 0)} kcal</span>${missing ? ` · ${missing} senza valori` : ""}` : ""}</span></div>`,
-      `<button class="btn small" data-add-log="${esc(day)}">${icon("plus", "sm")}Pasto</button>`,
+        ${missing ? `<div class="day-foot"><span>${missing} ${missing === 1 ? "pasto" : "pasti"} senza valori: non contano nel riepilogo</span></div>` : ""}`,
+      // per oggi c'è già "Pasto" in alto: qui serve solo per aggiungere a un giorno passato
+      day === today ? "" : `<button class="btn small" data-add-log="${esc(day)}">${icon("plus", "sm")}Pasto</button>`,
     )}
     ${panel(
       `${icon("flame")}Riepilogo del giorno`,

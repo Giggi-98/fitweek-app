@@ -86,6 +86,19 @@ export const choices = (items, active, label, attr) =>
 export const tabpanel = (id, label, activeKey, body) =>
   `<div class="tabpanel" role="tabpanel" id="${esc(id)}" aria-labelledby="${tabId(label, activeKey)}" tabindex="0">${body}</div>`;
 export const TAB_LISTS = "[role=tablist], [role=radiogroup]";
+
+/** File di schede più larghe del loro spazio: segna quelle che scorrono e porta in vista la voce scelta. */
+export function fitTabStrips(root) {
+  for (const strip of root.querySelectorAll(".tabs")) {
+    const scrolls = strip.scrollWidth > strip.clientWidth + 1;
+    strip.classList.toggle("scrolls", scrolls);
+    if (!scrolls) continue;
+    const on = strip.querySelector('[aria-selected="true"], [aria-checked="true"]');
+    if (on) strip.scrollLeft = on.offsetLeft - (strip.clientWidth - on.offsetWidth) / 2;
+    markStripEnd(strip);
+  }
+}
+export const markStripEnd = (strip) => strip.classList.toggle("at-end", strip.scrollLeft + strip.clientWidth >= strip.scrollWidth - 2);
 export const TAB_ITEMS = "[role=tab], [role=radio]";
 /** Tasti di un elenco di schede o di opzioni (`tabs()`, `choices()`): frecce, Inizio, Fine. Le voci
  *  disattivate si saltano. @returns la voce da attivare, o null se il tasto non riguarda le schede */
