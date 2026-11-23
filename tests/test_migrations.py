@@ -169,7 +169,7 @@ def test_migration_9_adds_deletion_marks_without_touching_logged_sets(tmp_path):
         assert not c.execute("SELECT 1 FROM sqlite_master WHERE name='set_tombstones'").fetchone()
     version_before, state_before = db_state(db)
 
-    assert run_migrations(db, tmp_path / "backups") == 11
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS)
     assert db_state(db) == (version_before, state_before), "lo stato dell'utente non cambia"
     c = sqlite3.connect(db)
     # schema 10: la serie già registrata resta com'è e diventa una serie "normale"

@@ -56,7 +56,8 @@ def test_health_days_store_nulls_reject_bad_input_and_older_writes(auth_client):
     assert auth_client.put(f"/api/v1/health-days/{DAY}", json={"steps": 8432, "resting_hr": None}).status_code == 200
     assert auth_client.put("/api/v1/health-days/2026-11-11", json={"resting_hr": 61}).status_code == 200
     items = auth_client.get("/api/v1/health-days?from=2026-11-09&to=2026-11-15").json()["items"]
-    assert items == [{"date": DAY, "steps": 8432, "resting_hr": None}, {"date": "2026-11-11", "steps": None, "resting_hr": 61}]
+    none = {"hrv_ms": None, "spo2": None}
+    assert items == [{"date": DAY, "steps": 8432, "resting_hr": None, **none}, {"date": "2026-11-11", "steps": None, "resting_hr": 61, **none}]
     assert auth_client.put(f"/api/v1/health-days/{DAY}", json={"steps": -5}).status_code == 422
     assert auth_client.put(f"/api/v1/health-days/{DAY}", json={"resting_hr": 300}).status_code == 422
     assert auth_client.put("/api/v1/health-days/2026-02-30", json={"steps": 1}).status_code == 422
@@ -81,7 +82,7 @@ def test_backup_carries_heart_stages_and_health_days(auth_client):
     new_session(auth_client)
     auth_client.put(f"/api/v1/workout-heart/{SID}", json={"avg_bpm": 118, "max_bpm": 161, "samples": 140})
     auth_client.put(f"/api/v1/sleep/{DAY}", json=NIGHT)
-    auth_client.put(f"/api/v1/health-days/{DAY}", json={"steps": 9000, "resting_hr": 62})
+    auth_client.put(f"/api/v1/health-days/{DAY}", json={"steps": 9000, "resting_hr": 62, "hrv_ms": 48, "spo2": 97})
     backup = auth_client.get("/api/backup").json()
     auth_client.put(f"/api/v1/workout-heart/{SID}", json={"avg_bpm": 100, "max_bpm": 120, "samples": 20})
     auth_client.put(f"/api/v1/health-days/{DAY}", json={"steps": 1})
@@ -89,7 +90,8 @@ def test_backup_carries_heart_stages_and_health_days(auth_client):
     assert auth_client.post("/api/v1/restore", json=backup).status_code == 200
     assert auth_client.get(f"/api/v1/workout-sessions/{SID}").json()["heart"]["avg_bpm"] == 118
     assert night(auth_client)["deep_min"] == 80
-    assert auth_client.get(f"/api/v1/health-days?from={DAY}&to={DAY}").json()["items"][0]["steps"] == 9000
+    day = auth_client.get(f"/api/v1/health-days?from={DAY}&to={DAY}").json()["items"][0]
+    assert (day["steps"], day["hrv_ms"], day["spo2"]) == (9000, 48, 97)
 
 
 def test_snapshot_has_watch_data_and_the_nights_import_must_not_touch(auth_client):
@@ -100,7 +102,7 @@ def test_snapshot_has_watch_data_and_the_nights_import_must_not_touch(auth_clien
     auth_client.put("/api/v1/health-days/2026-11-16", json={"steps": 7000})
     snap = auth_client.get("/api/v1/sync/snapshot?days=400").json()
     assert snap["sleep_owned"] == ["2026-11-15", "2026-11-16"]
-    assert snap["health_days"] == [{"date": "2026-11-16", "steps": 7000, "resting_hr": None}]
+    assert snap["health_days"] == [{"date": "2026-11-16", "steps": 7000, "resting_hr": None, "hrv_ms": None, "spo2": None}]
     assert next(n for n in snap["sleep_logs"] if n["date"] == "2026-11-17")["rem_min"] == 95
 
 
@@ -118,8 +120,8 @@ def test_migration_11_adds_watch_tables_without_touching_nights(tmp_path):
                     fn(c)
                     c.execute("INSERT INTO schema_migrations VALUES (?, ?, 'x')", (version, name))
         c.execute("INSERT INTO sleep_logs (date, bed_time, wake_time, updated_at) VALUES ('2026-11-10', '00:10', '07:30', 't')")
-    assert run_migrations(db, tmp_path / "backups") == 11
-    assert run_migrations(db, tmp_path / "backups") == 11, "ripetibile"
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS)
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS), "ripetibile"
     c = sqlite3.connect(db)
     assert c.execute("SELECT bed_time, source, deep_min FROM sleep_logs").fetchall() == [("00:10", "manual", None)]
     assert c.execute("SELECT count(*) FROM health_days").fetchone()[0] == 0
@@ -130,3 +132,43 @@ def test_migration_11_adds_watch_tables_without_touching_nights(tmp_path):
     c.execute("INSERT INTO workout_heart VALUES ('s1', 120, 150, 60, 't')")
     c.execute("DELETE FROM workout_sessions WHERE id='s1'")
     assert c.execute("SELECT count(*) FROM workout_heart").fetchone()[0] == 0, "sparisce con la seduta"
+
+
+def test_hrv_and_spo2_are_stored_validated_and_null_when_missing(auth_client):
+    assert auth_client.put(f"/api/v1/health-days/{DAY}", json={"steps": 100, "hrv_ms": 52, "spo2": 96}).status_code == 200
+    day = auth_client.get(f"/api/v1/health-days?from={DAY}&to={DAY}").json()["items"][0]
+    assert day == {"date": DAY, "steps": 100, "resting_hr": None, "hrv_ms": 52, "spo2": 96}
+    assert auth_client.put(f"/api/v1/health-days/{DAY}", json={"spo2": 101}).status_code == 422
+    assert auth_client.put(f"/api/v1/health-days/{DAY}", json={"hrv_ms": 0}).status_code == 422
+
+
+def test_migration_12_adds_hrv_and_spo2_and_keeps_saved_days(tmp_path):
+    from app.db import connect, transaction
+    from app.migrations import _applied
+
+    db = tmp_path / "f.sqlite"
+    legacy_db(db)
+    with connect(db) as c:  # schema 11, come la 1.14
+        _applied(c)
+        for version, name, fn in MIGRATIONS:
+            if version <= 11:
+                with transaction(c):
+                    fn(c)
+                    c.execute("INSERT INTO schema_migrations VALUES (?, ?, 'x')", (version, name))
+        c.execute("INSERT INTO health_days (date, steps, resting_hr, updated_at) VALUES ('2026-11-10', 8000, 60, 't')")
+    assert run_migrations(db, tmp_path / "backups") == 12
+    assert run_migrations(db, tmp_path / "backups") == 12, "ripetibile"
+    c = sqlite3.connect(db)
+    assert c.execute("SELECT date, steps, resting_hr, hrv_ms, spo2 FROM health_days").fetchall() == [("2026-11-10", 8000, 60, None, None)]
+
+
+def test_weight_from_the_scale_keeps_its_source_and_old_weights_stay_manual(auth_client):
+    s = auth_client.get("/api/state").json()
+    s["data"]["weights"] = [{"id": "w1", "date": "2026-11-09", "weight": 90.0},
+                            {"id": "w2", "date": "2026-11-10", "weight": 89.6, "source": "health_connect"}]
+    assert auth_client.put("/api/state", json=s).status_code == 200
+    s = auth_client.get("/api/state").json()
+    saved = {w["id"]: w for w in s["data"]["weights"]}
+    assert saved["w2"]["source"] == "health_connect" and saved["w1"]["source"] == "manual"
+    s["data"]["weights"][0]["source"] = "bilancia"
+    assert auth_client.put("/api/state", json=s).status_code == 422

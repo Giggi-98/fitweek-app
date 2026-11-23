@@ -1,5 +1,5 @@
-"""API v1 per i dati "leggeri" della routine: sonno, note per esercizio, spesa reale settimanale, passi e
-battito a riposo letti dall'orologio.
+"""API v1 per i dati "leggeri" della routine: sonno, note per esercizio, spesa reale settimanale, passi,
+battito a riposo, HRV e SpO2 letti dall'orologio.
 
 Sono tutti inserimenti facoltativi e modificabili; lo storico non viene mai sovrascritto in blocco.
 Il sonno è indicizzato sul giorno del RISVEGLIO (la notte tra lunedì e martedì è di martedì).
@@ -26,6 +26,7 @@ def _rows(c: sqlite3.Connection, sql: str, params: tuple = ()) -> list[dict]:
 
 
 SLEEP_COLS = "date, bed_time, wake_time, source, note, deep_min, light_min, rem_min, awake_min"
+HEALTH_COLS = "date, steps, resting_hr, hrv_ms, spo2"
 KEPT = {"ok": True, "kept": True}  # importazione non applicata: quella notte l'ha decisa l'utente
 
 
@@ -158,7 +159,7 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         last = date_to or today().isoformat()
         first = date_from or (date.fromisoformat(last) - timedelta(days=59)).isoformat()
         with connect(settings.db_path) as c:
-            return {"items": _rows(c, "SELECT date, steps, resting_hr FROM health_days WHERE date BETWEEN ? AND ?"
+            return {"items": _rows(c, f"SELECT {HEALTH_COLS} FROM health_days WHERE date BETWEEN ? AND ?"
                                       " ORDER BY date", (first, last))}
 
     @r.put("/health-days/{day}", dependencies=writes)
@@ -167,10 +168,10 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             if is_stale(_saved_at(c, "health_days", "date", day), edited):
                 return STALE
             c.execute(
-                "INSERT INTO health_days (date, steps, resting_hr, updated_at) VALUES (?, ?, ?, ?)"
+                "INSERT INTO health_days (date, steps, resting_hr, hrv_ms, spo2, updated_at) VALUES (?, ?, ?, ?, ?, ?)"
                 " ON CONFLICT(date) DO UPDATE SET steps=excluded.steps, resting_hr=excluded.resting_hr,"
-                " updated_at=excluded.updated_at",
-                (day, body.steps, body.resting_hr, edited),
+                " hrv_ms=excluded.hrv_ms, spo2=excluded.spo2, updated_at=excluded.updated_at",
+                (day, body.steps, body.resting_hr, body.hrv_ms, body.spo2, edited),
             )
         return {"ok": True}
 

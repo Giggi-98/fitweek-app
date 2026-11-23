@@ -13,7 +13,7 @@ from fastapi import APIRouter, Depends, Query
 from .config import Settings
 from .daily import parse_items
 from .db import connect, snapshot
-from .tracking import SLEEP_COLS
+from .tracking import HEALTH_COLS, SLEEP_COLS
 from .workouts import now_iso, today
 
 
@@ -50,7 +50,7 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
                 "sleep_owned": [r[0] for r in c.execute(
                     "SELECT date FROM sleep_logs WHERE date >= ? AND (source = 'manual' OR deleted_at IS NOT NULL)"
                     " ORDER BY date", (since,))],
-                "health_days": _rows(c, "SELECT date, steps, resting_hr FROM health_days WHERE date >= ? ORDER BY date",
+                "health_days": _rows(c, f"SELECT {HEALTH_COLS} FROM health_days WHERE date >= ? ORDER BY date",
                                      (since,)),
                 "exercise_notes": _rows(c, "SELECT exercise_id, note, updated_at FROM exercise_notes WHERE note <> ''"),
                 "grocery_spend": _rows(c, "SELECT week_start, amount, note FROM grocery_spend ORDER BY week_start DESC"),

@@ -90,6 +90,7 @@ class WeightReading(Strict):
     weight: float = Field(gt=0, le=500)
     waist: Optional[float] = Field(default=None, ge=0, le=300)
     note: Text(500) = ""
+    source: Literal["manual", "health_connect"] = "manual"  # health_connect = dalla bilancia, via Health Connect
 
 
 class PlanIngredient(Strict):
@@ -356,6 +357,8 @@ class HealthDayPut(Strict):
     """Valori del giorno letti dall'orologio; null = l'orologio non li ha registrati."""
     steps: Optional[int] = Field(default=None, ge=0, le=200_000)
     resting_hr: Optional[int] = Field(default=None, ge=25, le=220)
+    hrv_ms: Optional[int] = Field(default=None, ge=1, le=500)  # variabilità del battito (RMSSD), media del giorno
+    spo2: Optional[int] = Field(default=None, ge=50, le=100)  # ossigeno nel sangue in %, media del giorno
 
 
 class ExerciseNotePut(Strict):

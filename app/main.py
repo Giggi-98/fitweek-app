@@ -26,11 +26,12 @@ from .security import (
     password_matches,
     request_token,
 )
-from . import daily, foodsearch, mirror, tracking
+from . import daily, events, foodsearch, mirror, tracking
 from .workouts import build_router, load_sessions, now_iso
 
 log = logging.getLogger("fitweek.http")
 STATIC_DIR = BASE_DIR / "static"
+WRITE_METHODS = {"POST", "PUT", "PATCH", "DELETE"}
 PDF_PATH = BASE_DIR / "resources" / "scheda-originale.pdf"
 
 
@@ -45,9 +46,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="FitWeek", version=APP_VERSION, docs_url=None, redoc_url=None, openapi_url=None)
 
     app.state.app_origins = settings.app_origins
+    hub = app.state.hub = events.Hub()
     # CORS solo per l'app autonoma: niente cookie (allow_credentials resta falso), autenticazione con token.
     app.add_middleware(CORSMiddleware, allow_origins=list(settings.app_origins), allow_methods=["*"],
-                       allow_headers=["Authorization", "Content-Type", "X-Edited-At"],
+                       allow_headers=["Authorization", "Content-Type", "X-Edited-At", "X-Client-Id"],
                        expose_headers=["X-Renewed-Token"], max_age=600)
 
     # ---- middleware e gestione errori ---------------------------------------------------
@@ -55,6 +57,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def headers_and_logging(request: Request, call_next):
         started = time.perf_counter()
         response = await call_next(request)
+        if request.method in WRITE_METHODS and response.status_code < 400:
+            domain = events.domain_of(request.url.path)
+            if domain:
+                hub.publish(domain, events.client_id(request))
         response.headers.update(BASE_HEADERS)
         renewed = getattr(request.state, "renewed_token", None)
         if renewed:
@@ -299,7 +305,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if body.health_days is not None:
                         c.execute("DELETE FROM health_days")
                         for h in body.health_days:
-                            c.execute("INSERT INTO health_days VALUES (?,?,?,?)", (h.date, h.steps, h.resting_hr, now))
+                            c.execute("INSERT INTO health_days (date, steps, resting_hr, hrv_ms, spo2, updated_at)"
+                                      " VALUES (?,?,?,?,?,?)", (h.date, h.steps, h.resting_hr, h.hrv_ms, h.spo2, now))
                     if body.reminders is not None:
                         c.execute("DELETE FROM reminder_acks")
                         c.execute("DELETE FROM reminders")
@@ -346,6 +353,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(tracking.build_router(settings, require_session))
     app.include_router(foodsearch.build_router(settings, require_session))
     app.include_router(mirror.build_router(settings, require_session))
+    app.include_router(events.build_router(hub, require_session, lambda r: sessions.verify(request_token(r))[0] is not None))
 
     @app.get("/api/original-pdf", dependencies=[Depends(require_session)])
     def original_pdf():

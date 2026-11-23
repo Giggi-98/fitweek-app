@@ -459,6 +459,15 @@ def _m011_watch_data(c: sqlite3.Connection) -> None:
     )
 
 
+def _m012_watch_more(c: sqlite3.Connection) -> None:
+    """Variabilità del battito (HRV, RMSSD in ms) e ossigeno nel sangue (SpO2, %) per giorno, letti dall'orologio
+    tramite Health Connect (1.15). Colonne nullable: i giorni già salvati restano com'erano."""
+    cols = {row[1] for row in c.execute("PRAGMA table_info(health_days)")}
+    for col, kind in (("hrv_ms", "INTEGER"), ("spo2", "INTEGER")):
+        if col not in cols:
+            c.execute(f"ALTER TABLE health_days ADD COLUMN {col} {kind}")
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -471,6 +480,7 @@ MIGRATIONS: list[Migration] = [
     (9, "set_tombstones", _m009_set_tombstones),
     (10, "set_kind", _m010_set_kind),
     (11, "watch_data", _m011_watch_data),
+    (12, "watch_more", _m012_watch_more),
 ]
 
 
