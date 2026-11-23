@@ -222,6 +222,19 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.15.0 (2026-11-23) — orologio più vivo, avvisi in tempo reale (tappa 1 di 8)
+
+Richiesta dell'utente (D-041). Nel repository, **non in produzione**; richiede la migrazione 12 (due colonne, con backup automatico all'avvio).
+- **In palestra** (app Android): battito dell'orologio nella testata della seduta, riletto ogni minuto: ultimo valore, media e massimo. Alla chiusura il battito della seduta si calcola subito e si aggiorna per 24 ore se arrivano altri campioni.
+- **Nuovi dati dall'orologio**: HRV e SpO2 per giorno in *Progressi → Orologio*; pesate dalla bilancia (solo nei giorni senza pesata, mai a modifica).
+- **Correzione**: un permesso tolto non cancella più i valori già salvati degli ultimi giorni.
+- **Tempo reale**: una modifica fatta da un dispositivo compare sugli altri in meno di un secondo (webapp e app, stessa rete), senza ricaricare e senza toccare un campo in compilazione.
+- **Non fatto**: lettura con l'app chiusa (motivo in D-041).
+
+Verificato dal maker: 135 pytest, 142 test JS, 291 controlli e2e in 12 file (nuovo: `live`; `health` esteso). **Non verificato**: nulla su telefono (HRV, SpO2 e peso da Health Connect, flusso degli avvisi nella WebView Android); APK non compilato; migrazione 12 mai eseguita sul DB reale.
+
+Prossime tappe (ordine concordato): 5 grafica comune, 2 battito dentro l'allenamento, 6 palestra a una mano, 3 app per l'orologio Wear OS, 7 pasti/spesa/Oggi, 4 ciclo dei dati e meno tocchi, 8 comodità Android e web.
+
 ## 1.14.0 (2026-11-17) — dati dall'orologio (Health Connect)
 
 Richiesta dell'utente (D-040): l'Oppo Watch scrive con OHealth su Health Connect (verificato dall'utente); l'app Android legge da lì e invia al server. Nel repository, **non in produzione**; richiede la migrazione 11 (colonne e tabelle nuove, con backup automatico all'avvio).

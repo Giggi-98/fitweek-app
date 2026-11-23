@@ -111,6 +111,17 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.15 (2026-11-23) — avvisi in tempo reale, HRV, SpO2, pesate dalla bilancia (D-041)
+
+| Metodo | Path | Descrizione |
+|---|---|---|
+| GET | `/api/v1/events` | Flusso `text/event-stream` (sessione richiesta, cookie o `Bearer`). Dopo ogni scrittura riuscita (POST/PUT/PATCH/DELETE con stato < 400): `event: change` con `data: {"domain", "by"}`. `domain` = `state` (`/api/state`), `restore`, oppure il primo segmento dopo `/api/v1/` (es. `workout-sessions`, `meal-logs`, `sleep`); accessi, uscite e dispositivi collegati non generano avvisi. `by` = intestazione `X-Client-Id` di chi ha scritto (`[A-Za-z0-9_-]{1,64}`, altrimenti `null`). Commento `: ping` ogni 20 s; il flusso si chiude se la sessione non è più valida. Oltre 20 flussi aperti → 429. Nessun dato nel flusso: si rilegge con le API del dominio. |
+
+Modifiche a endpoint esistenti:
+- Tutte le scritture accettano `X-Client-Id` (aggiunta anche alle intestazioni CORS ammesse).
+- `GET/PUT /api/v1/health-days`: campi `hrv_ms` (1–500, media del giorno) e `spo2` (50–100 %, media del giorno), `null` = non registrato. Stessi campi in `/sync/snapshot` e nel dominio `health_days` del backup (v5 invariato: i file senza i campi nuovi restano validi).
+- Stato a blob, `weights[]`: campo `source` (`manual` predefinito, `health_connect` = dalla bilancia).
+
 ## API 1.14 (2026-11-17) — dati dall'orologio (Health Connect, D-040)
 
 I valori li legge l'app Android da Health Connect e li invia dalla coda offline, con `X-Edited-At`; il server non legge mai l'orologio.

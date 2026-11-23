@@ -66,6 +66,15 @@ Premessa: server alla 1.14.0 e APK compilato dopo il deploy; OHealth con la scri
 - [ ] **Senza rete**: in modalità aereo *Importa ora* mette i valori in coda e Progressi li mostra; togliendo la modalità aereo arrivano al server (dal PC si vedono gli stessi numeri).
 - [ ] **Permessi tolti**: toglili da *Permessi*; tornando nell'app il pannello lo dice e l'importazione non dà errori.
 
+## 8. Battito dal vivo, nuovi dati e tempo reale (1.15.0)
+Premessa: server alla 1.15.0 e APK compilato dopo il deploy.
+- [ ] **Permessi nuovi**: *Permessi* mostra anche HRV, ossigeno nel sangue e peso; consentili.
+- [ ] **Battito in seduta**: avvia una seduta con l'orologio al polso; entro qualche minuto la testata mostra "… bpm · media · max". Annota il ritardo rispetto all'orologio (dipende da OHealth).
+- [ ] **Battito a fine seduta**: chiudendo la seduta, lo storico mostra il battito; riaprendo l'app più tardi può cambiare di poco (campioni arrivati dopo).
+- [ ] **HRV, SpO2, bilancia**: compaiono solo se OHealth (o la bilancia) li scrive su Health Connect; annota quali ci sono.
+- [ ] **Tempo reale**: con telefono e PC sulla stessa Wi-Fi, registra un pasto dal PC: compare sul telefono senza toccare nulla, entro un paio di secondi. Ripeti al contrario.
+- [ ] **Schermo spento**: spegni lo schermo per qualche minuto, riaccendi: l'app si riallinea da sola.
+
 ---
 
 ### Note / esito della prova
