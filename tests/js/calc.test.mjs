@@ -70,3 +70,13 @@ test("serie per gruppo muscolare nella settimana: solo serie di lavoro, gruppi n
   const skipped = session("s4", "2026-11-12", [set("a1", 1, 40, 10)], { status: "skipped" });
   assert.deepEqual(weeklyMuscleSets([S1, S2, live, skipped], "2026-11-09", "2026-11-15", muscle), [{ muscle: "Dorsali", sets: 2 }, { muscle: "Spalle", sets: 1 }]);
 });
+
+test("dischi per lato: i più pesanti che ci stanno, con il resto se il carico non si può fare", async () => {
+  const { platesPerSide } = await import("../../static/js/workout/calc.js");
+  assert.deepEqual(platesPerSide(100), { perSide: [25, 15], rest: 0 });
+  assert.deepEqual(platesPerSide(62.5), { perSide: [20, 1.25], rest: 0 });
+  assert.deepEqual(platesPerSide(20), { perSide: [], rest: 0 }, "solo il bilanciere");
+  assert.deepEqual(platesPerSide(41, 20), { perSide: [10], rest: 0.5 }, "0,5 kg per lato non si possono fare");
+  assert.deepEqual(platesPerSide(30, 10), { perSide: [10], rest: 0 }, "bilanciere corto da 10 kg");
+  assert.equal(platesPerSide(15, 20), null, "sotto il bilanciere");
+});

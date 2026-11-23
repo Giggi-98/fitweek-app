@@ -905,3 +905,7 @@ table.cons td .icon { display: block; margin: auto; }
 }
 #page-eyebrow:empty { display: none; }
 .heart-sum { display: grid; gap: var(--space-2); }
+.plates-total { display: flex; align-items: center; justify-content: center; gap: var(--space-4); }
+.plates-total strong { font-size: var(--text-xl); font-weight: 800; font-variant-numeric: tabular-nums; min-width: 6ch; text-align: center; }
+.plates-total small { font-size: var(--text-sm); color: var(--color-text-muted); font-weight: 600; }
+.plates-result { font-size: var(--text-lg); font-weight: 750; text-align: center; margin: 0; }

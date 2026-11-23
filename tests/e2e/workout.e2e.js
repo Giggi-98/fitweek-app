@@ -11,6 +11,7 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
   const browser = await chromium.launch();
   // Lunedì 9/11 alle 19:45: giorno A
   const ctx = await browser.newContext({ ...devices['iPhone 13'], timezoneId: 'Europe/Rome', locale: 'it-IT' });
+  await ctx.grantPermissions(['clipboard-read', 'clipboard-write'], { origin: B });
   const page = await ctx.newPage();
   global.__page = page;
   const errors = [];
@@ -100,6 +101,26 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
   await page.click('[data-toggle-ex="a1"]');
   await page.click('[data-reopen-ex="a1"]');
   check('esercizio riaperto', (await page.locator('#ex-a1.done').count()) === 0 && (await page.locator('#ex-a1 .set-row').count()) === 3);
+  // Tappa 6: dischi per lato dal menu dell'esercizio
+  await page.click('[data-ex-menu="a2"]');
+  await page.click('#modal [data-m=plates]');
+  await page.waitForSelector('#modal .plates-result');
+  for (let i = 0; i < 4; i++) await page.click('#modal [data-pl="2.5"]'); // dal carico della riga (o 20) +10 kg
+  const plates = await page.textContent('#modal .plates-result');
+  await page.click('#modal [data-bar="10"]');
+  const shortBar = await page.textContent('#modal .plates-result');
+  check('dischi: per lato, e cambiano con il bilanciere', /kg|bilanciere/i.test(plates) && plates !== shortBar, `${plates} / ${shortBar}`);
+  await page.screenshot({ path: `${SHOTS}/m2-3b-plates.png` }); // solo lo schermo: la finestra non sta nella pagina intera
+  await page.click('#modal [data-m=close]');
+  // Tappa 6: ripetizioni vuote = quelle proposte, la serie si segna con un tocco
+  const a2 = page.locator('#ex-a2 .set-row').first();
+  const proposed = Number((await a2.locator('[data-field=reps]').getAttribute('placeholder')) || 0);
+  await a2.locator('[data-field=reps]').fill('');
+  await a2.locator('[data-check]').click();
+  await page.waitForSelector('#sync[data-state=ok]', { timeout: 10000 });
+  const tapped = await page.evaluate(() => fetch('/api/v1/today').then((r) => r.json()));
+  const a2set = tapped.active_session.sets.find((x) => x.exercise_id === 'a2');
+  check('serie con un tocco: ripetizioni proposte', proposed > 0 && a2set?.reps === proposed, JSON.stringify(a2set));
   // Cardio, note, fine
   await page.click('[data-cardio]');
   await page.fill('#wk-notes', 'Buona seduta');
@@ -108,7 +129,11 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
   await page.click('[data-finish]');
   await page.waitForSelector('[data-close-summary]');
   const summary = await page.textContent('.hero');
-  check('riepilogo con volume calcolato', /calc/.test(summary) && /3\s*\/\d+/.test(summary.replace(/\s+/g, ' ')), summary.replace(/\s+/g, ' ').slice(0, 120));
+  check('riepilogo con volume calcolato', /calc/.test(summary) && /4\s*\/\d+/.test(summary.replace(/\s+/g, ' ')), summary.replace(/\s+/g, ' ').slice(0, 120));
+  await page.click('[data-share-summary]');
+  await page.locator('#toast', { hasText: 'Riepilogo copiato' }).waitFor({ timeout: 5000 });
+  const shared = await page.evaluate(() => navigator.clipboard.readText());
+  check('riepilogo da condividere: testo con giornata, serie ed esercizi', /FitWeek · Giorno A/.test(shared) && /4 serie/.test(shared), shared.replace(/\n/g, ' | '));
   await shot(page, '4-summary');
   await page.click('[data-close-summary]');
   await page.waitForSelector('.today-hero.done');

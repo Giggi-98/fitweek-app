@@ -8,7 +8,7 @@ import { choices, openModal, toast } from "../ui.js";
 import { $, esc, fmtClock, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
-import { RECORD_LABEL, exerciseBests, exerciseSessions, exerciseSummary, isWork, repRange, setRecords, setTarget } from "../workout/calc.js";
+import { PLATES, platesPerSide, RECORD_LABEL, exerciseBests, exerciseSessions, exerciseSummary, isWork, repRange, setRecords, setTarget } from "../workout/calc.js";
 import { openExerciseEditor, openExercisePage, openPicker, originalProgram, restLabel } from "../workout/exercise.js";
 import { canReadHealth, heartLive, importHealth } from "../watch.js";
 import { setPeaks } from "../health.js";
@@ -329,6 +329,29 @@ function heartSummaryBlock(s) {
   </div>`;
 }
 
+/** Il riepilogo in poche righe di testo, da mandare in una chat. */
+function summaryText(s) {
+  const { done } = progressOf(s);
+  const rows = exercisesOf(s).map((ex) => ({ ex, sum: exerciseSummary(app.sessions, s, ex.id) })).filter((x) => x.sum);
+  return [
+    `FitWeek · Giorno ${s.routine} · W${s.week} · ${fmtDate(s.date)}`,
+    `${done} serie${s.duration_min != null ? ` · ${Math.round(s.duration_min)}′` : ""} · volume ${fmtNum(volume(s), 0)} kg`,
+    ...rows.map(({ ex, sum }) => `${ex.name}: ${fmtSet(sum.top)}${sum.records.length ? " · record" : ""}`),
+    s.heart ? `Battito medio ${s.heart.avg_bpm}, massimo ${s.heart.max_bpm} bpm` : "",
+  ].filter(Boolean).join("\n");
+}
+
+async function shareSummary(s) {
+  const text = summaryText(s);
+  try {
+    if (navigator.share) return await navigator.share({ text });
+    await navigator.clipboard.writeText(text);
+    toast("Riepilogo copiato: incollalo dove vuoi");
+  } catch (e) {
+    if (e.name !== "AbortError") toast("Condivisione non riuscita");
+  }
+}
+
 function renderSummary(summary) {
   const s = app.sessions.find((x) => x.id === summary.id) || summary; // con il battito arrivato dopo
   const { planned, done } = progressOf(s);
@@ -354,6 +377,7 @@ function renderSummary(summary) {
       .map(({ ex, sum }) => `<tr><td>${esc(ex.name)}</td><td>${esc(fmtSet(sum.top))}${sum.prev ? `<small>ultima ${esc(fmtSet(sum.prev.top))}</small>` : ""}</td><td>${delta(sum)}</td></tr>`)
       .join("")}</tbody></table></div>` : ""}
     <button class="btn primary xl full" data-close-summary>Fatto</button>
+    <button class="btn ghost full" data-share-summary>${icon("arrow-up", "sm")}Condividi il riepilogo</button>
   </section>`;
 }
 
@@ -373,8 +397,10 @@ function startSession(routine, week, date = isoDate()) {
   return s;
 }
 
+/** Valori della riga. Ripetizioni lasciate vuote = quelle proposte (il segnaposto): la serie si segna con un tocco. */
 function rowValues(row) {
-  return { kg: parseNum($("[data-field=kg]", row).value), reps: parseNum($("[data-field=reps]", row).value) };
+  const reps = $("[data-field=reps]", row);
+  return { kg: parseNum($("[data-field=kg]", row).value), reps: parseNum(reps.value) ?? parseNum(reps.placeholder) };
 }
 
 /** Registra o aggiorna una serie. RIR e tipo vanno rimandati a ogni modifica, altrimenti il server li azzera. */
@@ -593,6 +619,7 @@ function openExerciseMenu(exId) {
     `<h2 id="modal-title">${esc(ex.name)}</h2>
     <div class="pick-list">
       ${item("page", "chart-line", "Storia e record")}
+      ${item("plates", "dumbbell", "Dischi da caricare", nextKg(ex.id) ? `${fmtNum(nextKg(ex.id))} kg` : "")}
       ${started ? "" : ex.added ? item("skip", "x", "Togli da questa seduta") : `${item("swap", "refresh-cw", "Sostituisci solo oggi", "macchina occupata")}${item("skip", "skip-forward", "Salta oggi")}`}
       ${at > 0 ? item("up", "arrow-up", "Sposta prima") : ""}${at < list.length - 1 ? item("down", "arrow-down", "Sposta dopo") : ""}
     </div>
@@ -604,6 +631,7 @@ function openExerciseMenu(exId) {
       const m = t.dataset.m;
       if (m === "close") return true;
       if (m === "page") return openExercisePage(ex.id), false;
+      if (m === "plates") return openPlates(nextKg(ex.id) || 20), false;
       if (t.dataset.rest !== undefined) {
         app.state = patchExercise(app.state, ex.id, { rest: num(t.dataset.rest) || null });
         persistState();
@@ -627,6 +655,34 @@ function openExerciseMenu(exId) {
       return true;
     },
   );
+}
+
+/** Carico della prossima serie non ancora fatta, come è scritto nella riga (o null). */
+const nextKg = (exId) => parseNum(document.querySelector(`.set-row[data-ex="${CSS.escape(exId)}"]:not(.done) [data-field=kg]`)?.value);
+
+// ---- dischi da caricare sul bilanciere ---------------------------------------------------------
+const BARS = [20, 15, 10];
+function openPlates(total) {
+  const state = { total, bar: 20 };
+  const body = () => {
+    const r = platesPerSide(state.total, state.bar);
+    const text = !r ? `Sotto il bilanciere da ${fmtNum(state.bar)} kg.`
+      : r.perSide.length ? `${r.perSide.map((p) => fmtNum(p)).join(" + ")} kg` : "Solo il bilanciere";
+    return `<h2 id="modal-title">Dischi per lato</h2>
+      <div class="plates-total"><button type="button" class="icon-btn" data-pl="-2.5" aria-label="Meno 2,5 kg">${icon("minus")}</button><strong>${esc(fmtNum(state.total))}<small> kg</small></strong><button type="button" class="icon-btn" data-pl="2.5" aria-label="Più 2,5 kg">${icon("plus")}</button></div>
+      <div class="pick-group"><span class="eyebrow">Bilanciere</span>${choices(BARS.map((b) => [String(b), `${b} kg`]), String(state.bar), "Bilanciere", "bar")}</div>
+      <p class="plates-result" aria-live="polite">${esc(text)}</p>
+      ${r?.rest ? `<p class="subtle">${esc(fmtNum(r.rest))} kg per lato non si possono fare con dischi da ${esc(fmtNum(PLATES[PLATES.length - 1]))} kg.</p>` : ""}
+      <div class="modal-secondary"><button type="button" data-m="close">Chiudi</button></div>`;
+  };
+  openModal(body(), (t) => {
+    if (t.dataset.m === "close") return true;
+    if (t.dataset.pl) state.total = Math.max(0, state.total + num(t.dataset.pl));
+    else if (t.dataset.bar) state.bar = num(t.dataset.bar);
+    else return false;
+    $("#modal-body").innerHTML = body();
+    return false;
+  });
 }
 
 // ---- modifica della scheda (schermata di avvio) -------------------------------------------------
@@ -731,6 +787,7 @@ export async function onClick(t) {
     stopRest();
     return true;
   }
+  if (t.matches("[data-share-summary]")) return shareSummary(app.sessions.find((x) => x.id === ui.summary.id) || ui.summary), false;
   if (t.matches("[data-close-summary]")) {
     ui.summary = null;
     location.hash = "#dashboard";

@@ -113,3 +113,24 @@ export function weeklyMuscleSets(sessions, weekStart, weekEnd, muscleOf) {
   }
   return [...count].map(([muscle, sets]) => ({ muscle, sets })).sort((a, b) => b.sets - a.sets || a.muscle.localeCompare(b.muscle));
 }
+
+/** Dischi standard da palestra (kg), dal più pesante. */
+export const PLATES = [25, 20, 15, 10, 5, 2.5, 1.25];
+
+/**
+ * Dischi per lato per arrivare a `total` con un bilanciere da `bar` kg, scegliendo sempre il disco più pesante
+ * che ci sta. @returns {perSide: [kg…], rest} con `rest` = kg per lato che i dischi non riescono a fare
+ * (0 se il carico è esatto); null se il carico è sotto il bilanciere.
+ */
+export function platesPerSide(total, bar = 20, plates = PLATES) {
+  if (!(total >= bar)) return null;
+  let side = Math.round(((total - bar) / 2) * 100) / 100;
+  const perSide = [];
+  for (const p of plates) {
+    while (side + 1e-9 >= p) {
+      perSide.push(p);
+      side = Math.round((side - p) * 100) / 100;
+    }
+  }
+  return { perSide, rest: side };
+}

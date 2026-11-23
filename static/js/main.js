@@ -5,6 +5,7 @@ import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, to
 import { app, loadAll, refreshDaily, refreshExtras, refreshState, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, fitTabStrips, initModal, markStripEnd, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
 import { startLive, stopLive } from "./live.js";
+import { keepAwake } from "./workout/awake.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
@@ -40,6 +41,7 @@ function render() {
   hydrateIcons($("#content"));
   applyDynamicStyles($("#content"));
   fitTabStrips($("#content"));
+  keepAwake(Boolean(app.today?.active_session)); // in palestra lo schermo resta acceso, in qualunque vista
   mountCharts($("#content"));
   window.scrollTo({ top: y });
   current().afterRender?.();
