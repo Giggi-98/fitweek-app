@@ -1,5 +1,11 @@
 # Design system
 
+## Aggiunte 1.18.0 (2026-11-23, tappa 6)
+
+- **Riga della serie**: ✓ con le ripetizioni vuote usa quelle proposte; nessun avviso in mezzo.
+- **Dischi per lato**: finestra dal menu "…" dell'esercizio; carico grande al centro con −/+, bilanciere come `choices()` sotto un titolo, risultato in grande; una sola azione (Chiudi).
+- **Riepilogo**: sotto "Fatto" (primaria) un pulsante ghost "Condividi il riepilogo".
+
 ## Aggiunte 1.16.0 (2026-11-23, tappa 5 "fondamenta grafiche")
 
 Partite da un giro fotografico di tutte le viste (`tests/e2e/screens.e2e.js`: ogni vista e scheda a 390 e 1280 px, tema scuro e chiaro, nessuna pagina che scorre in orizzontale). Correzioni di struttura, non uno stile nuovo:

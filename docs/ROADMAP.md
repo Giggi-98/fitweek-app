@@ -222,6 +222,10 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.18.0 (2026-11-23) — palestra con una mano (tappa 6 di 8)
+
+Solo frontend. D-043: serie con un tocco (ripetizioni proposte), dischi per lato dal menu dell'esercizio, schermo acceso durante la seduta, riepilogo da condividere come testo.
+
 ## 1.17.0 (2026-11-23) — battito dentro l'allenamento (tappa 2 di 8)
 
 Richiede la migrazione 13 (una colonna). D-042.
