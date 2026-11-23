@@ -156,6 +156,17 @@ Richiesta dell'utente: l'app deve accorgersi del cambio di versione e potersi in
 - **Alternative scartate**: `PackageInstaller` a sessione (permetterebbe aggiornamenti senza conferma solo in casi ristretti, con più codice nativo non provabile qui); aggiornare solo le pagine web dell'app `next` senza APK (un secondo meccanismo di distribuzione, e non aggiornerebbe il codice nativo).
 - **Limiti**: provato con bridge Capacitor simulato e con la compilazione dei due APK; **nessuna prova su telefono reale** (download nativo, cookie del guscio, FileProvider, finestra di installazione). Checklist in `docs/ANDROID_CHECKLIST.md` §5.
 
+## D-045 — Pasti, spesa e Oggi più rapidi · Implementata (1.20.0, 2026-11-23, tappa 7 del piano)
+Prese come esempio le app di diario alimentare e di spesa più diffuse (MyFitnessPal, Yazio, Bring!), solo nei modi di fare.
+- **Frequenti**: nell'editor del pasto una scelta "Frequenti" prima delle categorie, con i piatti del catalogo più usati (`use_count`, già contato dal server); è quella proposta per un pasto nuovo quando ce ne sono. Un piatto scritto a mano da lì va nella categoria del momento della giornata.
+- **Come l'ultima volta**: con il piatto vuoto, "Come l'ultimo pranzo/cena…" rimette le voci dell'ultimo pasto di quel momento negli ultimi 21 giorni (anche "porto a casa"). Nessuna API nuova: legge il diario (`/meal-logs`), anche dalla copia sul telefono senza rete.
+- **Pasti abituali**: righe con nome, valori e fonte; toccandole si corregge in una finestra con i campi etichettati (prima: campi in riga senza etichetta, rimandati dalla tappa 5).
+- **Spesa**: in ogni reparto gli articoli da prendere stanno sopra, gli spuntati sotto.
+- **Oggi**: il riquadro del sonno dice anche il sonno profondo e se la notte viene dall'orologio.
+- **Corretto (avvisi in tempo reale, D-041)**: un avviso arrivato mentre un campo era stato cambiato ma non aveva più il fuoco (o con un file di backup scelto e non ancora caricato) ridisegnava la pagina e cancellava quanto inserito. Ora il ridisegno aspetta anche in quei casi (`unsaved()` in `static/js/main.js`). Trovato con l'e2e `ux`, che falliva una volta su tre.
+- **Scartati**: anelli di calorie/proteine da "chiudere" (spingerebbero a mangiare di più o di meno, regola del tono non giudicante); "copia da ieri" dell'intera giornata (le giornate dell'utente cambiano tra lavoro, palestra e weekend: "come l'ultimo pranzo" copre il caso ripetitivo).
+- **Rimandati**: piano dei pasti (aree di testo per giorno) e promemoria in Impostazioni alla tappa 4 (registrare con meno tocchi).
+
 ## D-044 — App FitWeek per l'orologio Wear OS · Implementata, compilata, MAI provata su un orologio (1.19.0, 2026-11-23, tappa 3 del piano)
 L'utente ha un Oppo Watch con Wear OS e vuole il battito davvero in tempo reale e la seduta al polso. Scelte in sessione: battito e seduta (non solo battito), serie confermata con la proposta e corretta con la corona, vibrazione a fine recupero, avvio della seduta dal polso.
 - **Orologio** (`mobile/wear/`, Kotlin, nessuna libreria grafica): una seduta di allenamento di Health Services (forza) tenuta da un servizio in primo piano, così il battito arriva anche a schermo spento; i campioni vanno al telefono raggruppati ogni 2 s. Una sola schermata: esercizio, "Serie N di M · kg", ripetizioni con −/+ e con la corona, "Serie fatta" (o "Inizia seduta"), recupero con conto alla rovescia e vibrazione alla fine, battito. Tutte le regole restano sul telefono: l'orologio mostra lo stato che riceve e rimanda i tocchi.

@@ -222,6 +222,10 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.20.0 (2026-11-23) — pasti, spesa e Oggi più rapidi (tappa 7 di 8)
+
+Solo frontend. D-045: "Frequenti" e "Come l'ultimo pranzo/cena" nell'editor del pasto, pasti abituali in righe con finestra di modifica, spesa con gli spuntati in fondo al reparto, sonno profondo in Oggi.
+
 ## 1.19.0 (2026-11-23) — app FitWeek per l'orologio Wear OS (tappa 3 di 8)
 
 D-044. Nuovo APK `fitweek-wear.apk` (stessa chiave, installazione a mano con adb) e plugin `WatchLink` nell'app del telefono: seduta avviata dal polso, battito ogni 1–2 s anche a schermo spento, serie confermata al polso con le ripetizioni corrette dalla corona, recupero che vibra alla fine. Compilato; **mai provato su un orologio**.
