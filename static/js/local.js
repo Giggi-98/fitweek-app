@@ -191,7 +191,7 @@ export function readLocal(path, db, ctx) {
     }
     case "/api/v1/health-days": {
       const last = q("to") || today, first = q("from") || addDays(last, -59);
-      return { items: db.health_days.filter((d) => d.date >= first && d.date <= last).sort(by("date")).map(({ date, steps, resting_hr }) => ({ date, steps, resting_hr })) };
+      return { items: db.health_days.filter((d) => d.date >= first && d.date <= last).sort(by("date")).map(({ date, steps, resting_hr, hrv_ms, spo2 }) => ({ date, steps, resting_hr, hrv_ms, spo2 })) };
     }
     case "/api/v1/agenda": {
       const date = q("date") || today;
@@ -278,7 +278,7 @@ export function applyWrite(db, { method, path, body = {}, at }) {
         : upsert(db.sleep_logs, "date", { source: "manual", note: "", ...Object.fromEntries(STAGES.map((k) => [k, null])), ...body, date: id }) };
     }
     case "health-days":
-      return del ? db : { ...db, health_days: upsert(db.health_days, "date", { steps: null, resting_hr: null, ...body, date: id }) };
+      return del ? db : { ...db, health_days: upsert(db.health_days, "date", { steps: null, resting_hr: null, hrv_ms: null, spo2: null, ...body, date: id }) };
     case "exercise-notes":
       return del ? db : { ...db, exercise_notes: upsert(db.exercise_notes, "exercise_id", { exercise_id: id, note: (body.note || "").trim(), updated_at: at }) };
     case "grocery-spend": {

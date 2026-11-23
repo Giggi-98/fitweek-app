@@ -111,7 +111,9 @@ function sleepTab() {
 function heartTab() {
   const steps = app.health.filter((d) => d.steps != null);
   const resting = app.health.filter((d) => d.resting_hr != null);
-  if (!steps.length && !resting.length) {
+  const latest = (k) => [...app.health].reverse().find((d) => d[k] != null);
+  const [hrv, spo2] = [latest("hrv_ms"), latest("spo2")];
+  if (!steps.length && !resting.length && !hrv && !spo2) {
     return panel(`${icon("watch")}Dall'orologio`, empty("Nessun dato dall'orologio", "Arrivano dall'app Android: Impostazioni → App Android → Dati dall'orologio."));
   }
   const today = app.today.date;
@@ -123,6 +125,8 @@ function heartTab() {
     steps.length && stat(`${icon("footprints", "sm")}Passi oggi`, todaySteps == null ? "—" : esc(fmtNum(todaySteps, 0)), todaySteps == null ? "nessun dato di oggi" : "fino all'ultima lettura"),
     weekAvg != null && stat(`${icon("chart-line", "sm")}Passi in media`, esc(fmtNum(weekAvg, 0)), `${week.length} ${week.length === 1 ? "giorno" : "giorni"}, oggi escluso`, { calc: true }),
     last && stat(`${icon("heart-pulse", "sm")}Battito a riposo`, `${esc(last.resting_hr)}<small> bpm</small>`, esc(fmtDate(last.date))),
+    hrv && stat(`${icon("activity", "sm")}HRV`, `${esc(hrv.hrv_ms)}<small> ms</small>`, `media del ${esc(fmtDate(hrv.date))}`),
+    spo2 && stat(`${icon("droplet", "sm")}SpO2`, `${esc(spo2.spo2)}<small> %</small>`, `media del ${esc(fmtDate(spo2.date))}`),
   ].filter(Boolean);
   const withAvg = resting.length >= 3;
   // tacche intere: il battito non ha decimali
@@ -142,7 +146,7 @@ function heartTab() {
         legend: withAvg ? [["raw", "Valore del giorno"], ["line", 'Media mobile 7 giorni <span class="badge-calc">calcolata</span>']] : [],
       }))
     : "";
-  return `<div class="tiles ${tiles.length === 3 ? "three" : "pair"}">${tiles.join("")}</div>${chart}
+  return `<div class="tiles ${tiles.length % 3 === 0 ? "three" : "pair"}">${tiles.join("")}</div>${chart}
     <p class="subtle">Valori letti dall'orologio tramite Health Connect.</p>`;
 }
 
@@ -221,7 +225,7 @@ function weightTab() {
         ? `<div class="table-scroll"><table><thead><tr><th>Settimana dal</th><th>Media <span class="badge-calc">calc.</span></th><th>Pesate</th></tr></thead><tbody>${weekly.slice(0, 8).map((w) => `<tr><td>${esc(fmtDate(w.week))}</td><td>${fmtNum(w.avg)} kg</td><td>${w.n}</td></tr>`).join("")}</tbody></table></div>`
         : empty("Nessuna media", "Servono alcune pesate.")
       : weigh.length
-        ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0, 7).map((a) => `<tr class="clickable" role="button" tabindex="0" data-edit-weight="${esc(a.id)}" aria-label="Modifica pesata del ${esc(fmtDate(a.date))}"><td>${esc(fmtDate(a.date))}</td><td>${fmtNum(a.weight)} kg</td><td>${a.waist ? fmtNum(a.waist) + " cm" : "—"}</td><td class="cell-action"><button type="button" class="icon-btn" data-del-weight="${esc(a.id)}" aria-label="Elimina misurazione">${icon("trash-2", "sm")}</button></td></tr>`).join("")}</tbody></table></div>${weigh.length > 7 ? `<p class="subtle">Ultime 7 di ${weigh.length} misurazioni.</p>` : ""}`
+        ? `<div class="table-scroll"><table><thead><tr><th>Data</th><th>Peso</th><th>Vita</th><th></th></tr></thead><tbody>${weigh.slice(0, 7).map((a) => `<tr class="clickable" role="button" tabindex="0" data-edit-weight="${esc(a.id)}" aria-label="Modifica pesata del ${esc(fmtDate(a.date))}"><td>${esc(fmtDate(a.date))}${a.source === "health_connect" ? ` <span class="subtle" title="Dalla bilancia" aria-label="dalla bilancia">${icon("watch", "sm")}</span>` : ""}</td><td>${fmtNum(a.weight)} kg</td><td>${a.waist ? fmtNum(a.waist) + " cm" : "—"}</td><td class="cell-action"><button type="button" class="icon-btn" data-del-weight="${esc(a.id)}" aria-label="Elimina misurazione">${icon("trash-2", "sm")}</button></td></tr>`).join("")}</tbody></table></div>${weigh.length > 7 ? `<p class="subtle">Ultime 7 di ${weigh.length} misurazioni.</p>` : ""}`
         : empty("Ancora nessuna pesata", "Registra la prima qui sotto."))}
     <details class="free"><summary>${icon("plus", "sm")}Registra peso e girovita</summary><form id="weight-form" class="stack"><div class="form-grid"><div class="field"><label for="w-date">Giorno</label><select id="w-date" name="date">${dayOptions()}</select></div><div class="field"><label for="w-kg">Peso (kg)</label><input id="w-kg" type="number" name="weight" min="20" max="500" step="0.1" required inputmode="decimal" placeholder="es. 89,4"></div><div class="field"><label for="w-waist">Girovita (cm) · facoltativo</label><input id="w-waist" type="number" name="waist" min="20" max="250" step="0.1" inputmode="decimal"></div><div class="field"><label for="w-note">Nota · facoltativa</label><input id="w-note" name="note" maxlength="500" placeholder="es. mattina a digiuno"></div></div><button class="btn primary" type="submit">${icon("scale", "sm")}Registra misurazione</button></form></details>`,
   )}</div>`;

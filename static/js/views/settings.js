@@ -136,7 +136,7 @@ function androidPanel() {
 }
 
 // ---- dati dall'orologio: Health Connect sul telefono (static/js/watch.js, D-040) -------------------------
-const HC_TYPES = [["sleep", "sonno"], ["steps", "passi"], ["resting_heart_rate", "battito a riposo"], ["heart_rate", "battito in palestra"]];
+const HC_TYPES = [["sleep", "sonno"], ["steps", "passi"], ["resting_heart_rate", "battito a riposo"], ["heart_rate", "battito in palestra"], ["hrv", "HRV"], ["spo2", "SpO2"], ["weight", "peso dalla bilancia"]];
 let watchChecked = false;
 const clock = (iso) => new Date(iso).toLocaleString("it-IT", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", hourCycle: "h23" });
 
@@ -160,7 +160,7 @@ function watchPanel() {
     title,
     `<div class="summary-list">
       <div class="summary-row"><i>${icon("circle-check", "sm")}</i><div><strong>${granted.length ? `Legge: ${esc(granted.join(", "))}` : "Nessun dato consentito"}</strong><small>${missing.length ? `Non consentiti: ${esc(missing.join(", "))}. Si cambiano da Permessi.` : "Tutti i dati che FitWeek usa."}</small></div></div>
-      <div class="summary-row"><i>${icon("clock", "sm")}</i><div><strong>${h.last ? `Ultima importazione: ${esc(clock(h.last))}` : "Mai importato"}</strong><small>${h.imported == null ? "All'apertura dell'app, al massimo ogni 15 minuti." : h.imported ? `${h.imported} ${h.imported === 1 ? "valore nuovo inviato" : "valori nuovi inviati"} al server.` : "Niente di nuovo dall'ultima volta."}</small></div></div>
+      <div class="summary-row"><i>${icon("clock", "sm")}</i><div><strong>${h.last ? `Ultima importazione: ${esc(clock(h.last))}` : "Mai importato"}</strong><small>${h.imported == null ? "All'apertura dell'app, al massimo ogni 15 minuti; in palestra il battito ogni minuto." : h.imported ? `${h.imported} ${h.imported === 1 ? "valore nuovo inviato" : "valori nuovi inviati"} al server.` : "Niente di nuovo dall'ultima volta."}</small></div></div>
     </div>
     ${h.error ? `<div class="inline-note warn">Errore: ${esc(h.error)}</div>` : ""}
     <div class="button-row">${actions}</div>

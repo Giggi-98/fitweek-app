@@ -145,11 +145,11 @@ test("orologio: la notte importata non tocca quelle scritte o eliminate dall'ute
   assert.equal(put(db, "/api/v1/sleep/2026-11-10", night), db, "eliminata: non torna con l'importazione");
 });
 
-test("orologio: passi e battito a riposo per giorno, letti dalla copia", () => {
+test("orologio: passi, battito a riposo, HRV e SpO2 per giorno, letti dalla copia come dal server", () => {
   let db = put(base(), `/api/v1/health-days/${MON}`, { steps: 8000 });
   db = put(db, "/api/v1/health-days/2026-11-08", { steps: null, resting_hr: 62 });
-  db = put(db, `/api/v1/health-days/${MON}`, { steps: 9100, resting_hr: 60 });
+  db = put(db, `/api/v1/health-days/${MON}`, { steps: 9100, resting_hr: 60, hrv_ms: 44, spo2: 97 });
   assert.deepEqual(readLocal(`/api/v1/health-days?from=2026-11-01&to=${MON}`, db, ctx()).items,
-    [{ date: "2026-11-08", steps: null, resting_hr: 62 }, { date: MON, steps: 9100, resting_hr: 60 }]);
+    [{ date: "2026-11-08", steps: null, resting_hr: 62, hrv_ms: null, spo2: null }, { date: MON, steps: 9100, resting_hr: 60, hrv_ms: 44, spo2: 97 }]);
   assert.equal(applyWrite(db, { method: "PUT", path: "/api/v1/workout-heart/s1", body: { avg_bpm: 1 }, at: MON }), db, "il battito delle sedute non è nella copia");
 });

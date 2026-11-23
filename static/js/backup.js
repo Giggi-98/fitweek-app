@@ -14,7 +14,7 @@ export const DOMAIN_LABELS = {
   sleep_logs: "sonno",
   exercise_notes: "note degli esercizi",
   grocery_spend: "spese settimanali",
-  health_days: "passi e battito a riposo dall'orologio",
+  health_days: "passi, battito a riposo, HRV e SpO2 dall'orologio",
 };
 
 export const isBackup = (obj) => /^fitweek-backup-v[1-5]$/.test(obj?.format || "");

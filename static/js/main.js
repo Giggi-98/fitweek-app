@@ -2,8 +2,9 @@
 import { net, probeServer, request, workOffline } from "./api.js";
 import * as cache from "./cache.js";
 import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, token, validServerUrl } from "./platform.js";
-import { app, loadAll, refreshDaily, refreshState, refreshWorkouts, syncState } from "./store.js";
-import { applyDynamicStyles, initModal, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
+import { app, loadAll, refreshDaily, refreshExtras, refreshState, refreshWorkouts, syncState } from "./store.js";
+import { applyDynamicStyles, initModal, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
+import { startLive, stopLive } from "./live.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
@@ -59,6 +60,7 @@ function updateHttpWarning() {
 }
 
 function showLogin(message = "") {
+  stopLive();
   $("#boot")?.classList.add("hidden");
   $("#login").classList.remove("hidden");
   $("#shell").classList.add("hidden");
@@ -144,6 +146,44 @@ async function boot() {
     flush();
   }
   route();
+  startLive(applyRemote);
+}
+
+// ---- modifiche arrivate da un altro dispositivo (avvisi in tempo reale, live.js) ---------------------
+const WORKOUT_DOMAINS = new Set(["workout-sessions", "workout-heart"]);
+const EXTRA_DOMAINS = new Set(["exercise-notes", "grocery-spend"]);
+
+/** Rilegge solo i domini cambiati altrove, senza toccare le modifiche di questo dispositivo ancora in coda. */
+async function applyRemote(domains) {
+  if (!app.state) return;
+  const has = (set) => domains.some((d) => set.has(d));
+  try {
+    if (domains.includes("restore")) {
+      if (pendingCount()) return; // dati locali più recenti: al prossimo ritorno sull'app si rilegge tutto
+      await loadAll();
+    } else {
+      const work = [];
+      if (domains.includes("state")) work.push(refreshState());
+      if (has(WORKOUT_DOMAINS) && !pendingCount()) work.push(refreshWorkouts());
+      if (has(EXTRA_DOMAINS)) work.push(refreshExtras());
+      if (domains.some((d) => d !== "state" && !WORKOUT_DOMAINS.has(d) && !EXTRA_DOMAINS.has(d))) work.push(refreshDaily());
+      await Promise.all(work);
+    }
+  } catch {
+    return; // server di nuovo irraggiungibile: restano i dati che ci sono
+  }
+  renderWhenIdle();
+}
+
+/** Ridisegna appena l'utente non sta scrivendo né ha una finestra aperta: un dato arrivato da fuori non deve
+ *  portargli via il campo che sta compilando. */
+let renderLater = null;
+function renderWhenIdle() {
+  clearTimeout(renderLater);
+  const el = document.activeElement;
+  const typing = el?.matches?.("input, textarea, select") && el.closest("#content");
+  if (modalOpen() || typing) return void (renderLater = setTimeout(renderWhenIdle, 1500));
+  render();
 }
 
 // ---- eventi --------------------------------------------------------------------------------

@@ -12,7 +12,7 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
 // Keystore e Health Connect simulati. I dati dell'orologio stanno in sessionStorage, così sopravvivono ai reload.
 const FAKE_NATIVE = () => {
   window.__keystore = { token: sessionStorage.getItem('__e2e_ks_token') || null };
-  const hc = () => JSON.parse(sessionStorage.getItem('__hc') || '{"status":"available","granted":[],"grantOnRequest":[],"sleep":[],"steps":[],"resting":[],"heart":[]}');
+  const hc = () => JSON.parse(sessionStorage.getItem('__hc') || '{"status":"available","granted":[],"grantOnRequest":[],"sleep":[],"steps":[],"resting":[],"heart":[],"hrv":[],"spo2":[],"weight":[]}');
   const saveHc = (v) => sessionStorage.setItem('__hc', JSON.stringify(v));
   window.Capacitor = {
     isNativePlatform: () => true,
@@ -42,6 +42,9 @@ const FAKE_NATIVE = () => {
         readSleep: async () => ({ sessions: hc().sleep }),
         readSteps: async () => ({ days: hc().steps }),
         readRestingHeartRate: async () => ({ records: hc().resting }),
+        readHrv: async () => ({ records: hc().hrv || [] }),
+        readSpo2: async () => ({ records: hc().spo2 || [] }),
+        readWeight: async () => ({ records: hc().weight || [] }),
         readHeartRate: async ({ from, to }) => ({ samples: hc().heart.filter((s) => new Date(s.time) >= new Date(from) && new Date(s.time) <= new Date(to)) }),
       },
     },
@@ -89,11 +92,14 @@ const FAKE_NATIVE = () => {
       { start: at(day, '02', '30'), end: at(day, '02', '40'), stage: 'awake' }, { start: at(day, '02', '40'), end: at(day, '07', '10'), stage: 'rem' }] });
     const t0 = new Date(start).getTime();
     sessionStorage.setItem('__hc', JSON.stringify({
-      status: 'available', granted: [], grantOnRequest: ['sleep', 'steps', 'heart_rate'],
+      status: 'available', granted: [], grantOnRequest: ['sleep', 'steps', 'heart_rate', 'hrv', 'spo2', 'weight'],
       sleep: [night(today, yesterday), night(yesterday, before), night(before, beforeThat), { start: at(today, '06', '00'), end: at(today, '06', '20'), stages: [] }],
       steps: [{ date: yesterday, steps: 9876 }, { date: today, steps: 4321 }],
       resting: [{ time: at(yesterday, '08', '00'), bpm: 61 }],
       heart: Array.from({ length: 20 }, (_, i) => ({ time: new Date(t0 + (i + 1) * 3 * 60000).toISOString(), bpm: 110 + i })),
+      hrv: [{ time: at(today, '03', '00'), value: 42 }, { time: at(today, '04', '00'), value: 50 }],
+      spo2: [{ time: at(today, '03', '00'), value: 96.4 }],
+      weight: [{ time: at(yesterday, '19', '00'), kg: 89.9 }, { time: at(yesterday, '06', '40'), kg: 89.44 }],
     }));
   }, { today, yesterday, before, beforeThat: addDays(today, -3), start: session.started_at });
   await page.reload();
@@ -117,6 +123,9 @@ const FAKE_NATIVE = () => {
   check('la notte eliminata non torna', !nights[before], JSON.stringify(nights[before]));
   const days = Object.fromEntries((await server(`/api/v1/health-days?from=${yesterday}&to=${today}`)).items.map((d) => [d.date, d]));
   check('passi per giorno; battito a riposo non consentito → nessun valore', days[today]?.steps === 4321 && days[yesterday]?.steps === 9876 && days[yesterday]?.resting_hr === null, JSON.stringify(days));
+  check('HRV e SpO2: media del giorno', days[today]?.hrv_ms === 46 && days[today]?.spo2 === 96, JSON.stringify(days[today]));
+  const weights = (await server('/api/state')).data.weights;
+  check('bilancia: la prima pesata del giorno entra come nuova, marcata dalla bilancia', weights.length === 1 && weights[0].date === yesterday && weights[0].weight === 89.4 && weights[0].source === 'health_connect', JSON.stringify(weights));
   const heart = (await server('/api/v1/workout-sessions/e2e-gym')).heart;
   check('battito della seduta: media e massimo dei campioni dentro la seduta', heart && heart.avg_bpm === 120 && heart.max_bpm === 129 && heart.samples === 20, JSON.stringify(heart));
 
@@ -124,6 +133,19 @@ const FAKE_NATIVE = () => {
   await page.click('#watch-panel [data-watch=import]');
   await page.locator('#toast', { hasText: 'Nessun dato nuovo' }).waitFor({ timeout: 8000 });
   check('seconda importazione: nessun doppione in coda', (await page.evaluate(() => JSON.parse(localStorage.getItem('fitweek.workoutQueue.v1') || '[]').length)) === 0);
+
+  // 2b. OHealth sincronizza altri campioni in ritardo: la seduta appena finita si aggiorna
+  await page.evaluate(({ start }) => {
+    const v = JSON.parse(sessionStorage.getItem('__hc'));
+    const t0 = new Date(start).getTime();
+    v.heart.push(...Array.from({ length: 10 }, (_, i) => ({ time: new Date(t0 + (61 + i) * 60000).toISOString(), bpm: 150 })));
+    sessionStorage.setItem('__hc', JSON.stringify(v));
+  }, { start: session.started_at });
+  await page.click('#watch-panel [data-watch=import]');
+  await page.locator('#toast', { hasText: '1 valori importati' }).waitFor({ timeout: 8000 });
+  await page.waitForSelector('#sync[data-state=ok]', { timeout: 15000 });
+  const later = (await server('/api/v1/workout-sessions/e2e-gym')).heart;
+  check('campioni arrivati in ritardo: battito della seduta ricalcolato', later?.samples === 30 && later?.max_bpm === 150, JSON.stringify(later));
 
   // 3. Progressi: passi, fasi della notte, battito della seduta
   await page.click('.bottom-nav [data-view=progress]');
@@ -138,7 +160,7 @@ const FAKE_NATIVE = () => {
   check('Sonno: fasi dell\'ultima notte importata', /profondo 1 h 20 · leggero 1 h 20 · REM 4 h 30 · sveglio 10 min/.test(await page.textContent('#content')), (await page.locator('#content p.subtle').allTextContents()).join(' | '));
   await page.screenshot({ path: `${SHOTS}/v114-sleep-390.png`, fullPage: true });
   await page.click('[data-tab=training]');
-  check('Storico: battito medio e massimo della seduta', /battito medio 120, max 129 bpm/.test(await page.textContent('#content')));
+  check('Storico: battito medio e massimo della seduta', /battito medio \d+, max 150 bpm/.test(await page.textContent('#content')));
 
   // 4. Senza rete: i passi aumentano, l'importazione va in coda e si vede subito; al ritorno arriva al server
   await page.route(`${B}/**`, (r) => r.abort());
@@ -183,6 +205,22 @@ const FAKE_NATIVE = () => {
   await desk.waitForSelector('#watch-panel [data-watch=import]');
   await desk.screenshot({ path: `${SHOTS}/v114-watch-panel-1280-light.png`, fullPage: true });
   await wide.close();
+
+  // 5b. Seduta in corso: il battito dal vivo compare nella testata dell'allenamento
+  const liveSession = await server('/api/v1/workout-sessions', 'POST', { id: 'e2e-live', routine: 'B', week, date: today });
+  await page.evaluate(({ start }) => {
+    const v = JSON.parse(sessionStorage.getItem('__hc'));
+    const t0 = new Date(start).getTime();
+    v.heart.push({ time: new Date(t0 + 500).toISOString(), bpm: 101 }, { time: new Date(t0 + 1000).toISOString(), bpm: 133 });
+    sessionStorage.setItem('__hc', JSON.stringify(v));
+  }, { start: liveSession.started_at });
+  await new Promise((r) => setTimeout(r, 1500)); // i campioni devono essere nel passato
+  await page.reload();
+  await page.waitForSelector('#shell:not(.hidden)');
+  await page.click('.bottom-nav [data-view=training]');
+  await page.locator('#wk-heart', { hasText: '133 bpm' }).waitFor({ timeout: 8000 });
+  check('seduta in corso: ultimo battito, media e massimo', /133 bpm.*media 117.*max 133/.test(await page.textContent('#wk-heart')), await page.textContent('#wk-heart'));
+  await page.screenshot({ path: `${SHOTS}/v115-live-heart-390.png` });
 
   // 6. Nel browser (webapp) il pannello non c'è; i dati invece si vedono in Progressi
   const web = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Europe/Rome', locale: 'it-IT' });

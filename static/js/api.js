@@ -17,6 +17,10 @@ export class ApiError extends Error {
  *  `localRead(path)` (impostata da store.js nell'app autonoma) risponde a una lettura dalla copia dei dati
  *  sul telefono, con le modifiche in coda già applicate; `undefined` = percorso non ricostruibile, vale la
  *  vecchia risposta in memoria. */
+/** Identifica questa pagina aperta nelle scritture: gli avvisi in tempo reale (live.js) di una modifica fatta da
+ *  qui non fanno ricaricare nulla. Solo un numero a caso, nuovo a ogni apertura. */
+export const clientId = Math.random().toString(36).slice(2, 12);
+
 export const net = { offlineSince: null, onChange: () => {}, onBack: () => {}, localRead: () => undefined };
 function setOffline(since) {
   if (net.offlineSince === since) return;
@@ -65,6 +69,7 @@ export function probeServer() {
  *  @param editedAt orario ISO della modifica: il server non la applica sopra un dato modificato più di recente */
 export async function request(path, { method = "GET", body, fresh = false, timeout, editedAt } = {}) {
   const headers = body === undefined ? {} : { "Content-Type": "application/json" };
+  if (method !== "GET") headers["X-Client-Id"] = clientId;
   if (editedAt) headers["X-Edited-At"] = editedAt; // scrittura in coda: quando è stata fatta, non quando arriva
   if (token()) headers.Authorization = `Bearer ${token()}`;
   const cacheable = standalone && method === "GET" && !fresh;

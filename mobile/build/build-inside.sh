@@ -300,7 +300,8 @@ JAVA
 sed -i "s#^dependencies {#dependencies {\\n    implementation 'com.google.android.gms:play-services-code-scanner:16.1.0'#" android/app/build.gradle
 grep -q 'play-services-code-scanner' android/app/build.gradle || { echo "build.gradle non riconosciuto: lo scanner dei codici a barre non è stato aggiunto" >&2; exit 1; }
 
-# Plugin nativo HealthConnect (D-040): legge da Health Connect sonno, passi, battito a riposo e battito, solo
+# Plugin nativo HealthConnect (D-040, 1.15): legge da Health Connect sonno, passi, battito a riposo, battito, HRV,
+# SpO2 e peso, solo
 # con l'app aperta e solo i tipi consentiti dall'utente. Non scrive nulla su Health Connect. Il JS riassume e
 # invia al server (static/js/watch.js). Libreria 1.1.0-alpha08: l'ultima che compila con compileSdk 34 e
 # AGP 8.2.1 di Capacitor 6 (dalla 1.1.0-alpha09 serve compileSdk 35, dalla 1.1.0 compileSdk 36 e AGP 8.9.1).
@@ -314,10 +315,13 @@ import androidx.health.connect.client.HealthConnectClient
 import androidx.health.connect.client.PermissionController
 import androidx.health.connect.client.permission.HealthPermission
 import androidx.health.connect.client.records.HeartRateRecord
+import androidx.health.connect.client.records.HeartRateVariabilityRmssdRecord
+import androidx.health.connect.client.records.OxygenSaturationRecord
 import androidx.health.connect.client.records.Record
 import androidx.health.connect.client.records.RestingHeartRateRecord
 import androidx.health.connect.client.records.SleepSessionRecord
 import androidx.health.connect.client.records.StepsRecord
+import androidx.health.connect.client.records.WeightRecord
 import androidx.health.connect.client.request.AggregateGroupByPeriodRequest
 import androidx.health.connect.client.request.ReadRecordsRequest
 import androidx.health.connect.client.time.TimeRangeFilter
@@ -350,6 +354,9 @@ class HealthConnectPlugin : Plugin() {
         "steps" to HealthPermission.getReadPermission(StepsRecord::class),
         "heart_rate" to HealthPermission.getReadPermission(HeartRateRecord::class),
         "resting_heart_rate" to HealthPermission.getReadPermission(RestingHeartRateRecord::class),
+        "hrv" to HealthPermission.getReadPermission(HeartRateVariabilityRmssdRecord::class),
+        "spo2" to HealthPermission.getReadPermission(OxygenSaturationRecord::class),
+        "weight" to HealthPermission.getReadPermission(WeightRecord::class),
     )
 
     private fun client() = HealthConnectClient.getOrCreate(context)
@@ -469,6 +476,34 @@ class HealthConnectPlugin : Plugin() {
         JSObject().put("samples", samples)
     }
 
+    /** Variabilità del battito (RMSSD, ms): una misura per record, la media del giorno la fa il JS. */
+    @PluginMethod
+    fun readHrv(call: PluginCall) = run(call) {
+        val records = JSArray()
+        for (r in readAll(HeartRateVariabilityRmssdRecord::class, instant(call, "from"), instant(call, "to"))) {
+            records.put(JSObject().put("time", r.time.toString()).put("value", r.heartRateVariabilityMillis))
+        }
+        JSObject().put("records", records)
+    }
+
+    @PluginMethod
+    fun readSpo2(call: PluginCall) = run(call) {
+        val records = JSArray()
+        for (r in readAll(OxygenSaturationRecord::class, instant(call, "from"), instant(call, "to"))) {
+            records.put(JSObject().put("time", r.time.toString()).put("value", r.percentage.value))
+        }
+        JSObject().put("records", records)
+    }
+
+    @PluginMethod
+    fun readWeight(call: PluginCall) = run(call) {
+        val records = JSArray()
+        for (r in readAll(WeightRecord::class, instant(call, "from"), instant(call, "to"))) {
+            records.put(JSObject().put("time", r.time.toString()).put("kg", r.weight.inKilograms))
+        }
+        JSObject().put("records", records)
+    }
+
     override fun handleOnDestroy() {
         scope.cancel()
     }
@@ -489,7 +524,7 @@ grep -q 'minSdkVersion = 26' android/variables.gradle || { echo "variables.gradl
 
 # Manifest: permessi di sola lettura, visibilità dell'app Health Connect (Android 13 e precedenti) e la schermata
 # che spiega l'uso dei dati, senza la quale Android non mostra la richiesta dei permessi: apre l'app stessa.
-sed -i 's#</manifest>#    <uses-permission android:name="android.permission.health.READ_SLEEP" />\n    <uses-permission android:name="android.permission.health.READ_STEPS" />\n    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />\n    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />\n    <queries><package android:name="com.google.android.apps.healthdata" /></queries>\n</manifest>#' "$MANIFEST"
+sed -i 's#</manifest>#    <uses-permission android:name="android.permission.health.READ_SLEEP" />\n    <uses-permission android:name="android.permission.health.READ_STEPS" />\n    <uses-permission android:name="android.permission.health.READ_HEART_RATE" />\n    <uses-permission android:name="android.permission.health.READ_RESTING_HEART_RATE" />\n    <uses-permission android:name="android.permission.health.READ_HEART_RATE_VARIABILITY" />\n    <uses-permission android:name="android.permission.health.READ_OXYGEN_SATURATION" />\n    <uses-permission android:name="android.permission.health.READ_WEIGHT" />\n    <queries><package android:name="com.google.android.apps.healthdata" /></queries>\n</manifest>#' "$MANIFEST"
 sed -i 's#</application>#    <activity-alias android:name="ViewPermissionUsageActivity" android:exported="true" android:targetActivity=".MainActivity" android:permission="android.permission.START_VIEW_PERMISSION_USAGE">\n            <intent-filter>\n                <action android:name="android.intent.action.VIEW_PERMISSION_USAGE" />\n                <category android:name="android.intent.category.HEALTH_PERMISSIONS" />\n            </intent-filter>\n        </activity-alias>\n    </application>#' "$MANIFEST"
 sed -i '0,/<intent-filter>/s#<intent-filter>#<intent-filter>\n                <action android:name="androidx.health.ACTION_SHOW_PERMISSIONS_RATIONALE" />\n            </intent-filter>\n            <intent-filter>#' "$MANIFEST"
 grep -q 'READ_SLEEP' "$MANIFEST" && grep -q 'HEALTH_PERMISSIONS' "$MANIFEST" && grep -q 'ACTION_SHOW_PERMISSIONS_RATIONALE' "$MANIFEST" \

@@ -130,20 +130,19 @@ if (standalone) {
 
 // ---- caricamento ------------------------------------------------------------------------------
 export async function loadAll() {
-  const [s, today, sessions, notes, spend] = await Promise.all([
-    request("/api/state"),
-    request("/api/v1/today"),
-    request(SESSIONS_PATH),
-    request("/api/v1/exercise-notes"),
-    request("/api/v1/grocery-spend"),
-  ]);
+  const [s, today, sessions] = await Promise.all([request("/api/state"), request("/api/v1/today"), request(SESSIONS_PATH), refreshExtras()]);
   adoptState(s);
   app.today = today;
   app.sessions = sessions.items;
-  app.exNotes = Object.fromEntries(notes.items.map((n) => [n.exercise_id, n.note]));
-  app.spend = spend.items;
   await refreshDaily();
   if (statePending()) syncState();
+}
+
+/** Note per esercizio e spesa reale per settimana. */
+export async function refreshExtras() {
+  const [notes, spend] = await Promise.all([request("/api/v1/exercise-notes"), request("/api/v1/grocery-spend")]);
+  app.exNotes = Object.fromEntries(notes.items.map((n) => [n.exercise_id, n.note]));
+  app.spend = spend.items;
 }
 
 /** Agenda di oggi, riepilogo settimanale e pasti abituali. */

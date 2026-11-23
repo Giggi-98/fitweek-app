@@ -2,7 +2,7 @@ process.env.TZ = "Europe/Rome"; // giorni e orari locali come sul telefono dell'
 import test from "node:test";
 import assert from "node:assert/strict";
 import { normalizeDb } from "../../static/js/local.js";
-import { healthDayWrites, healthDays, heartSummary, heartWindows, importStart, MIN_HEART_SAMPLES, nightsFromSessions, restingByDay, sleepWrites } from "../../static/js/health.js";
+import { averageByDay, healthDayWrites, healthDays, heartChanged, heartSummary, heartWindows, importStart, liveHeart, MIN_HEART_SAMPLES, nightsFromSessions, restingByDay, sleepWrites, stepsByDay, weightWrites } from "../../static/js/health.js";
 
 const stage = (start, end, s) => ({ start, end, stage: s });
 
@@ -26,16 +26,46 @@ test("solo le notti cambiate e mai quelle decise dall'utente", () => {
   assert.deepEqual(sleepWrites(nights, db).map((n) => n.date), ["2026-11-12"]);
 });
 
-test("passi e battito a riposo uniti per giorno; l'ultima misura del giorno; invio solo se cambiano", () => {
+test("passi, battito a riposo, HRV e SpO2 uniti per giorno; l'ultima misura a riposo; invio solo se cambiano", () => {
   const resting = restingByDay([{ time: "2026-11-10T20:00:00Z", bpm: 61.4 }, { time: "2026-11-10T05:00:00Z", bpm: 66 }, { time: "2026-11-11T05:00:00Z", bpm: 63 }]);
-  const days = healthDays([{ date: "2026-11-09", steps: 7000 }, { date: "2026-11-10", steps: 9100 }], resting);
+  const hrv = averageByDay([{ time: "2026-11-10T03:00:00Z", value: 40 }, { time: "2026-11-10T04:00:00Z", value: 51 }]);
+  const empty = normalizeDb({});
+  const days = healthDays({ steps: stepsByDay([{ date: "2026-11-09", steps: 7000 }, { date: "2026-11-10", steps: 9100 }]), resting_hr: resting, hrv_ms: hrv }, empty);
   assert.deepEqual(days, [
-    { date: "2026-11-09", body: { steps: 7000, resting_hr: null } },
-    { date: "2026-11-10", body: { steps: 9100, resting_hr: 61 } },
-    { date: "2026-11-11", body: { steps: null, resting_hr: 63 } },
+    { date: "2026-11-09", body: { steps: 7000, resting_hr: null, hrv_ms: null, spo2: null } },
+    { date: "2026-11-10", body: { steps: 9100, resting_hr: 61, hrv_ms: 46, spo2: null } },
+    { date: "2026-11-11", body: { steps: null, resting_hr: 63, hrv_ms: null, spo2: null } },
   ]);
-  const db = normalizeDb({ health_days: [{ date: "2026-11-09", steps: 7000, resting_hr: null }, { date: "2026-11-10", steps: 8000, resting_hr: 61 }] });
+  const db = normalizeDb({ health_days: [{ date: "2026-11-09", steps: 7000, resting_hr: null, hrv_ms: null, spo2: null }, { date: "2026-11-10", steps: 8000, resting_hr: 61, hrv_ms: 46, spo2: null }] });
   assert.deepEqual(healthDayWrites(days, db).map((d) => d.date), ["2026-11-10", "2026-11-11"]);
+});
+
+test("un tipo non letto (permesso tolto) o senza misure quel giorno non cancella il valore salvato", () => {
+  const db = normalizeDb({ health_days: [{ date: "2026-11-10", steps: 8000, resting_hr: 60, hrv_ms: 45, spo2: 97 }] });
+  const [day] = healthDays({ steps: stepsByDay([{ date: "2026-11-10", steps: 8200 }]), hrv_ms: new Map() }, db);
+  assert.deepEqual(day.body, { steps: 8200, resting_hr: 60, hrv_ms: 45, spo2: 97 });
+});
+
+test("una seduta finita da meno di un giorno si rilegge anche con il battito già salvato; si invia solo se cambia", () => {
+  const done = { status: "done", started_at: "2026-11-09T18:30:00Z", ended_at: "2026-11-09T20:00:00Z", heart: { avg_bpm: 120, max_bpm: 150, samples: 40 } };
+  const from = "2026-11-01T00:00:00Z";
+  assert.equal(heartWindows([done], from, new Date("2026-11-10T08:00:00Z")).length, 1, "12 ore dopo: si rilegge");
+  assert.equal(heartWindows([done], from, new Date("2026-11-11T08:00:00Z")).length, 0, "il giorno dopo: resta com'è");
+  assert.equal(heartChanged(done.heart, { avg_bpm: 120, max_bpm: 150, samples: 40 }), false);
+  assert.equal(heartChanged(done.heart, { avg_bpm: 121, max_bpm: 150, samples: 55 }), true);
+  assert.equal(heartChanged(null, done.heart), true);
+});
+
+test("battito dal vivo: ultimo valore con il suo orario, media e massimo da inizio seduta", () => {
+  const start = "2026-11-09T18:30:00Z";
+  const samples = [{ time: "2026-11-09T18:20:00Z", bpm: 70 }, { time: "2026-11-09T18:41:00Z", bpm: 140.6 }, { time: "2026-11-09T18:35:00Z", bpm: 110 }];
+  assert.deepEqual(liveHeart(samples, start), { bpm: 141, at: "2026-11-09T18:41:00Z", samples: 2, avg: 125, max: 141 });
+  assert.equal(liveHeart(samples.slice(0, 1), start), null, "prima dell'inizio non conta");
+});
+
+test("bilancia: la prima pesata del giorno, solo nei giorni senza pesata, mai una modifica", () => {
+  const records = [{ time: "2026-11-10T19:00:00Z", kg: 89.9 }, { time: "2026-11-10T06:30:00Z", kg: 89.44 }, { time: "2026-11-11T06:30:00Z", kg: 89.2 }];
+  assert.deepEqual(weightWrites(records, [{ date: "2026-11-11", weight: 89.5 }]), [{ date: "2026-11-10", weight: 89.4 }]);
 });
 
 test("battito della seduta: solo i campioni dentro la seduta, e solo se sono abbastanza", () => {
@@ -46,7 +76,7 @@ test("battito della seduta: solo i campioni dentro la seduta, e solo se sono abb
     { id: "forgot", status: "done", started_at: "2026-11-09T19:30:00+01:00", ended_at: "2026-11-10T09:00:00Z" },
     { id: "old", status: "done", started_at: "2026-10-01T19:30:00+01:00", ended_at: "2026-10-01T21:00:00Z" },
   ];
-  const [w, ...rest] = heartWindows(sessions, "2026-11-01T00:00:00Z");
+  const [w, ...rest] = heartWindows(sessions, "2026-11-01T00:00:00Z", new Date("2026-11-12T00:00:00Z"));
   assert.deepEqual([w.id, rest.length], ["ok", 0]);
   const inside = Array.from({ length: MIN_HEART_SAMPLES }, (_, i) => ({ time: `2026-11-09T19:${String(i + 10).padStart(2, "0")}:00Z`, bpm: 100 + i * 10 }));
   const outside = [{ time: "2026-11-09T18:00:00Z", bpm: 190 }];

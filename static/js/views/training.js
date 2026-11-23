@@ -10,6 +10,7 @@ import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
 import { RECORD_LABEL, exerciseBests, exerciseSessions, exerciseSummary, isWork, repRange, setRecords, setTarget } from "../workout/calc.js";
 import { openExerciseEditor, openExercisePage, openPicker, originalProgram, restLabel } from "../workout/exercise.js";
+import { canReadHealth, heartLive, importHealth, pollLiveHeart } from "../watch.js";
 import { archiveExercise, findExercise, moveExercise, patchExercise, plannedSets, restoreRoutine, routineChanges, sessionExercises } from "../workout/program.js";
 
 const EDITS_KEY = "fitweek.workoutEdits.v1";
@@ -126,6 +127,20 @@ const elapsed = (iso) => {
   const m = Math.max(0, Math.floor((Date.now() - new Date(iso)) / 60000));
   return m >= 60 ? `${Math.floor(m / 60)} h ${String(m % 60).padStart(2, "0")}′` : `${m}′`;
 };
+/** Battito dal vivo dall'orologio (solo nell'app Android con Health Connect): ultimo valore, media e massimo. */
+function liveHeartChip(session) {
+  if (!canReadHealth()) return "";
+  const v = heartLive.sessionId === session.id ? heartLive.value : null;
+  if (!v) return `<span id="wk-heart" class="subtle">${icon("heart-pulse")}in attesa dell'orologio</span>`;
+  const ago = Math.max(0, Math.round((Date.now() - new Date(v.at)) / 60000));
+  return `<span id="wk-heart" title="Media ${esc(v.avg)}, massimo ${esc(v.max)} bpm su ${esc(v.samples)} misure">${icon("heart-pulse")}${esc(v.bpm)} bpm<small>${ago ? ` · ${ago}′ fa` : ""} · media ${esc(v.avg)} · max ${esc(v.max)}</small></span>`;
+}
+globalThis.addEventListener?.("fitweek:heart-live", () => {
+  const el = document.getElementById("wk-heart");
+  const s = active();
+  if (el && s) el.outerHTML = liveHeartChip(s);
+});
+
 // Il cronometro della seduta si aggiorna da solo senza ridisegnare la pagina.
 setInterval(() => {
   const el = document.getElementById("wk-elapsed");
@@ -230,7 +245,7 @@ function renderActive(session) {
     ${ring(planned ? done / planned : 0, { size: 62, stroke: 7, label: String(done), sub: `/${planned}` })}
     <div class="ex-main">
       <h2>Giorno ${esc(session.routine)} · W${esc(session.week)}</h2>
-      <div class="wk-meta"><span>${icon("clock")}<span id="wk-elapsed">${session.started_at ? elapsed(session.started_at) : "—"}</span></span><span>${icon("dumbbell")}${done}/${planned} serie</span>${nextEx ? `<span>${icon("arrow-right")}${esc(nextEx.name)}</span>` : `<span>${icon("trophy")}Esercizi completati</span>`}</div>
+      <div class="wk-meta"><span>${icon("clock")}<span id="wk-elapsed">${session.started_at ? elapsed(session.started_at) : "—"}</span></span><span>${icon("dumbbell")}${done}/${planned} serie</span>${liveHeartChip(session)}${nextEx ? `<span>${icon("arrow-right")}${esc(nextEx.name)}</span>` : `<span>${icon("trophy")}Esercizi completati</span>`}</div>
     </div>
   </section>
   <div class="ex-grid">
@@ -452,6 +467,7 @@ async function finish() {
   await flush();
   // Ricarica dal server solo se tutto è stato inviato, altrimenti si perderebbero i dati locali.
   if (!pendingCount()) refreshWorkouts().catch(() => {});
+  importHealth({ force: true }); // battito medio e massimo della seduta appena chiusa (nell'app Android)
 }
 
 function editExerciseNote(exId) {
