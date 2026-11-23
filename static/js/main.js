@@ -6,6 +6,8 @@ import { app, loadAll, refreshDaily, refreshExtras, refreshState, refreshWorkout
 import { applyDynamicStyles, fitTabStrips, initModal, markStripEnd, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
 import { startLive, stopLive } from "./live.js";
 import { keepAwake } from "./workout/awake.js";
+import { initWatch, sendState } from "./wear.js";
+import { pollLiveHeart } from "./watch.js";
 import { mountCharts } from "./chart.js";
 import { openReminder, startReminders } from "./reminders.js";
 import { initNative } from "./native.js";
@@ -42,6 +44,7 @@ function render() {
   applyDynamicStyles($("#content"));
   fitTabStrips($("#content"));
   keepAwake(Boolean(app.today?.active_session)); // in palestra lo schermo resta acceso, in qualunque vista
+  sendState(); // l'orologio vede la stessa prossima serie (solo se è cambiata)
   mountCharts($("#content"));
   window.scrollTo({ top: y });
   current().afterRender?.();
@@ -135,6 +138,14 @@ async function boot() {
     started = true;
     startQueue();
     initRestTimer();
+    initWatch({
+      sessionId: () => app.today?.active_session?.id || null,
+      state: training.watchState,
+      onStart: () => training.startFromWatch() && render(),
+      onSet: (set) => training.setFromWatch(set) && render(),
+      onHeart: () => pollLiveHeart(),
+    });
+    window.addEventListener("fitweek:rest", () => sendState());
     initModal();
     startReminders();
     initNative({

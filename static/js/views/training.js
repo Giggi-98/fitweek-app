@@ -7,7 +7,7 @@ import { app, persistState, refreshWorkouts } from "../store.js";
 import { choices, openModal, toast } from "../ui.js";
 import { $, esc, fmtClock, fmtDate, fmtNum, isoDate, num, safeUrl, storage, uid } from "../util.js";
 import { enqueue, flush, pendingCount } from "../workout/queue.js";
-import { prefs, startRest, stopRest } from "../workout/timer.js";
+import { prefs, restEnd, startRest, stopRest } from "../workout/timer.js";
 import { PLATES, platesPerSide, RECORD_LABEL, exerciseBests, exerciseSessions, exerciseSummary, isWork, repRange, setRecords, setTarget } from "../workout/calc.js";
 import { openExerciseEditor, openExercisePage, openPicker, originalProgram, restLabel } from "../workout/exercise.js";
 import { canReadHealth, heartLive, importHealth } from "../watch.js";
@@ -161,7 +161,7 @@ setInterval(() => {
 
 function renderStart() {
   const t = app.today;
-  const routine = ui.routine || t.routine || "A";
+  const routine = startRoutine();
   const week = ui.week || t.program_week;
   const info = ROUTINES[routine];
   const prev = lastDone(routine);
@@ -379,6 +379,51 @@ function renderSummary(summary) {
     <button class="btn primary xl full" data-close-summary>Fatto</button>
     <button class="btn ghost full" data-share-summary>${icon("arrow-up", "sm")}Condividi il riepilogo</button>
   </section>`;
+}
+
+// ---- orologio Wear OS (wear.js, D-044): lo stato che l'orologio mostra e i tocchi che rimanda ----------
+/** Prossima serie da fare: primo esercizio non confermato, prima serie non segnata, con carico e ripetizioni proposti. */
+function nextSet(s) {
+  const ed = edits(s.id);
+  for (const ex of exercisesOf(s, ed)) {
+    if (ed.closed[ex.id]) continue;
+    const count = Math.max(1, ex.planned + num(ed.extra[ex.id]), ...setsOf(s, ex.id).map((x) => x.set_index));
+    for (let idx = 1; idx <= count; idx++) {
+      if (logged(s, ex.id, idx)?.completed) continue;
+      const v = suggestion(s, ex, idx, lastTime(s, ex.id)?.sets || [], ed);
+      return { ex, idx, planned: count, kg: v.kg, reps: v.reps ?? num(String(ex.reps).split(/[–-]/)[0]) };
+    }
+  }
+  return null;
+}
+
+/** Stato per l'orologio: seduta aperta, prossima serie, fine del recupero; senza seduta, la giornata di oggi. */
+export function watchState() {
+  const s = active();
+  if (!s) return { active: false, routine: startRoutine() };
+  const n = nextSet(s);
+  return { active: true, routine: s.routine, exercise: n?.ex.name || "", exId: n?.ex.id || "", idx: n?.idx || 0, planned: n?.planned || 0, kg: n?.kg ?? null, reps: n?.reps ?? 0, restEnd: restEnd() };
+}
+
+/** Giornata e settimana che la schermata di avvio propone (scelta dell'utente, poi oggi, poi A). */
+const startRoutine = () => ui.routine || app.today?.routine || "A";
+
+/** "Inizia seduta" dall'orologio: la stessa seduta che propone la schermata di avvio della Palestra. */
+export function startFromWatch() {
+  if (active() || !app.today) return false;
+  startSession(startRoutine(), ui.week || app.today.program_week);
+  return true;
+}
+
+/** "Serie fatta" dall'orologio. Vale solo per una serie di un esercizio della seduta aperta, non già segnata. */
+export function setFromWatch({ exId, idx, kg, reps }) {
+  const s = active();
+  if (!s || !exercisesOf(s).some((ex) => ex.id === exId) || !(idx >= 1) || logged(s, exId, idx)?.completed) return false;
+  if (!(reps >= 0 && reps <= 500) || (kg != null && !(kg >= 0 && kg <= 1000))) return false;
+  writeSet(s, exId, idx, { kg: kg ?? null, reps }, true);
+  startRest(findExercise(app.state, exId)?.rest || undefined);
+  ui.justDone = `${exId}:${idx}`;
+  return true;
 }
 
 // ---- azioni -------------------------------------------------------------------------------

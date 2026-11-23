@@ -49,6 +49,10 @@ function paint() {
   if (left < -30) stopRest();
 }
 
+/** Fine del recupero in corso (ms dal 1970), 0 se non c'è: l'orologio la mostra e vibra alla fine (wear.js). */
+export const restEnd = () => storage.get(KEY)?.end || 0;
+const announce = () => globalThis.dispatchEvent?.(new Event("fitweek:rest"));
+
 export function startRest(seconds = prefs().restSeconds) {
   storage.set(KEY, { end: Date.now() + seconds * 1000, total: seconds, alerted: false });
   // Sblocca l'audio su iOS: deve nascere da un gesto dell'utente.
@@ -61,6 +65,7 @@ export function startRest(seconds = prefs().restSeconds) {
     }
   }
   run();
+  announce();
 }
 export function addRest(seconds) {
   const t = storage.get(KEY);
@@ -68,12 +73,14 @@ export function addRest(seconds) {
   const end = Math.max(Date.now(), t.end) + seconds * 1000;
   storage.set(KEY, { end, total: Math.max(t.total, (end - Date.now()) / 1000), alerted: false });
   run();
+  announce();
 }
 export function stopRest() {
   storage.remove(KEY);
   clearInterval(tick);
   tick = null;
   paint();
+  announce();
 }
 function run() {
   paint();

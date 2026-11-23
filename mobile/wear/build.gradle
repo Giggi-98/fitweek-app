@@ -1,0 +1,30 @@
+// App FitWeek per l'orologio Wear OS (1.19, D-044). Compilata dentro il progetto Android dell'app del telefono
+// (mobile/build/build-inside.sh): stesso applicationId e stessa chiave di firma, come richiede il Data Layer
+// per far parlare telefono e orologio. Nessuna dipendenza oltre a Data Layer e Health Services.
+apply plugin: 'com.android.application'
+apply plugin: 'kotlin-android'
+
+android {
+    namespace 'app.fitweek.wear'
+    compileSdk 34
+    defaultConfig {
+        applicationId System.getenv('APP_ID') ?: 'app.fitweek.personal.next'
+        minSdk 30          // Wear OS 3, il primo con Health Services
+        targetSdk 34
+        versionCode Integer.parseInt(System.getenv('WEAR_VERSION_CODE') ?: '1')
+        versionName System.getenv('APP_VERSION') ?: 'dev'
+    }
+    buildTypes { release { minifyEnabled false } }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    kotlinOptions { jvmTarget = '17' }
+}
+
+dependencies {
+    implementation 'com.google.android.gms:play-services-wearable:18.1.0'
+    implementation 'androidx.health:health-services-client:1.0.0'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
+    implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-guava:1.7.3'
+}

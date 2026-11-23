@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <uses-feature android:name="android.hardware.type.watch" />
+    <uses-permission android:name="android.permission.BODY_SENSORS" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.ACTIVITY_RECOGNITION" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+
+    <application android:label="FitWeek" android:icon="@mipmap/ic_launcher" android:allowBackup="false">
+        <!-- Funziona solo insieme all'app del telefono: non è un'app autonoma. -->
+        <meta-data android:name="com.google.android.wearable.standalone" android:value="false" />
+        <uses-library android:name="com.google.android.wearable" android:required="false" />
+        <activity android:name=".WearActivity" android:exported="true" android:theme="@android:style/Theme.DeviceDefault">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+        <service android:name=".ExerciseService" android:exported="false" android:foregroundServiceType="health" />
+    </application>
+</manifest>

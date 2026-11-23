@@ -511,6 +511,77 @@ class HealthConnectPlugin : Plugin() {
 KOTLIN
 sed -i "s/__APP_ID__/${APP_ID}/" "$PKG_DIR/HealthConnectPlugin.kt"
 
+# Plugin nativo WatchLink (1.19, D-044): parla con l'app FitWeek sull'orologio Wear OS (mobile/wear) tramite il
+# Data Layer. I messaggi in arrivo si accumulano qui anche se la pagina è in pausa (telefono in tasca) e il JS li
+# ritira con drain(): nessun battito perso finché l'app è viva. Percorsi e formati: mobile/wear/.../Link.kt.
+cat > "$PKG_DIR/WatchLinkPlugin.kt" <<'KOTLIN'
+package __APP_ID__
+
+import com.getcapacitor.JSArray
+import com.getcapacitor.JSObject
+import com.getcapacitor.Plugin
+import com.getcapacitor.PluginCall
+import com.getcapacitor.PluginMethod
+import com.getcapacitor.annotation.CapacitorPlugin
+import com.google.android.gms.wearable.MessageClient
+import com.google.android.gms.wearable.MessageEvent
+import com.google.android.gms.wearable.Wearable
+
+@CapacitorPlugin(name = "WatchLink")
+class WatchLinkPlugin : Plugin(), MessageClient.OnMessageReceivedListener {
+    private val inbox = ArrayDeque<JSObject>()
+
+    override fun load() {
+        Wearable.getMessageClient(context).addListener(this)
+    }
+
+    override fun handleOnDestroy() {
+        Wearable.getMessageClient(context).removeListener(this)
+    }
+
+    override fun onMessageReceived(event: MessageEvent) {
+        val message = JSObject().put("path", event.path).put("data", String(event.data, Charsets.UTF_8))
+            .put("at", System.currentTimeMillis())
+        synchronized(inbox) {
+            inbox.addLast(message)
+            while (inbox.size > MAX_INBOX) inbox.removeFirst() // in ore di tasca: si perdono i più vecchi
+        }
+        notifyListeners("message", JSObject())
+    }
+
+    /** Messaggi arrivati dall'ultima volta, in ordine. */
+    @PluginMethod
+    fun drain(call: PluginCall) {
+        val out = JSArray()
+        synchronized(inbox) {
+            inbox.forEach { out.put(it) }
+            inbox.clear()
+        }
+        call.resolve(JSObject().put("messages", out))
+    }
+
+    /** Manda a tutti gli orologi collegati; risponde con quanti erano raggiungibili. */
+    @PluginMethod
+    fun send(call: PluginCall) {
+        val path = call.getString("path") ?: return call.reject("manca path")
+        val data = (call.getString("data") ?: "").toByteArray(Charsets.UTF_8)
+        Wearable.getNodeClient(context).connectedNodes
+            .addOnSuccessListener { nodes ->
+                for (node in nodes) Wearable.getMessageClient(context).sendMessage(node.id, path, data)
+                call.resolve(JSObject().put("nodes", nodes.size))
+            }
+            .addOnFailureListener { call.resolve(JSObject().put("nodes", 0)) } // niente Play Services Wear: nessun orologio
+    }
+
+    companion object {
+        private const val MAX_INBOX = 20_000
+    }
+}
+KOTLIN
+sed -i "s/__APP_ID__/${APP_ID}/" "$PKG_DIR/WatchLinkPlugin.kt"
+sed -i "s#^dependencies {#dependencies {\n    implementation 'com.google.android.gms:play-services-wearable:18.1.0'#" android/app/build.gradle
+grep -q 'play-services-wearable' android/app/build.gradle || { echo "build.gradle non riconosciuto: Data Layer non aggiunto" >&2; exit 1; }
+
 # Gradle: plugin Kotlin (stessa JVM 17 di Capacitor), libreria Health Connect, minSdk 26 richiesto dalla libreria.
 sed -i "s#\(classpath 'com.android.tools.build:gradle:[^']*'\)#\1\n        classpath 'org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25'#" android/build.gradle
 grep -q 'kotlin-gradle-plugin' android/build.gradle || { echo "build.gradle principale non riconosciuto: plugin Kotlin non aggiunto" >&2; exit 1; }
@@ -543,6 +614,7 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(BarcodeScanPlugin.class);
         registerPlugin(HealthConnectPlugin.class);
+        registerPlugin(WatchLinkPlugin.class);
         super.onCreate(savedInstanceState);
     }
 }
@@ -587,3 +659,21 @@ cat > "/out/${STEM}-apk.json" <<JSON
 {"version": "${APP_VERSION}", "version_code": ${CODE}, "server_url": "${APP_URL}", "size": ${SIZE}, "sha256": "${SHA}", "built_at": "$(date -Iseconds)", "app_id": "${APP_ID}", "channel": "${CHANNEL}"}
 JSON
 aapt dump badging "/out/${STEM}.apk" | grep -E "^(package|sdkVersion|targetSdkVersion|uses-permission)" || true
+
+# App per l'orologio Wear OS (1.19, D-044), solo con l'app autonoma: stesso id e stessa chiave dell'app del
+# telefono, altrimenti il Data Layer non le fa parlare. Va installata a mano sull'orologio (adb), una volta per
+# versione: non è servita dal server e non si aggiorna da sola.
+if [[ "$CHANNEL" == next ]]; then
+  cp -r /src/wear android/wear
+  for d in android/app/src/main/res/mipmap-*dpi; do # stessa icona dell'app del telefono
+    mkdir -p "android/wear/src/main/res/$(basename "$d")" && cp "$d/ic_launcher.png" "android/wear/src/main/res/$(basename "$d")/"
+  done
+  printf "\ninclude ':wear'\n" >> android/settings.gradle # il file generato non finisce con un a capo
+  (cd android && APP_ID="$APP_ID" APP_VERSION="$APP_VERSION" WEAR_VERSION_CODE="$CODE" ./gradlew --no-daemon -q :wear:assembleRelease)
+  zipalign -f -p 4 android/wear/build/outputs/apk/release/wear-release-unsigned.apk /work/wear-aligned.apk
+  apksigner sign --ks /secrets/fitweek-release.jks --ks-key-alias fitweek \
+    --ks-pass "pass:${KEYSTORE_PASSWORD}" --key-pass "pass:${KEYSTORE_PASSWORD}" --out /out/fitweek-wear.apk /work/wear-aligned.apk
+  apksigner verify /out/fitweek-wear.apk >/dev/null
+  rm -f /out/fitweek-wear.apk.idsig
+  aapt dump badging /out/fitweek-wear.apk | grep -E "^(package|sdkVersion|targetSdkVersion|uses-permission|uses-feature)" || true
+fi
