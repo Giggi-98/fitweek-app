@@ -10,7 +10,9 @@ import { enqueue, flush, pendingCount } from "../workout/queue.js";
 import { prefs, startRest, stopRest } from "../workout/timer.js";
 import { RECORD_LABEL, exerciseBests, exerciseSessions, exerciseSummary, isWork, repRange, setRecords, setTarget } from "../workout/calc.js";
 import { openExerciseEditor, openExercisePage, openPicker, originalProgram, restLabel } from "../workout/exercise.js";
-import { canReadHealth, heartLive, importHealth, pollLiveHeart } from "../watch.js";
+import { canReadHealth, heartLive, importHealth } from "../watch.js";
+import { setPeaks } from "../health.js";
+import { heartChart, sessionPeaks } from "../workout/heart.js";
 import { archiveExercise, findExercise, moveExercise, patchExercise, plannedSets, restoreRoutine, routineChanges, sessionExercises } from "../workout/program.js";
 
 const EDITS_KEY = "fitweek.workoutEdits.v1";
@@ -133,8 +135,17 @@ function liveHeartChip(session) {
   const v = heartLive.sessionId === session.id ? heartLive.value : null;
   if (!v) return `<span id="wk-heart" class="subtle">${icon("heart-pulse")}in attesa dell'orologio</span>`;
   const ago = Math.max(0, Math.round((Date.now() - new Date(v.at)) / 60000));
-  return `<span id="wk-heart" title="Media ${esc(v.avg)}, massimo ${esc(v.max)} bpm su ${esc(v.samples)} misure">${icon("heart-pulse")}${esc(v.bpm)} bpm<small>${ago ? ` · ${ago}′ fa` : ""} · media ${esc(v.avg)} · max ${esc(v.max)}</small></span>`;
+  const last = [...session.sets].filter((x) => x.completed && x.logged_at).sort((a, b) => a.logged_at.localeCompare(b.logged_at)).pop();
+  const peak = last && setPeaks(v.curve, session.started_at, session.sets).get(`${last.exercise_id}:${last.set_index}`);
+  return `<span id="wk-heart" title="Media ${esc(v.avg)}, massimo ${esc(v.max)} bpm su ${esc(v.samples)} misure">${icon("heart-pulse")}${esc(v.bpm)} bpm<small>${ago ? ` · ${ago}′ fa` : ""}${peak ? ` · picco ultima serie ${esc(peak)}` : ""} · media ${esc(v.avg)} · max ${esc(v.max)}</small></span>`;
 }
+// Il battito della seduta appena chiusa arriva dall'importazione partita a fine seduta: il riepilogo si aggiorna.
+globalThis.addEventListener?.("fitweek:health-status", () => {
+  const fresh = ui.summary && app.sessions.find((x) => x.id === ui.summary.id);
+  if (!fresh || fresh.heart === ui.summary.heart) return;
+  ui.summary = fresh;
+  if (app.view === "training") app.render();
+});
 globalThis.addEventListener?.("fitweek:heart-live", () => {
   const el = document.getElementById("wk-heart");
   const s = active();
@@ -307,7 +318,19 @@ function renderActive(session) {
   return html;
 }
 
-function renderSummary(s) {
+function heartSummaryBlock(s) {
+  if (!s.heart) return canReadHealth() ? `<p class="subtle">${icon("heart-pulse", "sm")} Il battito arriva dall'orologio appena OHealth lo passa a Health Connect.</p>` : "";
+  const nameOf = (id) => findExercise(app.state, id)?.name;
+  const peaks = [...sessionPeaks(s)].sort((a, b) => b[1] - a[1]);
+  const top = peaks[0] && `${nameOf(peaks[0][0].split(":")[0]) || peaks[0][0]} #${peaks[0][0].split(":")[1]}`;
+  return `<div class="heart-sum">
+    <div class="metric-label">${icon("heart-pulse", "sm")}Battito: media ${esc(s.heart.avg_bpm)}, massimo ${esc(s.heart.max_bpm)} bpm${top ? ` · picco più alto: ${esc(top)}` : ""}</div>
+    ${heartChart(s, nameOf)}
+  </div>`;
+}
+
+function renderSummary(summary) {
+  const s = app.sessions.find((x) => x.id === summary.id) || summary; // con il battito arrivato dopo
   const { planned, done } = progressOf(s);
   const vol = volume(s);
   const prev = lastDone(s.routine, s.id);
@@ -324,7 +347,8 @@ function renderSummary(s) {
       <div class="metric"><div class="metric-label">Durata</div><div class="metric-value">${s.duration_min != null ? `<span data-count="${Math.round(s.duration_min)}">${esc(Math.round(s.duration_min))}</span><small>′</small>` : "—"}</div></div>
       <div class="metric"><div class="metric-label">Volume <span class="badge-calc">calc.</span></div><div class="metric-value"><span data-count="${Math.round(vol)}">${fmtNum(vol, 0)}</span><small> kg</small></div></div>
     </div>
-    <p class="subtle">${diff == null ? "Volume = Σ kg × ripetizioni delle serie di lavoro." : `Volume ${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}.`} ${done < planned ? `${planned - done} serie non segnate: va bene, conta la costanza.` : "Tutte le serie fatte."}${s.cardio_min ? " Cardio ✓." : ""}</p>
+    <p class="subtle">${diff == null ? "Volume = Σ kg × ripetizioni delle serie di lavoro." : `Volume ${diff >= 0 ? "+" : ""}${diff}% rispetto all'ultimo Giorno ${esc(s.routine)}${prev.duration_min && s.duration_min ? ` (durata ${esc(Math.round(s.duration_min))}′, l'ultima ${esc(Math.round(prev.duration_min))}′)` : ""}.`} ${done < planned ? `${planned - done} serie non segnate: va bene, conta la costanza.` : "Tutte le serie fatte."}${s.cardio_min ? " Cardio ✓." : ""}</p>
+    ${heartSummaryBlock(s)}
     ${records.length ? `<div class="record-note">${icon("trophy", "sm")}<span>${records.length === 1 ? "Record" : `${records.length} record`}: ${esc(records.map((x) => `${x.ex.name} (${x.sum.records.map((k) => RECORD_LABEL[k]).join(", ")})`).join(" · "))}</span></div>` : ""}
     ${rows.length ? `<div class="table-scroll"><table class="sum-table"><thead><tr><th>Esercizio</th><th>Serie migliore</th><th>Volume vs ultima <span class="badge-calc">calc.</span></th></tr></thead><tbody>${rows
       .map(({ ex, sum }) => `<tr><td>${esc(ex.name)}</td><td>${esc(fmtSet(sum.top))}${sum.prev ? `<small>ultima ${esc(fmtSet(sum.prev.top))}</small>` : ""}</td><td>${delta(sum)}</td></tr>`)
@@ -466,8 +490,10 @@ async function finish() {
   setTimeout(() => confetti(null, 70), 250);
   await flush();
   // Ricarica dal server solo se tutto è stato inviato, altrimenti si perderebbero i dati locali.
-  if (!pendingCount()) refreshWorkouts().catch(() => {});
-  importHealth({ force: true }); // battito medio e massimo della seduta appena chiusa (nell'app Android)
+  const refreshed = pendingCount() ? Promise.resolve() : refreshWorkouts().catch(() => {});
+  // Battito della seduta appena chiusa (app Android): dopo la rilettura delle sedute, che altrimenti potrebbe
+  // arrivare dopo e togliere dalla memoria il battito appena calcolato.
+  refreshed.then(() => importHealth({ force: true }));
 }
 
 function editExerciseNote(exId) {

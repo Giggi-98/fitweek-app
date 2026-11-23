@@ -15,7 +15,9 @@ let nextId = 1;
 /**
  * @param points  serie principale [{date, value, tip?}] in ordine di data; `tip` = riga extra nel tooltip
  * @param overlay serie calcolata facoltativa {name, points: [{date, value}]} disegnata come linea
- * @param dots    "series" (punti = la serie, uniti da una linea) | "raw" (punti neutri, la linea è l'overlay)
+ * @param dots    "series" (punti = la serie, uniti da una linea) | "raw" (punti neutri, la linea è l'overlay) | "none"
+ * @param axis    "days" (predefinito: `date` ISO) | "minutes" (`t` = minuti dall'inizio, es. la curva di una seduta)
+ * @param marks   solo con "minutes": [{t, label}] tacche sotto la curva (es. le serie)
  * @returns segnaposto: il disegno avviene in `mountCharts()` dopo l'inserimento nel DOM
  */
 export function lineChart(spec) {
@@ -27,22 +29,23 @@ export function lineChart(spec) {
   return `<div class="chart-wrap" data-chart="${id}"><div class="chart-tip"></div></div>${legend}`;
 }
 
+const minutesText = (t) => `${Math.round(t)}′`;
 const shortDay = (iso) => new Date(iso + "T12:00:00").toLocaleDateString("it-IT", { day: "numeric", month: "short" });
 
 /** Date da scrivere sull'asse: prima, ultima e quelle intermedie che non si toccano. */
-function timeLabels(points, x) {
+function timeLabels(points, x, text) {
   const out = [];
   const last = points[points.length - 1];
   for (const p of points) {
-    const px = x(p.date);
+    const px = x(p);
     if (out.length && px - out[out.length - 1].px < MIN_LABEL_GAP) continue;
-    if (p !== last && x(last.date) - px < MIN_LABEL_GAP) continue;
-    out.push({ px, text: shortDay(p.date) });
+    if (p !== last && x(last) - px < MIN_LABEL_GAP) continue;
+    out.push({ px, text: text(p) });
   }
-  const end = x(last.date);
+  const end = x(last);
   if (points.length > 1 && out[out.length - 1].px !== end) {
     if (out.length > 1 && end - out[out.length - 1].px < MIN_LABEL_GAP) out.pop();
-    out.push({ px: end, text: shortDay(last.date) });
+    out.push({ px: end, text: text(last) });
   }
   return out;
 }
@@ -54,28 +57,34 @@ function draw(wrap, s, W) {
   const all = [...points, ...(overlay?.points || [])].map((p) => p.value);
   const ticks = s.ticks || niceTicks(Math.min(...all), Math.max(...all));
   const lo = ticks[0], hi = ticks[ticks.length - 1];
-  const d0 = dayNumber(points[0].date);
-  const span = Math.max(1, dayNumber(points[points.length - 1].date) - d0);
-  const x = (iso) => (points.length === 1 ? (L + W - R) / 2 : L + ((dayNumber(iso) - d0) / span) * (W - L - R));
+  const minutes = s.axis === "minutes";
+  const at = (p) => (minutes ? p.t : dayNumber(p.date));
+  const when = (p) => (minutes ? minutesText(p.t) : shortDay(p.date));
+  const d0 = at(points[0]);
+  const span = Math.max(1, at(points[points.length - 1]) - d0);
+  const xt = (v) => (points.length === 1 ? (L + W - R) / 2 : L + ((v - d0) / span) * (W - L - R));
+  const x = (p) => xt(at(p));
   const y = (v) => T + (1 - (v - lo) / (hi - lo)) * (H - T - B);
-  const path = (pts) => pts.map((p) => `${x(p.date).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
+  const path = (pts) => pts.map((p) => `${x(p).toFixed(1)},${y(p.value).toFixed(1)}`).join(" ");
   const linePts = overlay ? overlay.points : points;
   const line = path(linePts);
-  const area = s.area && linePts.length > 1 && s.dots === "series"
-    ? `<path class="area" d="M${x(linePts[0].date).toFixed(1)},${H - B} L${line.replaceAll(" ", " L")} L${x(linePts[linePts.length - 1].date).toFixed(1)},${H - B} Z"/>`
+  const area = s.area && linePts.length > 1 && s.dots !== "raw"
+    ? `<path class="area" d="M${x(linePts[0]).toFixed(1)},${H - B} L${line.replaceAll(" ", " L")} L${x(linePts[linePts.length - 1]).toFixed(1)},${H - B} Z"/>`
     : "";
   const avgAt = new Map((overlay?.points || []).map((p) => [p.date, p.value]));
   wrap.tips = points.map((p) => ({
-    x: x(p.date), y: y(p.value), d: fmtDate(p.date), v: show(p.value),
+    x: x(p), y: y(p.value), d: minutes ? minutesText(p.t) : fmtDate(p.date), v: show(p.value),
     extra: [p.tip, avgAt.has(p.date) && overlay ? `${overlay.name} ${show(avgAt.get(p.date))}` : ""].filter(Boolean).join(" · "),
   }));
-  const labels = timeLabels(points, x);
+  const labels = timeLabels(points, x, when);
+  const marks = minutes ? (s.marks || []).map((m) => `<line class="mark" x1="${xt(m.t).toFixed(1)}" x2="${xt(m.t).toFixed(1)}" y1="${H - B - 8}" y2="${H - B}"><title>${esc(m.label)}</title></line>`).join("") : "";
   const anchor = (i) => (points.length === 1 ? "middle" : i === 0 ? "start" : i === labels.length - 1 ? "end" : "middle");
   const svg = `<svg class="chart${wrap.dataset.drawn ? " still" : ""}" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(s.label || "")}">
       ${ticks.map((v) => `<line class="grid" x1="${L}" x2="${W - R}" y1="${y(v).toFixed(1)}" y2="${y(v).toFixed(1)}"/><text class="axis" x="${L - 10}" y="${(y(v) + 4).toFixed(1)}" text-anchor="end">${esc(s.format ? s.format(v) : fmtNum(v))}</text>`).join("")}
       ${area}
       ${linePts.length > 1 ? `<polyline class="line" pathLength="1" points="${line}"/>` : ""}
-      ${points.map((p) => `<circle class="dot ${s.dots === "raw" ? "raw" : ""}" cx="${x(p.date).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="4.5"/>`).join("")}
+      ${marks}
+      ${s.dots === "none" ? "" : points.map((p) => `<circle class="dot ${s.dots === "raw" ? "raw" : ""}" cx="${x(p).toFixed(1)}" cy="${y(p.value).toFixed(1)}" r="4.5"/>`).join("")}
       ${labels.map((l, i) => `<text class="axis" x="${l.px.toFixed(1)}" y="${H - 8}" text-anchor="${anchor(i)}">${esc(l.text)}</text>`).join("")}
       <line class="cross" x1="0" x2="0" y1="${T}" y2="${H - B}"/>
       <circle class="hot" r="6" cx="0" cy="0"/>

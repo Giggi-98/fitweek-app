@@ -8,6 +8,9 @@ const FIRST_IMPORT_DAYS = 30; // Health Connect non dà dati più vecchi senza u
 const OVERLAP_DAYS = 2; // l'orologio può sincronizzare in ritardo: si rilegge un po' indietro
 export const MIN_HEART_SAMPLES = 10; // meno campioni in una seduta non fanno una media che dica qualcosa
 const MAX_SESSION_HOURS = 6;
+const CURVE_STEP_S = 30;
+const SET_WINDOW_S = 180; // una serie non dura più di così: prima il battito è del recupero
+const AFTER_SET_S = 30;
 const HEART_REFRESH_HOURS = 24; // una seduta finita da meno di così si rilegge: i campioni possono arrivare tardi // una seduta "aperta" per ore è stata chiusa tardi: il battito non sarebbe suo
 const STAGE_KEYS = { deep: "deep_min", light: "light_min", rem: "rem_min", awake: "awake_min" };
 const DAY_MS = 86_400_000;
@@ -107,15 +110,15 @@ export const healthDayWrites = (days, db) => days.filter(({ date, body }) => !sa
 export const heartWindows = (sessions, from, now = new Date()) =>
   sessions
     .filter((s) => s.status === "done" && s.started_at && s.ended_at && new Date(s.ended_at) >= new Date(from))
-    .filter((s) => !s.heart || now - new Date(s.ended_at) < HEART_REFRESH_HOURS * 3_600_000)
+    .filter((s) => !s.heart?.curve || now - new Date(s.ended_at) < HEART_REFRESH_HOURS * 3_600_000)
     .filter((s) => {
-      const length = minutesBetween(s.started_at, s.ended_at);
-      return length > 0 && length <= MAX_SESSION_HOURS * 60;
+      const ms = new Date(s.ended_at) - new Date(s.started_at);
+      return ms > 0 && ms <= MAX_SESSION_HOURS * 3_600_000;
     })
     .map((s) => ({ id: s.id, start: s.started_at, end: s.ended_at, heart: s.heart || null }));
 
 /** Vero se il riassunto nuovo dice qualcosa di diverso da quello salvato. */
-export const heartChanged = (old, next) => !old || ["avg_bpm", "max_bpm", "samples"].some((k) => old[k] !== next[k]);
+export const heartChanged = (old, next) => !old?.curve || ["avg_bpm", "max_bpm", "samples"].some((k) => old[k] !== next[k]);
 
 /**
  * Battito della seduta in corso: ultimo valore (con il suo orario), media e massimo da `start` in poi.
@@ -129,7 +132,7 @@ export function liveHeart(samples, start) {
   const last = own[own.length - 1];
   return {
     bpm: Math.round(last.bpm), at: last.time, samples: bpm.length,
-    avg: Math.round(bpm.reduce((a, b) => a + b, 0) / bpm.length), max: Math.round(Math.max(...bpm)),
+    avg: Math.round(mean(bpm)), max: Math.round(Math.max(...bpm)), curve: heartCurve(own, start),
   };
 }
 
@@ -148,13 +151,48 @@ export function weightWrites(records, weights) {
   return [...first].map(([date, weight]) => ({ date, weight }));
 }
 
-/** Battito medio e massimo dei campioni dentro la seduta; null se sono troppo pochi. */
+const within = (samples, from, to) => samples.filter((s) => {
+  const t = new Date(s.time).getTime();
+  return t >= from && t <= to;
+});
+const mean = (xs) => xs.reduce((a, b) => a + b, 0) / xs.length;
+
+/**
+ * Curva della seduta: un punto ogni 30 s con media e massimo dei campioni in quel tratto (i tratti senza campioni
+ * non ci sono: la curva non inventa valori). @returns [[secondi dall'inizio, media, massimo]]
+ */
+export function heartCurve(samples, start) {
+  const from = new Date(start).getTime();
+  const buckets = new Map();
+  for (const s of samples) {
+    const sec = Math.floor((new Date(s.time).getTime() - from) / 1000 / CURVE_STEP_S) * CURVE_STEP_S;
+    buckets.set(sec, [...(buckets.get(sec) || []), s.bpm]);
+  }
+  return [...buckets].sort(([a], [b]) => a - b).map(([sec, bpm]) => [sec, Math.round(mean(bpm)), Math.round(Math.max(...bpm))]);
+}
+
+/** Battito medio, massimo e curva dei campioni dentro la seduta; null se sono troppo pochi. */
 export function heartSummary(samples, { start, end }) {
-  const from = new Date(start).getTime(), to = new Date(end).getTime();
-  const bpm = samples.filter((s) => {
-    const t = new Date(s.time).getTime();
-    return t >= from && t <= to;
-  }).map((s) => s.bpm);
-  if (bpm.length < MIN_HEART_SAMPLES) return null;
-  return { avg_bpm: Math.round(bpm.reduce((a, b) => a + b, 0) / bpm.length), max_bpm: Math.round(Math.max(...bpm)), samples: bpm.length };
+  const own = within(samples, new Date(start).getTime(), new Date(end).getTime());
+  if (own.length < MIN_HEART_SAMPLES) return null;
+  const bpm = own.map((s) => s.bpm);
+  return { avg_bpm: Math.round(mean(bpm)), max_bpm: Math.round(Math.max(...bpm)), samples: bpm.length, curve: heartCurve(own, start) };
+}
+
+/**
+ * Picco del battito di ogni serie completata: il massimo della curva tra la fine della serie precedente (al più
+ * 3 minuti prima) e 30 s dopo che la serie è stata segnata (il battito sale ancora un poco dopo lo sforzo).
+ * @param sets serie della seduta con `logged_at` @returns Map "esercizio:indice" → bpm (solo se ci sono punti)
+ */
+export function setPeaks(curve, start, sets) {
+  const t0 = new Date(start).getTime();
+  const done = sets.filter((x) => x.completed && x.logged_at).map((x) => ({ key: `${x.exercise_id}:${x.set_index}`, at: (new Date(x.logged_at).getTime() - t0) / 1000 }))
+    .sort((a, b) => a.at - b.at);
+  const out = new Map();
+  done.forEach((x, i) => {
+    const from = Math.max(i ? done[i - 1].at : 0, x.at - SET_WINDOW_S);
+    const peaks = (curve || []).filter(([sec]) => sec + CURVE_STEP_S > from && sec <= x.at + AFTER_SET_S).map(([, , max]) => max);
+    if (peaks.length) out.set(x.key, Math.max(...peaks));
+  });
+  return out;
 }

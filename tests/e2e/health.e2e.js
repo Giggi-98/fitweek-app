@@ -69,7 +69,7 @@ const FAKE_NATIVE = () => {
   await page.waitForSelector('#shell:not(.hidden)');
   const token = await page.evaluate(() => window.__keystore.token);
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json', Origin: APP };
-  const server = async (path, method = 'GET', data) => (await ctx.request.fetch(B + path, { method, headers, data })).json();
+  const server = async (path, method = 'GET', data, extra = {}) => (await ctx.request.fetch(B + path, { method, headers: { ...headers, ...extra }, data })).json();
 
   // Sul server: una notte scritta a mano ieri, una notte importata e poi eliminata l'altro ieri, una seduta di oggi.
   const { date: today, program_week: week } = await server('/api/v1/today');
@@ -82,6 +82,8 @@ const FAKE_NATIVE = () => {
   const session = await server('/api/v1/workout-sessions', 'POST', { id: 'e2e-gym', routine: 'A', week, date: today });
   const start = new Date(session.started_at);
   const end = new Date(start.getTime() + 70 * 60000);
+  // una serie segnata subito (il server non accetta orari nel futuro): il suo picco è il campione dei primi 30 s
+  await server('/api/v1/workout-sessions/e2e-gym/sets/a1/1', 'PUT', { kg: 40, reps: 10, rir: 2, completed: true, kind: 'normal' });
   await server('/api/v1/workout-sessions/e2e-gym', 'PATCH', { status: 'done', ended_at: end.toISOString(), duration_min: 70 });
 
   // Sull'orologio: tre notti (una per ciascuno di quei giorni, più un pisolino oggi), passi, battito.
@@ -96,7 +98,7 @@ const FAKE_NATIVE = () => {
       sleep: [night(today, yesterday), night(yesterday, before), night(before, beforeThat), { start: at(today, '06', '00'), end: at(today, '06', '20'), stages: [] }],
       steps: [{ date: yesterday, steps: 9876 }, { date: today, steps: 4321 }],
       resting: [{ time: at(yesterday, '08', '00'), bpm: 61 }],
-      heart: Array.from({ length: 20 }, (_, i) => ({ time: new Date(t0 + (i + 1) * 3 * 60000).toISOString(), bpm: 110 + i })),
+      heart: [{ time: new Date(t0 + 10000).toISOString(), bpm: 125 }, ...Array.from({ length: 20 }, (_, i) => ({ time: new Date(t0 + (i + 1) * 3 * 60000).toISOString(), bpm: 110 + i }))],
       hrv: [{ time: at(today, '03', '00'), value: 42 }, { time: at(today, '04', '00'), value: 50 }],
       spo2: [{ time: at(today, '03', '00'), value: 96.4 }],
       weight: [{ time: at(yesterday, '19', '00'), kg: 89.9 }, { time: at(yesterday, '06', '40'), kg: 89.44 }],
@@ -127,7 +129,8 @@ const FAKE_NATIVE = () => {
   const weights = (await server('/api/state')).data.weights;
   check('bilancia: la prima pesata del giorno entra come nuova, marcata dalla bilancia', weights.length === 1 && weights[0].date === yesterday && weights[0].weight === 89.4 && weights[0].source === 'health_connect', JSON.stringify(weights));
   const heart = (await server('/api/v1/workout-sessions/e2e-gym')).heart;
-  check('battito della seduta: media e massimo dei campioni dentro la seduta', heart && heart.avg_bpm === 120 && heart.max_bpm === 129 && heart.samples === 20, JSON.stringify(heart));
+  check('battito della seduta: media e massimo dei campioni dentro la seduta', heart && heart.avg_bpm === 120 && heart.max_bpm === 129 && heart.samples === 21, JSON.stringify({ ...heart, curve: heart?.curve?.length }));
+  check('curva della seduta: un punto per ogni tratto con campioni', heart?.curve?.length === 21 && heart.curve[0][0] === 0 && heart.curve[1][0] === 180 && heart.curve[1][1] === 110, JSON.stringify(heart?.curve?.slice(0, 2)));
 
   // 2. Seconda importazione: niente di nuovo, nessuna scrittura
   await page.click('#watch-panel [data-watch=import]');
@@ -145,7 +148,7 @@ const FAKE_NATIVE = () => {
   await page.locator('#toast', { hasText: '1 valori importati' }).waitFor({ timeout: 8000 });
   await page.waitForSelector('#sync[data-state=ok]', { timeout: 15000 });
   const later = (await server('/api/v1/workout-sessions/e2e-gym')).heart;
-  check('campioni arrivati in ritardo: battito della seduta ricalcolato', later?.samples === 30 && later?.max_bpm === 150, JSON.stringify(later));
+  check('campioni arrivati in ritardo: battito della seduta ricalcolato', later?.samples === 31 && later?.max_bpm === 150, JSON.stringify(later));
 
   // 3. Progressi: passi, fasi della notte, battito della seduta
   await page.click('.bottom-nav [data-view=progress]');
@@ -161,6 +164,11 @@ const FAKE_NATIVE = () => {
   await page.screenshot({ path: `${SHOTS}/v114-sleep-390.png`, fullPage: true });
   await page.click('[data-tab=training]');
   check('Storico: battito medio e massimo della seduta', /battito medio \d+, max 150 bpm/.test(await page.textContent('#content')));
+  await page.locator('#content details', { hasText: 'Dettaglio' }).first().locator('summary').click();
+  const detail = await page.locator('#content details[open]').first().textContent();
+  check('Storico: picco del battito per serie', /#1: 40 kg × 10.*picco 125 bpm/.test(detail), detail.replace(/\s+/g, ' ').slice(0, 200));
+  check('Storico: curva della seduta con le serie segnate', (await page.locator('#content details[open] svg .line').count()) === 1 && (await page.locator('#content details[open] svg .mark').count()) === 1);
+  await page.locator('#content details[open]').first().screenshot({ path: `${SHOTS}/v117-history-heart-390.png` });
 
   // 4. Senza rete: i passi aumentano, l'importazione va in coda e si vede subito; al ritorno arriva al server
   await page.route(`${B}/**`, (r) => r.abort());
@@ -211,7 +219,7 @@ const FAKE_NATIVE = () => {
   await page.evaluate(({ start }) => {
     const v = JSON.parse(sessionStorage.getItem('__hc'));
     const t0 = new Date(start).getTime();
-    v.heart.push({ time: new Date(t0 + 500).toISOString(), bpm: 101 }, { time: new Date(t0 + 1000).toISOString(), bpm: 133 });
+    v.heart.push(...Array.from({ length: 10 }, (_, i) => ({ time: new Date(t0 + 50 + i * 40).toISOString(), bpm: 101 })), { time: new Date(t0 + 1000).toISOString(), bpm: 133 });
     sessionStorage.setItem('__hc', JSON.stringify(v));
   }, { start: liveSession.started_at });
   await new Promise((r) => setTimeout(r, 1500)); // i campioni devono essere nel passato
@@ -219,8 +227,13 @@ const FAKE_NATIVE = () => {
   await page.waitForSelector('#shell:not(.hidden)');
   await page.click('.bottom-nav [data-view=training]');
   await page.locator('#wk-heart', { hasText: '133 bpm' }).waitFor({ timeout: 8000 });
-  check('seduta in corso: ultimo battito, media e massimo', /133 bpm.*media 117.*max 133/.test(await page.textContent('#wk-heart')), await page.textContent('#wk-heart'));
+  check('seduta in corso: ultimo battito, media e massimo', /133 bpm.*media 104.*max 133/.test(await page.textContent('#wk-heart')), await page.textContent('#wk-heart'));
   await page.screenshot({ path: `${SHOTS}/v115-live-heart-390.png` });
+  page.once('dialog', (d) => d.accept()); // "Nessuna serie segnata. Terminare comunque?"
+  await page.click('[data-finish]');
+  await page.locator('.finish', { hasText: 'Battito: media 104' }).waitFor({ timeout: 10000 });
+  check('riepilogo di fine seduta: battito arrivato dall\'orologio', true);
+  await page.screenshot({ path: `${SHOTS}/v117-summary-390.png`, fullPage: true });
 
   // 6. Nel browser (webapp) il pannello non c'è; i dati invece si vedono in Progressi
   const web = await browser.newContext({ viewport: { width: 390, height: 844 }, timezoneId: 'Europe/Rome', locale: 'it-IT' });

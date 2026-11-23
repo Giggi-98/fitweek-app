@@ -511,6 +511,7 @@ td small { display: block; color: var(--color-text-muted); font-size: var(--text
 .chart-panel { grid-template-rows: auto minmax(240px, 1fr) auto; }
 .chart-panel .chart-wrap { height: auto; min-height: 240px; }
 .chart .grid { stroke: var(--chart-grid); stroke-width: 1; }
+.chart .mark { stroke: var(--color-text-faint); stroke-width: 2; stroke-linecap: round; }
 .chart .axis { fill: var(--color-text-muted); font-size: 12px; font-weight: 500; font-variant-numeric: tabular-nums; }
 .chart .area { fill: var(--chart-wash); animation: fade-in var(--dur-4) var(--ease-out) both; animation-delay: 300ms; }
 .chart .line { fill: none; stroke: var(--chart-1); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; stroke-dasharray: 1; animation: line-draw 1.2s var(--ease-out) both; }
@@ -903,3 +904,4 @@ table.cons td .icon { display: block; margin: auto; }
   *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
 }
 #page-eyebrow:empty { display: none; }
+.heart-sum { display: grid; gap: var(--space-2); }

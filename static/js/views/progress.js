@@ -2,6 +2,7 @@
 import { request } from "../api.js";
 import { app, persistState, recordWeight, refreshDaily, refreshWorkouts } from "../store.js";
 import { lineChart } from "../chart.js";
+import { heartChart, sessionPeaks } from "../workout/heart.js";
 import { DAYS, GYM, PROGRAM_WEEKS, ROUTINES } from "../constants.js";
 import { consistency, exerciseHistory, mondayOf, movingAverage } from "../stats.js";
 import { openSleepLog } from "../reminders.js";
@@ -108,6 +109,28 @@ function sleepTab() {
 }
 
 // ---- dati dall'orologio (Health Connect, D-040): solo letti e mostrati, nessuna soglia né obiettivo -------
+/** Andamento di un valore giornaliero dell'orologio, con la media mobile da 3 giorni in su; "" con meno di 2 giorni. */
+function dailyChart(rows, key, ic, title, unit) {
+  if (rows.length < 2) return "";
+  const withAvg = rows.length >= 3;
+  // tacche intere: battito e HRV non hanno decimali
+  const vals = rows.map((d) => d[key]);
+  const [lo, hi] = [Math.min(...vals) - 1, Math.max(...vals) + 1];
+  const step = hi - lo > 12 ? 5 : hi - lo > 6 ? 2 : 1;
+  const ticks = [];
+  for (let v = Math.floor(lo / step) * step; v <= hi; v += step) ticks.push(v);
+  const last = rows[rows.length - 1];
+  return panel(`${icon(ic)}${title}`, lineChart({
+    points: rows.map((d) => ({ date: d.date, value: d[key] })),
+    overlay: withAvg ? { name: "media 7 gg", points: movingAverage(rows.map((d) => ({ date: d.date, weight: d[key] }))) } : null,
+    dots: withAvg ? "raw" : "series",
+    unit,
+    ticks, format: (v) => String(Math.round(v)),
+    label: `${title} in ${rows.length} giorni, l'ultimo ${last[key]} ${unit}.`,
+    legend: withAvg ? [["raw", "Valore del giorno"], ["line", 'Media mobile 7 giorni <span class="badge-calc">calcolata</span>']] : [],
+  }));
+}
+
 function heartTab() {
   const steps = app.health.filter((d) => d.steps != null);
   const resting = app.health.filter((d) => d.resting_hr != null);
@@ -128,24 +151,8 @@ function heartTab() {
     hrv && stat(`${icon("activity", "sm")}HRV`, `${esc(hrv.hrv_ms)}<small> ms</small>`, `media del ${esc(fmtDate(hrv.date))}`),
     spo2 && stat(`${icon("droplet", "sm")}SpO2`, `${esc(spo2.spo2)}<small> %</small>`, `media del ${esc(fmtDate(spo2.date))}`),
   ].filter(Boolean);
-  const withAvg = resting.length >= 3;
-  // tacche intere: il battito non ha decimali
-  const bpm = resting.map((d) => d.resting_hr);
-  const [lo, hi] = [Math.min(...bpm) - 1, Math.max(...bpm) + 1];
-  const step = hi - lo > 12 ? 5 : hi - lo > 6 ? 2 : 1;
-  const ticks = [];
-  for (let v = Math.floor(lo / step) * step; v <= hi; v += step) ticks.push(v);
-  const chart = resting.length > 1
-    ? panel(`${icon("heart-pulse")}Battito a riposo`, lineChart({
-        points: resting.map((d) => ({ date: d.date, value: d.resting_hr })),
-        overlay: withAvg ? { name: "media 7 gg", points: movingAverage(resting.map((d) => ({ date: d.date, weight: d.resting_hr }))) } : null,
-        dots: withAvg ? "raw" : "series",
-        unit: "bpm",
-        ticks, format: (v) => String(Math.round(v)),
-        label: `Battito a riposo in ${resting.length} giorni, l'ultimo ${last.resting_hr} bpm.`,
-        legend: withAvg ? [["raw", "Valore del giorno"], ["line", 'Media mobile 7 giorni <span class="badge-calc">calcolata</span>']] : [],
-      }))
-    : "";
+  const hrvDays = app.health.filter((d) => d.hrv_ms != null);
+  const chart = dailyChart(resting, "resting_hr", "heart-pulse", "Battito a riposo", "bpm") + dailyChart(hrvDays, "hrv_ms", "activity", "HRV", "ms");
   return `<div class="tiles ${tiles.length % 3 === 0 ? "three" : "pair"}">${tiles.join("")}</div>${chart}
     <p class="subtle">Valori letti dall'orologio tramite Health Connect.</p>`;
 }
@@ -251,7 +258,8 @@ function historyPanel() {
       ? sessions
           .map((s) => {
             const done = s.sets.filter((x) => x.completed);
-            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.heart ? ` · battito medio ${esc(s.heart.avg_bpm)}, max ${esc(s.heart.max_bpm)} bpm` : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(nameOf(x.exercise_id) || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}`).join("<br>")}</div></details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
+            const peaks = sessionPeaks(s);
+            return `<div class="entry"><div><div class="entry-title">${esc(fmtDate(s.date))} · Giorno ${esc(s.routine)} · W${esc(s.week)}</div><div class="entry-sub">${done.length} serie${s.duration_min ? ` · ${esc(Math.round(s.duration_min))} min` : ""}${s.cardio_min ? " · cardio fatto" : ""}${s.heart ? ` · battito medio ${esc(s.heart.avg_bpm)}, max ${esc(s.heart.max_bpm)} bpm` : ""}${s.notes ? " · " + esc(s.notes) : ""}</div><details><summary>Dettaglio</summary><div class="subtle">${done.map((x) => `${esc(nameOf(x.exercise_id) || x.exercise_id)} #${x.set_index}: ${x.kg == null ? "—" : esc(fmtNum(x.kg))} kg × ${esc(x.reps)}${x.rir == null ? "" : ` · RIR ${x.rir === 4 ? "4+" : esc(x.rir)}`}${peaks.has(`${x.exercise_id}:${x.set_index}`) ? ` · picco ${esc(peaks.get(`${x.exercise_id}:${x.set_index}`))} bpm` : ""}`).join("<br>")}</div>${heartChart(s, nameOf)}</details></div><div class="row-actions"><button type="button" class="icon-btn" data-edit-session="${esc(s.id)}" aria-label="Modifica seduta">${icon("pencil", "sm")}</button><button type="button" class="icon-btn" data-del-session="${esc(s.id)}" aria-label="Elimina seduta">${icon("trash-2", "sm")}</button></div></div>`;
           })
           .join("")
       : empty("Nessun allenamento registrato", "Inizia dalla schermata Palestra."),
