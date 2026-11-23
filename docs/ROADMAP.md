@@ -222,6 +222,10 @@ Criteri di accettazione:
 
 Non fatto: offline completo (registrare senza server: oggi la coda locale copre brevi cali di rete, ma l'app deve poter caricare la pagina), iOS. (L'aggiornamento dell'APK dall'app è arrivato con la 1.11.0.)
 
+## 1.16.0 (2026-11-23) — fondamenta grafiche (tappa 5 di 8)
+
+Solo frontend, nessuna migrazione. Nato da un giro fotografico di tutte le viste (nuovo e2e `screens`): sul telefono le schede principali mostrano il nome solo di quella attiva e non escono più dallo schermo; le file di schede lunghe scorrono con una sfumatura e portano in vista la voce scelta; il piano dei pasti non fa più scorrere la pagina in orizzontale; i badge "calcolato/stima" non spezzano più le etichette; via i sottotitoli di riempimento, il totale doppio del diario e il secondo "Pasto" per oggi; la spesa non mostra "0,00 €" quando i prezzi non ci sono. Dettagli in `docs/DESIGN_SYSTEM.md` (Aggiunte 1.16.0).
+
 ## 1.15.0 (2026-11-23) — orologio più vivo, avvisi in tempo reale (tappa 1 di 8)
 
 Richiesta dell'utente (D-041). Nel repository, **non in produzione**; richiede la migrazione 12 (due colonne, con backup automatico all'avvio).

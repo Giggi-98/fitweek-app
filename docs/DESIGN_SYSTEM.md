@@ -1,5 +1,16 @@
 # Design system
 
+## Aggiunte 1.16.0 (2026-11-23, tappa 5 "fondamenta grafiche")
+
+Partite da un giro fotografico di tutte le viste (`tests/e2e/screens.e2e.js`: ogni vista e scheda a 390 e 1280 px, tema scuro e chiaro, nessuna pagina che scorre in orizzontale). Correzioni di struttura, non uno stile nuovo:
+- **Schede principali sul telefono** (sotto 600 px, schede figlie di `#content` o in `.view-bar`): icona per tutte, nome solo sulla scheda attiva; le altre tengono il nome per i lettori di schermo; larghezza minima 44 px. Prima la quarta scheda di Progressi e Impostazioni restava fuori schermo senza segnale.
+- **File di schede più larghe dello spazio** (giorni del piano, giorni dei promemoria, tema): scorrono da sole, con una sfumatura a destra finché non sono alla fine, e la voce scelta viene portata in vista (`fitTabStrips()` in `static/js/ui.js`, chiamata da `render()`). Un elemento di griglia in `#content` o in `.tabpanel` non allarga più la pagina (`min-width: 0`).
+- **Riquadri dei numeri** (`stat()`, `.metric-label`): il badge "calcolato/stima" va a capo come blocco invece di spezzare l'etichetta parola per parola.
+- **Testata**: sottotitolo solo dove dice qualcosa (data in Oggi, settimana in Palestra, consegna in Spesa); tolti quelli di riempimento.
+- **Pasti → Diario**: un solo totale (nel riepilogo); "Pasto" nella scheda del giorno compare solo per un giorno passato (per oggi c'è quello in alto); resta l'avviso dei pasti senza valori.
+- **Spesa**: due riquadri invece di tre (il numero di articoli è già sulla scheda "Lista"); senza prezzi inseriti il totale è "—" con "prezzi non ancora inseriti", mai "0,00 €"; i totali per reparto compaiono solo se c'è almeno un prezzo.
+- Rimandati alla tappa 7 (flussi, non solo grafica): pasti abituali (oggi campi senza etichetta in riga), piano dei pasti con le aree di testo, promemoria in Impostazioni, pagina Generale molto lunga.
+
 ## Aggiunte 1.13.0 (2026-11-16)
 
 - **Programma** (Palestra, schermata di avvio): ogni riga apre la scheda dell'esercizio; "Modifica" mostra per riga sposta su/giù e matita, più "Aggiungi esercizio" e, se la giornata differisce dal PDF, "Ripristina". Un esercizio cambiato porta la pillola "modificato" o "aggiunto".
