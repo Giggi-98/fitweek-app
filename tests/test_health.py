@@ -205,7 +205,7 @@ def test_migration_13_adds_the_heart_curve_and_keeps_saved_heart(tmp_path):
         c.execute("INSERT INTO workout_sessions (id, routine, week, date, status, created_at, updated_at)"
                   " VALUES ('s1', 'A', 1, '2026-11-09', 'done', 't', 't')")
         c.execute("INSERT INTO workout_heart (session_id, avg_bpm, max_bpm, samples, updated_at) VALUES ('s1', 120, 150, 60, 't')")
-    assert run_migrations(db, tmp_path / "backups") == 13
-    assert run_migrations(db, tmp_path / "backups") == 13, "ripetibile"
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS)
+    assert run_migrations(db, tmp_path / "backups") == len(MIGRATIONS), "ripetibile"
     c = sqlite3.connect(db)
     assert c.execute("SELECT avg_bpm, max_bpm, samples, curve FROM workout_heart").fetchall() == [(120, 150, 60, None)]

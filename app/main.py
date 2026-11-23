@@ -312,6 +312,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                     if body.reminders is not None:
                         c.execute("DELETE FROM reminder_acks")
                         c.execute("DELETE FROM reminders")
+                        c.execute("DELETE FROM reminder_tombstones")  # i promemoria del file valgono tutti
                         for r in body.reminders:
                             c.execute("INSERT INTO reminders VALUES (?,?,?,?,?,?,?,?,?,?)",
                                       (r.id, r.weekday, r.time, r.kind, r.slot, r.title, r.action, int(r.enabled), now, now))

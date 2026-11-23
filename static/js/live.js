@@ -10,6 +10,8 @@ const RETRY_MIN_MS = 1000;
 const RETRY_MAX_MS = 30_000;
 const DEBOUNCE_MS = 250; // più scritture di fila (es. una seduta salvata serie per serie) = una sola rilettura
 
+/** Il flusso degli avvisi è aperto adesso (per la finestra "Stato dei dati"). */
+export const live = { connected: false };
 let active = false; // tra l'accesso e l'uscita
 let listening = false; // listener di pagina già messi
 let ctl = null;
@@ -55,6 +57,7 @@ async function connect() {
     refused = res.status === 401; // sessione finita: ci pensano le altre richieste a riportare all'accesso
     if (!res.ok || !res.body) throw new Error(`HTTP ${res.status}`);
     retry = RETRY_MIN_MS;
+    live.connected = true;
     const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
     let buf = "";
     for (;;) {
@@ -70,6 +73,7 @@ async function connect() {
     /* rete assente, server riavviato o flusso chiuso da noi: si riprova sotto */
   }
   ctl = null;
+  live.connected = false;
   if (active && !refused && document.visibilityState === "visible") {
     retryTimer = setTimeout(connect, retry);
     retry = Math.min(retry * 2, RETRY_MAX_MS);
@@ -92,6 +96,7 @@ export function startLive(handler) {
       retry = RETRY_MIN_MS;
       connect();
     });
+    window.addEventListener("offline", disconnect); // un flusso aperto non si accorge subito che la rete è caduta
   }
   connect();
 }

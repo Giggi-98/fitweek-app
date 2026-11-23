@@ -475,6 +475,17 @@ def _m013_heart_curve(c: sqlite3.Connection) -> None:
         c.execute("ALTER TABLE workout_heart ADD COLUMN curve TEXT")
 
 
+def _m014_reminder_tombstones(c: sqlite3.Connection) -> None:
+    """Segno di eliminazione dei promemoria (1.21, chiude il limite di D-036): una modifica fatta offline prima
+    dell'eliminazione e arrivata dopo non ricrea il promemoria. Solo una tabella nuova, come `set_tombstones`."""
+    c.execute(
+        """CREATE TABLE IF NOT EXISTS reminder_tombstones (
+            id TEXT PRIMARY KEY,
+            deleted_at TEXT NOT NULL
+        )"""
+    )
+
+
 MIGRATIONS: list[Migration] = [
     (1, "app_state", _m001_app_state),
     (2, "sessions", _m002_sessions),
@@ -489,6 +500,7 @@ MIGRATIONS: list[Migration] = [
     (11, "watch_data", _m011_watch_data),
     (12, "watch_more", _m012_watch_more),
     (13, "heart_curve", _m013_heart_curve),
+    (14, "reminder_tombstones", _m014_reminder_tombstones),
 ]
 
 

@@ -53,6 +53,8 @@ export function enqueue(method, path, body, key = `${method} ${path}`) {
 }
 
 export const pendingCount = () => ops.length;
+/** Percorsi delle operazioni in attesa, in ordine (per dire all'utente cosa non è ancora arrivato al server). */
+export const pendingPaths = () => ops.map((o) => o.path);
 
 /** Uscita dall'account: elimina DAVVERO tutto ciò che non è stato inviato (coda e scarti). Chi la chiama deve
  *  aver avvisato l'utente se `pendingCount()` o `rejected()` non sono vuoti (vedi logout.js). */

@@ -5,6 +5,7 @@ import { initToken, isHttpUrl, serverUrl, setServerUrl, setToken, standalone, to
 import { app, loadAll, refreshDaily, refreshExtras, refreshState, refreshWorkouts, syncState } from "./store.js";
 import { applyDynamicStyles, fitTabStrips, initModal, markStripEnd, modalOpen, TAB_ITEMS, TAB_LISTS, tabKey, toast } from "./ui.js";
 import { startLive, stopLive } from "./live.js";
+import { openStatus } from "./status.js";
 import { keepAwake } from "./workout/awake.js";
 import { initWatch, sendState } from "./wear.js";
 import { pollLiveHeart } from "./watch.js";
@@ -220,6 +221,7 @@ document.addEventListener("click", async (e) => {
   if (e.target.closest("#rest-plus")) return addRest(15);
   if (e.target.closest("#rest-stop")) return stopRest();
   if (e.target.closest("#logout")) return signOut();
+  if (e.target.closest("#sync")) return openStatus();
   const target = e.target.closest("button, [data-action], [role=button]");
   if (!target || !app.state || !current().onClick) return;
   try {

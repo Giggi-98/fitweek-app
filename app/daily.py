@@ -335,8 +335,9 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             raise HTTPException(status_code=422, detail="Un promemoria pasto richiede il tipo di pasto")
         now = edited
         with connect(settings.db_path) as c, transaction(c):
-            if is_stale(_saved_at(c, "reminders", rid), edited):
-                return STALE
+            if is_stale(_saved_at(c, "reminders", rid), edited) or is_stale(_deleted_at(c, rid), edited):
+                return STALE  # più vecchia del promemoria salvato, oppure della sua eliminazione
+            c.execute("DELETE FROM reminder_tombstones WHERE id=?", (rid,))  # ricreato dopo l'eliminazione
             c.execute(
                 "INSERT INTO reminders VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET"
                 " weekday=excluded.weekday, time=excluded.time, kind=excluded.kind, slot=excluded.slot,"
@@ -346,10 +347,15 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
         return {"ok": True}
 
     @r.delete("/reminders/{rid}", dependencies=writes)
-    def delete_reminder(rid: str):
+    def delete_reminder(rid: str, edited: str = Depends(edit_time)):
+        _check_id(rid)
         with connect(settings.db_path) as c, transaction(c):
+            if is_stale(_saved_at(c, "reminders", rid), edited):
+                return STALE  # modificato dopo l'eliminazione chiesta: resta
             c.execute("DELETE FROM reminder_acks WHERE reminder_id=?", (rid,))
             c.execute("DELETE FROM reminders WHERE id=?", (rid,))
+            c.execute("INSERT INTO reminder_tombstones (id, deleted_at) VALUES (?, ?)"
+                      " ON CONFLICT(id) DO UPDATE SET deleted_at=excluded.deleted_at", (rid, edited))
         return {"ok": True}
 
     @r.put("/reminders/{rid}/ack", dependencies=writes)
@@ -380,6 +386,12 @@ def build_router(settings: Settings, require_session: Callable) -> APIRouter:
             return weekly_summary(c, d)
 
     return r
+
+
+def _deleted_at(c: sqlite3.Connection, rid: str) -> str | None:
+    """Quando il promemoria è stato eliminato l'ultima volta (segno in `reminder_tombstones`), o None."""
+    row = c.execute("SELECT deleted_at FROM reminder_tombstones WHERE id=?", (rid,)).fetchone()
+    return row[0] if row else None
 
 
 def _saved_at(c: sqlite3.Connection, table: str, rid: str) -> str | None:

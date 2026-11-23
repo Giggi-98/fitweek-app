@@ -73,6 +73,11 @@ const shot = (p, n) => p.screenshot({ path: `${SHOTS}/m2-${n}.png`, fullPage: tr
   await page.waitForTimeout(300);
   const syncOffline = await page.textContent('#sync .sync-text');
   check('offline: serie in coda', /Salvataggio \(1\)/.test(syncOffline), syncOffline);
+  await page.click('#sync');
+  const status = await page.textContent('#modal');
+  check('stato dei dati: dice cosa è ancora sul dispositivo e non si dice collegato', /1 modifica ancora sul dispositivo/.test(status) && /1 allenamento/.test(status) && !/Collegato al server/.test(status), status.replace(/\s+/g, ' ').slice(0, 200));
+  await page.screenshot({ path: `${SHOTS}/m2-3a-status.png` });
+  await page.click('#modal [data-m=close]');
   await ctx.setOffline(false);
   await page.evaluate(() => window.dispatchEvent(new Event('online')));
   await page.waitForSelector('#sync[data-state=ok]', { timeout: 10000 });

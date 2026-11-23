@@ -115,6 +115,7 @@ body.has-rest .app-main { padding-bottom: calc(var(--nav-h) + 130px + env(safe-a
 }
 .topbar h1 { font-size: var(--text-xl); font-weight: 800; }
 .top-actions { display: flex; align-items: center; gap: var(--space-1); }
+.sync { border: 0; font-family: inherit; cursor: pointer; min-height: 36px; }
 .sync { display: inline-flex; align-items: center; gap: 6px; font-size: var(--text-xs); font-weight: 600; color: var(--color-text-muted); padding: 8px 10px; border-radius: var(--radius-pill); background: var(--color-surface-glass); }
 .sync::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--color-success); color: var(--color-success); }
 .sync[data-state="saving"]::before { background: var(--color-warning); color: var(--color-warning); animation: pulse-dot 1.2s infinite; }

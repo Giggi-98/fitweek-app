@@ -39,6 +39,8 @@ function storeSamples(sessionId, fresh) {
   storage.set(SAMPLES_KEY, Object.fromEntries(keep.map((id) => [id, merged[id]])));
 }
 
+/** Ultimo messaggio arrivato dall'orologio (ms), 0 se nessuno da quando l'app è aperta. */
+export const wearLink = { lastAt: 0 };
 let handlers = null;
 let lastState = "";
 
@@ -46,6 +48,7 @@ let lastState = "";
 async function drain() {
   if (!handlers || document.visibilityState !== "visible") return;
   const { messages } = await plugin().drain();
+  if (messages.length) wearLink.lastAt = messages[messages.length - 1].at || Date.now();
   let heart = false;
   for (const m of messages) {
     if (m.path === PATH.hr) {
