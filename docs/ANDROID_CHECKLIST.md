@@ -91,6 +91,10 @@ Premessa: server alla 1.19.0, APK del telefono e dell'orologio compilati insieme
 - [ ] **Telefono in tasca**: con lo schermo del telefono spento per qualche minuto, segna una serie dal polso; riaccendendo, la serie e il battito ci sono.
 - [ ] **Fine seduta** (dal telefono): il riepilogo mostra il battito con la curva; l'orologio torna a "Inizia seduta" e smette di misurare.
 
+## 11. Scorciatoie e fine recupero (1.22.0)
+- [ ] **Scorciatoie**: tieni premuta l'icona di FitWeek: compaiono Allenamento, Pasto, Pesata; ognuna apre la schermata giusta, sia ad app chiusa sia ad app aperta.
+- [ ] **Fine recupero in tasca**: segna una serie, esci dall'app (tasto Home) prima della fine del recupero: alla fine arriva la notifica "Recupero finito". Rientrando prima della fine, nessuna notifica.
+
 ---
 
 ### Note / esito della prova
