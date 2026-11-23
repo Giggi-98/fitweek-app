@@ -11,7 +11,8 @@ import { icon } from "./icons.js";
 import { haptic } from "./motion.js";
 import { app } from "./store.js";
 import { dayOptions, openModal, tabId, tabs, toast } from "./ui.js";
-import { $, esc, fmtNum, isoDate, num, uid } from "./util.js";
+import { $, esc, fmtDate, fmtNum, isoDate, num, uid } from "./util.js";
+import { addDays } from "./stats.js";
 import { commit, enqueue } from "./workout/queue.js";
 
 export const CATEGORIES = [
@@ -19,6 +20,12 @@ export const CATEGORIES = [
   ["piatto_unico", "Piatto unico"], ["frutta", "Frutta"], ["dessert", "Dessert"], ["pane", "Pane"], ["altro", "Altro"],
 ];
 const CAT_LABEL = Object.fromEntries(CATEGORIES.map(([k, l]) => [k, l]));
+const FREQUENT = "frequenti"; // non è una categoria del catalogo: i piatti più usati, di qualunque categoria
+const FREQUENT_MAX = 12;
+const SAME_DAYS = 21; // fin dove cercare "l'ultimo pranzo/cena…"
+/** Categoria proposta per un momento della giornata (e per un piatto scritto a mano dai Frequenti). */
+const slotCat = (slot) => (slot === "lunch" ? "primo" : slot === "dinner" ? "secondo" : slot === "pre_workout" || slot === "snack" ? "frutta" : "altro");
+const ownCat = () => (st.cat === FREQUENT ? slotCat(st.slot) : st.cat);
 const SLOT_ORDER = ["lunch", "pre_workout", "snack", "dinner", "other"];
 const ZONES = "Pasto in composizione"; // nome dell'elenco di schede (telefono)
 
@@ -102,6 +109,10 @@ function onlineBlock(q) {
 /** Senza testo: piatti della categoria scelta. Con testo: catalogo (tutte le categorie) + ricerca online. */
 function browse() {
   const q = (st.newName || "").trim().toLowerCase();
+  if (q.length < 2 && st.cat === FREQUENT) {
+    const foods = app.foods.filter((f) => f.use_count > 0).sort((a, b) => b.use_count - a.use_count).slice(0, FREQUENT_MAX);
+    return `<div class="pick-list">${foods.map(foodPick).join("") || '<p class="subtle">Qui compaiono i piatti che registri più spesso. Per ora scegli da una categoria.</p>'}</div>`;
+  }
   if (q.length < 2) {
     const foods = app.foods.filter((f) => f.category === st.cat);
     return `<div class="pick-list">${foods.map(foodPick).join("") || '<p class="subtle">Nessun piatto in questa categoria: scrivilo qui sopra.</p>'}</div>`;
@@ -188,6 +199,17 @@ function render() {
   paint();
 }
 
+/** L'ultimo pasto registrato per questo momento della giornata (con le voci), se c'è e se il piatto è vuoto. */
+function lastSame() {
+  if (st.items.length) return null;
+  return (st.recent || []).filter((m) => m.slot === st.slot && m.status === "eaten" && m.items?.length && m.id !== st.id)
+    .sort((a, b) => `${b.date}${b.logged_at || ""}`.localeCompare(`${a.date}${a.logged_at || ""}`))[0] || null;
+}
+function sameAsLast() {
+  const m = lastSame();
+  return m ? `<button type="button" class="pick same-last" data-same><span>${icon("rotate-ccw", "sm")} Come l'ultimo ${esc(SLOTS[st.slot].toLowerCase())}</span><small>${esc(m.items.map((i) => i.name).join(" + "))} · ${esc(fmtDate(m.date))}</small></button>` : "";
+}
+
 function paint() {
   const t = totals(st.items);
   const legacy = !st.items.length && (st.description || st.log);
@@ -209,14 +231,15 @@ function paint() {
       </section>
       <section class="composer-zone add" ${panelAttrs("add")}>
         <h3>Aggiungi</h3>
+        ${sameAsLast()}
         <div class="composer-search">
           <input id="c-new-name" maxlength="120" value="${esc(st.newName || "")}" placeholder="Cerca un piatto o un codice a barre" aria-label="Cerca nel catalogo, online o per codice a barre" autocomplete="off">
           ${canScan() ? `<button type="button" class="btn" data-scan aria-label="Leggi il codice a barre con la fotocamera">${icon("scan-barcode")}</button>` : ""}
         </div>
-        <div class="chips scroll cat-tabs" role="group" aria-label="Categoria">${CATEGORIES.map(([k, l]) => `<button type="button" class="chip ${k === st.cat ? "active" : ""}" aria-pressed="${k === st.cat}" data-cat="${k}">${l}</button>`).join("")}</div>
+        <div class="chips scroll cat-tabs" role="group" aria-label="Categoria">${[[FREQUENT, "Frequenti"], ...CATEGORIES].map(([k, l]) => `<button type="button" class="chip ${k === st.cat ? "active" : ""}" aria-pressed="${k === st.cat}" data-cat="${k}">${l}</button>`).join("")}</div>
         <div id="c-browse">${browse()}</div>
         <div class="new-food" id="c-manual" ${(st.newName || "").trim() ? "" : "hidden"}>
-          <span class="eyebrow">A mano, in ${esc(CAT_LABEL[st.cat])}</span>
+          <span class="eyebrow">A mano, in ${esc(CAT_LABEL[ownCat()])}</span>
           <input id="c-new-kcal" inputmode="decimal" value="${esc(st.newKcal || "")}" placeholder="kcal" aria-label="Calorie per porzione (facoltativo)">
           <input id="c-new-prot" inputmode="decimal" value="${esc(st.newProt || "")}" placeholder="proteine g" aria-label="Proteine per porzione in grammi (facoltativo)">
           <button type="button" class="btn" data-new>${icon("plus", "sm")}Aggiungi</button>
@@ -294,6 +317,11 @@ async function handle(t) {
     return false;
   }
   if (t.dataset.cat) return (st.cat = t.dataset.cat), render(), false;
+  if (t.matches("[data-same]")) {
+    st.items = lastSame().items.map(({ ...i }) => i);
+    st.zone = "tray";
+    return render(), false;
+  }
   if (t.dataset.food) {
     addFood(app.foods.find((f) => f.id === t.dataset.food));
     if ($("#c-new-name")) $("#c-new-name").value = ""; // scelta fatta: si torna all'elenco per categoria
@@ -309,7 +337,7 @@ async function handle(t) {
     const v = portion(p, grams);
     const brand = p.brand.split(",")[0].trim();
     st.items.push({
-      name: `${p.name}${brand ? ` ${brand}` : ""} (${fmtNum(grams, 0)} g)`.slice(0, 120), category: st.cat, qty: 1,
+      name: `${p.name}${brand ? ` ${brand}` : ""} (${fmtNum(grams, 0)} g)`.slice(0, 120), category: ownCat(), qty: 1,
       kcal: v.kcal, protein_g: v.protein, nutrition_source: "off", food_id: null, takeaway: false,
     });
     haptic(10);
@@ -341,7 +369,7 @@ async function handle(t) {
     const kcal = decimal($("#c-new-kcal").value);
     if (!name) return toast("Scrivi il nome del piatto"), false;
     const existing = app.foods.find((f) => f.name.toLowerCase() === name.toLowerCase());
-    addFood(existing || { id: null, name, category: st.cat, kcal, protein_g: kcal == null ? null : decimal($("#c-new-prot").value), nutrition_source: kcal == null ? null : "manual" });
+    addFood(existing || { id: null, name, category: ownCat(), kcal, protein_g: kcal == null ? null : decimal($("#c-new-prot").value), nutrition_source: kcal == null ? null : "manual" });
     $("#c-new-name").value = $("#c-new-kcal").value = $("#c-new-prot").value = "";
     render();
     return false;
@@ -368,7 +396,9 @@ export async function openComposer({ slot = "lunch", date = app.today?.date || i
       /* offline: catalogo vuoto, si possono comunque scrivere piatti nuovi */
     }
   }
+  const recent = log ? [] : await request(`/api/v1/meal-logs?from=${addDays(date, -SAME_DAYS)}&to=${date}`).then((r) => r.items, () => []);
   st = {
+    recent,
     id: log?.id || uid(),
     log,
     slot: log?.slot || slot,
@@ -379,7 +409,7 @@ export async function openComposer({ slot = "lunch", date = app.today?.date || i
     note: log?.note || "",
     zone: log || items.length ? "tray" : "add",
     edit: null, // indice della voce di cui si stanno correggendo i valori
-    cat: (log?.slot || slot) === "lunch" ? "primo" : (log?.slot || slot) === "dinner" ? "secondo" : (log?.slot || slot) === "pre_workout" || (log?.slot || slot) === "snack" ? "frutta" : "altro",
+    cat: !log && !items.length && app.foods.some((f) => f.use_count > 0) ? FREQUENT : slotCat(log?.slot || slot),
     reminderId,
     rendered: false,
   };

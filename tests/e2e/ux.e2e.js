@@ -41,7 +41,9 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
     buttons: document.querySelectorAll('#shopping-list .shoprow > button[aria-label]').length,
   }));
   check('riga spesa: nessun pulsante dentro la label', markup.nested === 0 && markup.rows === before.length && markup.labels === markup.rows && markup.buttons === markup.rows * 2, JSON.stringify(markup));
-  const row = page.locator('#shopping-list .shoprow').nth(0);
+  // la riga si segue per nome: spuntata, scende in fondo al suo reparto (1.20)
+  const shopName = await page.locator('#shopping-list .shoprow .shopname').first().textContent();
+  const row = page.locator('#shopping-list .shoprow', { has: page.locator('.shopname', { hasText: shopName }) });
   await page.screenshot({ path: `${SHOTS}/ux-1-shopping.png` });
   const box = row.locator('input[type=checkbox]');
   await row.locator('[data-recurring]').click();

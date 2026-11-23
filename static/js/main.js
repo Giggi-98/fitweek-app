@@ -189,14 +189,18 @@ async function applyRemote(domains) {
   renderWhenIdle();
 }
 
-/** Ridisegna appena l'utente non sta scrivendo né ha una finestra aperta: un dato arrivato da fuori non deve
- *  portargli via il campo che sta compilando. */
+/** Ridisegna appena l'utente non sta scrivendo, non ha campi lasciati a metà né una finestra aperta: un dato
+ *  arrivato da fuori non deve portargli via quello che sta compilando. */
 let renderLater = null;
+/** Un campo del contenuto cambiato e non ancora salvato (anche senza fuoco), o un file scelto e non caricato. */
+const unsaved = () => [...document.querySelectorAll("#content input, #content textarea")].some((f) =>
+  f.type === "file" ? f.files?.length > 0 : f.type === "checkbox" || f.type === "radio" ? f.checked !== f.defaultChecked : f.value !== f.defaultValue);
+
 function renderWhenIdle() {
   clearTimeout(renderLater);
   const el = document.activeElement;
   const typing = el?.matches?.("input, textarea, select") && el.closest("#content");
-  if (modalOpen() || typing) return void (renderLater = setTimeout(renderWhenIdle, 1500));
+  if (modalOpen() || typing || unsaved()) return void (renderLater = setTimeout(renderWhenIdle, 1500));
   render();
 }
 

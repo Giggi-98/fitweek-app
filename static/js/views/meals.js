@@ -6,8 +6,8 @@ import { openComposer } from "../composer.js";
 import { guessSlot } from "../reminders.js";
 import { app, persistState } from "../store.js";
 import { formatQty, parseQty } from "../stats.js";
-import { empty, panel, tabId, tabpanel, tabs, toast } from "../ui.js";
-import { esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
+import { empty, openModal, panel, tabId, tabpanel, tabs, toast } from "../ui.js";
+import { $, esc, fmtDate, fmtNum, isoDate, num, uid } from "../util.js";
 import { openPlanProposal } from "./shopping.js";
 import { commit, enqueue } from "../workout/queue.js";
 
@@ -150,7 +150,7 @@ function templates() {
     `${icon("sparkles")}Pasti abituali`,
     `${tabs(Object.entries(SLOTS).map(([k, l]) => [k, l, null, app.templates.filter((t) => t.slot === k).length]), slot, "Momento del giorno", "tpl-slot", "tpl-slot-panel")}
     ${tabpanel("tpl-slot-panel", "Momento del giorno", slot, `${items.length
-      ? `<div class="tpl-list">${items.map((t) => `<form class="tpl-row" data-tpl-form="${esc(t.id)}"><input name="name" value="${esc(t.name)}" maxlength="120" aria-label="Nome"><input name="kcal" inputmode="numeric" value="${esc(t.kcal ?? "")}" placeholder="kcal" aria-label="Calorie"><input name="protein_g" inputmode="numeric" value="${esc(t.protein_g ?? "")}" placeholder="prot. g" aria-label="Proteine"><select name="nutrition_source" aria-label="Fonte">${sources(t.nutrition_source)}</select><input type="hidden" name="slot" value="${esc(t.slot)}"><input type="hidden" name="position" value="${esc(t.position)}"><button class="btn small" type="submit">Salva</button><button type="button" class="icon-btn" data-del-tpl="${esc(t.id)}" aria-label="Elimina">${icon("trash-2", "sm")}</button>${t.nutrition_note ? `<small class="tpl-note">${esc(t.nutrition_note)}</small>` : ""}</form>`).join("")}</div>`
+      ? `<div class="tpl-list">${items.map((t) => `<div class="entry clickable" role="button" tabindex="0" data-edit-tpl="${esc(t.id)}" aria-label="Modifica ${esc(t.name)}"><div><div class="entry-title">${esc(t.name)}</div><div class="entry-sub">${esc(kcalLabel(t))}</div></div><button type="button" class="icon-btn" data-del-tpl="${esc(t.id)}" aria-label="Elimina ${esc(t.name)}">${icon("trash-2", "sm")}</button></div>`).join("")}</div>`
       : empty("Nessun pasto abituale", "Aggiungine uno qui sotto.")}
     <details class="free"><summary>${icon("plus", "sm")}Nuovo pasto abituale</summary>
       <form id="tpl-new" class="stack"><div class="form-grid four"><div class="field"><label for="tn-name">Nome</label><input id="tn-name" name="name" required maxlength="120" placeholder="es. Mandorle (30 g)"></div><div class="field"><label for="tn-kcal">Calorie (facoltativo)</label><input id="tn-kcal" name="kcal" inputmode="numeric"></div><div class="field"><label for="tn-prot">Proteine g (facoltativo)</label><input id="tn-prot" name="protein_g" inputmode="numeric"></div><div class="field"><label for="tn-src">Fonte dei valori</label><select id="tn-src" name="nutrition_source">${sources("")}</select></div></div><input type="hidden" name="slot" value="${esc(slot)}"><button class="btn primary" type="submit">${icon("plus", "sm")}Aggiungi a ${esc(SLOTS[slot].toLowerCase())}</button></form>
@@ -162,6 +162,30 @@ function templates() {
 export function render() {
   const body = ui.tab === "plan" ? plan() : ui.tab === "templates" ? templates() : diary();
   return `<div class="view-bar">${viewTabs()}<button class="btn primary" data-add-log="${isoDate()}">${icon("plus", "sm")}Pasto</button></div>${tabpanel("meals-panel", "Pasti", ui.tab, body)}`;
+}
+
+/** Un pasto abituale si corregge in una finestra con i campi etichettati (prima: campi in riga senza etichetta). */
+function editTemplate(t) {
+  const sources = Object.entries(SOURCE_LABEL).map(([k, l]) => `<option value="${k}" ${t.nutrition_source === k ? "selected" : ""}>${l}</option>`).join("");
+  openModal(
+    `<h2 id="modal-title">${esc(t.name)}</h2>
+    <div class="form-grid">
+      <div class="field"><label for="te-name">Nome</label><input id="te-name" maxlength="120" value="${esc(t.name)}"></div>
+      <div class="field"><label for="te-kcal">Calorie (kcal)</label><input id="te-kcal" inputmode="numeric" value="${esc(t.kcal ?? "")}" placeholder="senza valori"></div>
+      <div class="field"><label for="te-prot">Proteine (g)</label><input id="te-prot" inputmode="numeric" value="${esc(t.protein_g ?? "")}" placeholder="senza valori"></div>
+      <div class="field"><label for="te-src">Fonte dei valori</label><select id="te-src">${sources}</select></div>
+    </div>
+    ${t.nutrition_note ? `<p class="subtle">${esc(t.nutrition_note)}</p>` : ""}
+    <button type="button" class="btn primary full" data-m="save">Salva</button>
+    <div class="modal-secondary"><button type="button" data-m="close">Annulla</button></div>`,
+    async (b) => {
+      if (b.dataset.m === "close") return true;
+      if (b.dataset.m !== "save") return false;
+      const saved = await saveTemplate(t.id, { slot: t.slot, position: t.position, name: $("#te-name").value, kcal: $("#te-kcal").value, protein_g: $("#te-prot").value, nutrition_source: $("#te-src").value });
+      if (saved) app.render();
+      return saved;
+    },
+  );
 }
 
 const optNum = (v) => (String(v ?? "").trim() === "" ? null : num(String(v).replace(",", ".")));
@@ -183,6 +207,11 @@ export async function onClick(t) {
   if (t.dataset.day) return (ui.day = t.dataset.day), true;
   if (t.dataset.planDay) return (ui.planDay = num(t.dataset.planDay)), true;
   if (t.dataset.tplSlot) return (ui.slot = t.dataset.tplSlot), true;
+  if (t.dataset.editTpl) {
+    const tpl = app.templates.find((x) => x.id === t.dataset.editTpl);
+    if (tpl) editTemplate(tpl);
+    return false;
+  }
   if (t.dataset.weekShift) {
     ui.weekOffset = Math.min(0, ui.weekOffset + num(t.dataset.weekShift));
     return true;
@@ -250,7 +279,6 @@ export async function onSubmit(form, data) {
     if (await persistState()) toast("Ingrediente aggiunto al piano");
     return true;
   }
-  if (form.dataset.tplForm) return saveTemplate(form.dataset.tplForm, data);
   if (form.id === "tpl-new") return saveTemplate(`t-${uid().slice(0, 12)}`, data);
   return false;
 }

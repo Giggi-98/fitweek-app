@@ -110,7 +110,7 @@ function tiles() {
     <button type="button" class="metric tile" data-sleep aria-label="${night ? "Modifica il sonno di stanotte" : "Registra il sonno di stanotte"}">
       <div class="metric-label">${icon("moon", "sm")}Sonno</div>
       <div class="metric-value">${night ? esc(fmtDuration(night.duration_min)) : "—"}</div>
-      <div class="metric-sub">${night ? `${esc(night.bed_time)} → ${esc(night.wake_time)}` : "tocca per registrare stanotte"}</div>
+      <div class="metric-sub">${night ? `${esc(night.bed_time)} → ${esc(night.wake_time)}${night.deep_min != null ? ` · profondo ${esc(fmtDuration(night.deep_min))}` : ""}${night.source === "health_connect" ? " · dall'orologio" : ""}` : "tocca per registrare stanotte"}</div>
     </button>
     <button type="button" class="metric tile" data-weigh aria-label="Registra il peso">
       <div class="metric-label">${icon("scale", "sm")}Peso</div>

@@ -103,6 +103,7 @@ const canon = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && 
   await page.waitForSelector('#modal[open] [data-m=compose]');
   await page.click('#modal [data-m=compose]');
   await page.waitForSelector('#modal[open] .composer');
+  await page.click('#modal [data-cat=primo]'); // un pasto nuovo parte dai Frequenti (1.20)
   await page.click('#modal [data-food=f-pasta]');
   await page.click('#modal [data-cat=secondo]');
   await page.click('#modal [data-food=f-pollo]');
@@ -159,7 +160,7 @@ const canon = (v) => JSON.stringify(v, (_, x) => (x && typeof x === 'object' && 
   console.log(out.join('\n'));
 })().catch(async (e) => {
   console.log(out.join('\n'));
-  console.log('ERROR', e.message.split('\n')[0], '| errori della pagina:', (global.__errors || []).join(' | ') || 'nessuno');
+  console.log('ERROR', e.message.split('\n').slice(0, 4).join(' / '), '| errori della pagina:', (global.__errors || []).join(' | ') || 'nessuno');
   await global.__page?.screenshot({ path: SHOTS + '/v112-local-error.png' }).catch(() => {});
   process.exit(1);
 }).then(() => { if (out.some((l) => l.startsWith('FAIL'))) process.exit(1); });

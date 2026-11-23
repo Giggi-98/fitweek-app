@@ -57,7 +57,8 @@ function listPanel(g) {
     `<div class="shoprow"><label class="shopitem ${x.checked ? "done" : ""}"><input type="checkbox" data-check-item="${esc(x.id)}" ${x.checked ? "checked" : ""}><span class="cbox">${icon("check")}</span><span class="shop-main"><span class="shopname">${esc(x.name)}</span><span class="shopqty">${esc(qtyText(x))}${x.recurring ? " · ogni settimana" : ""}</span></span><span class="shopprice">${priceText(x)}</span></label><button type="button" class="icon-btn ${x.recurring ? "on" : ""}" data-recurring="${esc(x.id)}" aria-pressed="${Boolean(x.recurring)}" aria-label="${esc(x.name)}: compra ogni settimana" title="Compra ogni settimana">${icon("refresh-cw", "sm")}</button><button type="button" class="icon-btn" data-remove-shop="${esc(x.id)}" aria-label="Rimuovi ${esc(x.name)}">${icon("x", "sm")}</button></div>`;
   const anyChecked = g.some((x) => x.checked);
   const group = (cat) => {
-    const items = g.filter((x) => (x.category || "Altro") === cat);
+    // quelli da prendere in cima, gli spuntati in fondo al reparto (ordine stabile)
+    const items = g.filter((x) => (x.category || "Altro") === cat).sort((a, b) => Number(a.checked) - Number(b.checked));
     return `<div class="shop-group"><div class="group-head"><span class="tiny-label">${esc(cat)}</span><span class="tiny-label num">${priceSum(items) == null ? "" : money(priceSum(items))}</span></div>${items.map(row).join("")}</div>`;
   };
   const unitOpts = UNITS.map(([v, l]) => `<option value="${v}">${l}</option>`).join("");

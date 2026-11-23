@@ -145,9 +145,11 @@ const check = (name, ok, extra = '') => out.push(`${ok ? 'PASS' : 'FAIL'} ${name
   await page.click('.bottom-nav [data-view=shopping]');
   await page.waitForSelector('.shopitem');
   const before = (await api('/api/state')).data.groceries;
-  await page.locator('.shoprow').nth(0).locator('[data-recurring]').click();
-  await page.locator('.shopitem').nth(0).locator('.cbox').click();
-  await page.locator('.shopitem').nth(1).locator('.cbox').click();
+  // per nome: una riga spuntata scende in fondo al suo reparto (1.20), le posizioni cambiano
+  const shopRow = (name) => page.locator('.shoprow', { has: page.locator('.shopname', { hasText: new RegExp(`^${name}$`) }) });
+  await shopRow(before[0].name).locator('[data-recurring]').click();
+  await shopRow(before[0].name).locator('.cbox').click();
+  await shopRow(before[1].name).locator('.cbox').click();
   await page.click('[data-arrived]');
   await page.fill('#sp-amount', '42,50');
   await page.click('#modal [data-m=save]');

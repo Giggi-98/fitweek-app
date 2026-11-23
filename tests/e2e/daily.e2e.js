@@ -117,6 +117,19 @@ function romeMinuteAgo() {
   await page.click('#modal [data-save]');
   await page.waitForSelector('#modal', { state: 'hidden' });
   await page.waitForTimeout(600);
+
+  // 5c. Tappa 7: un pasto nuovo parte dai Frequenti e propone "Come l'ultimo pranzo"
+  await page.click('#content [data-add-log]');
+  await page.waitForSelector('#modal[open] .composer');
+  await page.click('#modal [data-slot=lunch]');
+  check('editor: un pasto nuovo parte dai piatti Frequenti', (await page.getAttribute('#modal [data-cat=frequenti]', 'aria-pressed')) === 'true' && (await page.locator('#c-browse [data-food]').count()) > 0);
+  const same = await page.textContent('#modal [data-same]');
+  check('editor: "Come l\'ultimo pranzo" con le voci di quel pasto', /Come l'ultimo pranzo/.test(same) && /Pasta/.test(same), same.replace(/\s+/g, ' '));
+  await page.click('#modal [data-same]');
+  check('"Come l\'ultimo pranzo": un tocco rimette le stesse voci nel piatto', (await page.locator('#modal .tray-row').count()) === 4);
+  await page.screenshot({ path: `${SHOTS}/v120-same-as-last.png` });
+  await page.click('#modal [data-close]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
   await addReminder('e2e-dinner', { kind: 'meal', slot: 'dinner', action: 'log_meal', title: 'Cena' });
   await page.reload();
   await page.waitForSelector('#modal[open] [data-m=home-pane]', { timeout: 8000 });
@@ -144,10 +157,12 @@ function romeMinuteAgo() {
   // 6. Pasti abituali: correggi Banana con valori da etichetta
   await page.click('[data-tab=templates]');
   await page.click('[data-tpl-slot=pre_workout]');
-  const form = page.locator('[data-tpl-form="t-banana"]');
-  await form.locator('input[name=kcal]').fill('110');
-  await form.locator('select[name=nutrition_source]').selectOption('label');
-  await form.locator('button[type=submit]').click();
+  await page.click('[data-edit-tpl="t-banana"]');
+  await page.fill('#te-kcal', '110');
+  await page.selectOption('#te-src', 'label');
+  await page.click('#modal [data-m=save]');
+  await page.waitForSelector('#modal', { state: 'hidden' });
+  check('pasto abituale: la riga mostra i valori corretti con la fonte', /110 kcal.*etichetta/i.test(await page.textContent('[data-edit-tpl="t-banana"]')), await page.textContent('[data-edit-tpl="t-banana"]'));
   await page.waitForTimeout(600);
   const tpl = (await api('/api/v1/meal-templates')).items.find((t) => t.id === 't-banana');
   check('pasto abituale modificato', tpl.kcal === 110 && tpl.nutrition_source === 'label');
