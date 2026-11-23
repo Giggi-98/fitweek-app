@@ -75,6 +75,11 @@ Premessa: server alla 1.15.0 e APK compilato dopo il deploy.
 - [ ] **Tempo reale**: con telefono e PC sulla stessa Wi-Fi, registra un pasto dal PC: compare sul telefono senza toccare nulla, entro un paio di secondi. Ripeti al contrario.
 - [ ] **Schermo spento**: spegni lo schermo per qualche minuto, riaccendi: l'app si riallinea da sola.
 
+## 9. Battito dentro l'allenamento (1.17.0)
+- [ ] **Picco ultima serie**: durante la seduta, dopo aver segnato una serie, la testata mostra "picco ultima serie …" entro un paio di minuti (dipende da OHealth).
+- [ ] **Riepilogo**: a fine seduta compaiono battito medio, massimo e la curva con le tacche delle serie (subito o dopo poco).
+- [ ] **Storico**: in *Progressi → Allenamento*, "Dettaglio" di una seduta mostra il picco per serie e la curva; confronta un paio di valori con OHealth.
+
 ---
 
 ### Note / esito della prova

@@ -111,6 +111,11 @@ Modifiche a endpoint esistenti:
 - CORS: solo per le origini in `APP_ORIGINS` (predefinite `http://localhost`, `https://localhost`, `capacitor://localhost`), senza credenziali, intestazioni `Authorization` e `Content-Type`. Le stesse origini sono ammesse dal controllo `Origin` delle scritture.
 - `GET /api/v1/app/android` aggiunge `next` (metadati dell'APK di prova o `null`); `GET /api/v1/app/android/download?channel=stable|next`.
 
+## API 1.17 (2026-11-23) — curva del battito della seduta (D-042)
+
+- `PUT /api/v1/workout-heart/{session_id}`: campo facoltativo `curve` = `[[secondi dall'inizio 0–21600, media, massimo], …]` (al più 1000 punti, battito 30–240, media ≤ massimo; altrimenti 422). Senza `curve` (o `null`) la curva salvata si cancella.
+- `GET /api/v1/workout-sessions[/{id}]`: `heart.curve` (lista o `null`). Stesso campo nel backup dentro `workout_sessions[].heart` (v5 invariato).
+
 ## API 1.15 (2026-11-23) — avvisi in tempo reale, HRV, SpO2, pesate dalla bilancia (D-041)
 
 | Metodo | Path | Descrizione |
